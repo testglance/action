@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="all-tests" tests="9" failures="1" errors="0" skipped="1" time="3.456">
+  <testsuite name="api.users" tests="3" failures="0" errors="0" skipped="0" time="1.100">
+    <testcase name="should list users" classname="api.users" time="0.400"/>
+    <testcase name="should create user" classname="api.users" time="0.350"/>
+    <testcase name="should delete user" classname="api.users" time="0.350"/>
+  </testsuite>
+  <testsuite name="api.projects" tests="3" failures="1" errors="0" skipped="0" time="1.200">
+    <testcase name="should list projects" classname="api.projects" time="0.300"/>
+    <testcase name="should create project" classname="api.projects" time="0.400">
+      <failure message="Validation failed" type="ValidationError">
+        ValidationError: name is required
+      </failure>
+    </testcase>
+    <testcase name="should archive project" classname="api.projects" time="0.500"/>
+  </testsuite>
+  <testsuite name="api.billing" tests="3" failures="0" errors="0" skipped="1" time="1.156">
+    <testcase name="should fetch invoices" classname="api.billing" time="0.456"/>
+    <testcase name="should update payment method" classname="api.billing" time="0.400"/>
+    <testcase name="should handle Stripe webhook" classname="api.billing" time="0">
+      <skipped message="Requires Stripe test key"/>
+    </testcase>
+  </testsuite>
+</testsuites>

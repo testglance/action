@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="i18n.tests" tests="5" failures="0" errors="0" skipped="0" time="0.500">
+  <testcase name="should handle accented characters: café résumé naïve" classname="i18n.tests" time="0.100"/>
+  <testcase name="should handle Spanish: señor mañana" classname="i18n.tests" time="0.100"/>
+  <testcase name="should handle Japanese: テスト日本語" classname="i18n.tests" time="0.100"/>
+  <testcase name="should handle XML entities: &amp; &lt; &gt; &quot; &apos;" classname="i18n.tests" time="0.100"/>
+  <testcase name="should handle emoji: test 🎉 passed ✅" classname="i18n.tests" time="0.100"/>
+</testsuite>
