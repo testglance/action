@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="nested-suites" tests="6" failures="0" errors="0" skipped="0" time="2.000">
+  <testsuite name="components" tests="6" failures="0" errors="0" skipped="0" time="2.000">
+    <testsuite name="components.Button" tests="3" failures="0" errors="0" skipped="0" time="0.800">
+      <testcase name="renders with default props" classname="components.Button" time="0.200"/>
+      <testcase name="handles click events" classname="components.Button" time="0.300"/>
+      <testcase name="applies custom className" classname="components.Button" time="0.300"/>
+    </testsuite>
+    <testsuite name="components.Modal" tests="3" failures="0" errors="0" skipped="0" time="1.200">
+      <testcase name="opens on trigger" classname="components.Modal" time="0.400"/>
+      <testcase name="closes on escape key" classname="components.Modal" time="0.400"/>
+      <testcase name="traps focus within" classname="components.Modal" time="0.400"/>
+    </testsuite>
+  </testsuite>
+</testsuites>

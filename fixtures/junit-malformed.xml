@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="broken" tests="2">
+  <testcase name="unclosed tag" classname="broken" time="0.1">
+    <failure message="This tag is not closed"
+  </testcase>
+  <testcase name="also broken
+</testsuite>

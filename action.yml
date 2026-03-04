@@ -1,0 +1,20 @@
+name: 'TestGlance'
+description: 'Track test suite health over time. Parse JUnit XML or CTRF JSON and send to TestGlance.'
+inputs:
+  report-path:
+    description: 'Path to the test report file (JUnit XML or CTRF JSON)'
+    required: true
+  api-key:
+    description: 'TestGlance project API key'
+    required: true
+  api-url:
+    description: 'TestGlance API URL'
+    required: false
+    default: 'https://api.testglance.com'
+  report-format:
+    description: "Report format: junit, ctrf, or auto (default: auto-detect from file extension)"
+    required: false
+    default: 'auto'
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

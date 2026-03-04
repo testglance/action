@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="auth.login" tests="6" failures="1" errors="1" skipped="1" time="1.234">
+  <testcase name="should login with valid credentials" classname="auth.login" time="0.123">
+  </testcase>
+  <testcase name="should reject invalid password" classname="auth.login" time="0.045">
+    <failure message="Expected 401 but got 200" type="AssertionError">
+      AssertionError: Expected 401 but got 200
+        at Object.&lt;anonymous&gt; (auth.test.ts:15:5)
+    </failure>
+  </testcase>
+  <testcase name="should handle server error" classname="auth.login" time="0.500">
+    <error message="Connection timeout" type="TimeoutError">
+      TimeoutError: Connection timeout
+        at Socket.&lt;anonymous&gt; (net.ts:42:10)
+    </error>
+  </testcase>
+  <testcase name="should skip disabled test" classname="auth.login" time="0">
+    <skipped message="Disabled pending fix"/>
+  </testcase>
+  <testcase name="should redirect after login" classname="auth.login" time="0.234">
+  </testcase>
+  <testcase name="should set session cookie" classname="auth.login" time="0.332">
+  </testcase>
+</testsuite>
