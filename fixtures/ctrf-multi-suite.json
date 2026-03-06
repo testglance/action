@@ -1,0 +1,114 @@
+{
+  "results": {
+    "tool": {
+      "name": "jest",
+      "version": "29.7.0"
+    },
+    "summary": {
+      "tests": 15,
+      "passed": 11,
+      "failed": 2,
+      "skipped": 1,
+      "pending": 1,
+      "other": 0,
+      "start": 1709136000000,
+      "stop": 1709136025000
+    },
+    "tests": [
+      {
+        "name": "should create user",
+        "status": "passed",
+        "duration": 150,
+        "suite": "api.users"
+      },
+      {
+        "name": "should list users",
+        "status": "passed",
+        "duration": 80,
+        "suite": "api.users"
+      },
+      {
+        "name": "should delete user",
+        "status": "passed",
+        "duration": 95,
+        "suite": "api.users"
+      },
+      {
+        "name": "should update user email",
+        "status": "failed",
+        "duration": 120,
+        "suite": "api.users",
+        "message": "Expected email to be updated",
+        "trace": "AssertionError: Expected email to be updated\n    at test (users.test.ts:45:3)"
+      },
+      {
+        "name": "should validate email format",
+        "status": "passed",
+        "duration": 30,
+        "suite": "api.users"
+      },
+      {
+        "name": "should create project",
+        "status": "passed",
+        "duration": 200,
+        "suite": "api.projects"
+      },
+      {
+        "name": "should list projects",
+        "status": "passed",
+        "duration": 60,
+        "suite": "api.projects"
+      },
+      {
+        "name": "should archive project",
+        "status": "passed",
+        "duration": 110,
+        "suite": "api.projects"
+      },
+      {
+        "name": "should filter by status",
+        "status": "skipped",
+        "duration": 0,
+        "suite": "api.projects"
+      },
+      {
+        "name": "should assign member",
+        "status": "pending",
+        "duration": 0,
+        "suite": "api.projects"
+      },
+      {
+        "name": "should process payment",
+        "status": "passed",
+        "duration": 500,
+        "suite": "api.billing"
+      },
+      {
+        "name": "should refund payment",
+        "status": "passed",
+        "duration": 450,
+        "suite": "api.billing"
+      },
+      {
+        "name": "should calculate tax",
+        "status": "passed",
+        "duration": 35,
+        "suite": "api.billing"
+      },
+      {
+        "name": "should handle currency conversion",
+        "status": "failed",
+        "duration": 220,
+        "suite": "api.billing",
+        "message": "Currency conversion failed for JPY",
+        "trace": "Error: Currency conversion failed for JPY\n    at convert (billing.test.ts:92:7)"
+      },
+      {
+        "name": "should generate invoice",
+        "status": "passed",
+        "duration": 180,
+        "suite": "api.billing"
+      }
+    ]
+  }
+}

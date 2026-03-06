@@ -28,9 +28,13 @@ src/
   types.ts              # ParsedTestRun / ParsedSuite / ParsedTestCase (shared contract)
   parsers/
     junit.ts            # JUnit XML parser (fast-xml-parser)
+    ctrf.ts             # CTRF JSON parser (native JSON.parse)
     __tests__/
-      junit.test.ts     # Parser tests using fixtures/
-fixtures/               # Real-world XML test fixtures for parser tests
+      junit.test.ts     # JUnit parser tests using fixtures/
+      ctrf.test.ts      # CTRF parser tests using fixtures/
+  utils/
+    errors.ts           # ParseError class (shared by both parsers)
+fixtures/               # Test fixtures (XML + JSON). Large fixtures generated at test time.
 dist/                   # Compiled output (COMMITTED — GitHub Actions requirement)
 action.yml              # Action metadata (inputs, runtime)
 ```
@@ -59,7 +63,6 @@ Both JUnit and CTRF parsers must output `ParsedTestRun` (defined in `src/types.t
 
 ## Upcoming Stories (do NOT implement yet)
 
-- **Story 1.2:** CTRF JSON parser (`src/parsers/ctrf.ts`)
 - **Story 1.3:** API ingestion endpoint (SaaS side)
 - **Story 1.4:** API client + non-blocking integration (`src/api/client.ts`)
 - **Story 1.5:** CI log summary + Action packaging (`src/output/summary.ts`)

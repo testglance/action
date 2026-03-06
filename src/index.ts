@@ -2,6 +2,7 @@ import * as core from '@actions/core';
 import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { parseJunitXml } from './parsers/junit';
+import { parseCtrfJson } from './parsers/ctrf';
 
 type ReportFormat = 'junit' | 'ctrf' | 'auto';
 
@@ -44,7 +45,10 @@ async function run(): Promise<void> {
         `Parsed ${result.summary.total} tests: ${result.summary.passed} passed, ${result.summary.failed} failed, ${result.summary.skipped} skipped, ${result.summary.errored} errored`,
       );
     } else if (format === 'ctrf') {
-      core.warning('CTRF JSON parsing not yet implemented (Story 1.2)');
+      const result = parseCtrfJson(content);
+      core.info(
+        `Parsed ${result.summary.total} tests: ${result.summary.passed} passed, ${result.summary.failed} failed, ${result.summary.skipped} skipped, ${result.summary.errored} errored`,
+      );
     }
   } catch (err) {
     core.warning(

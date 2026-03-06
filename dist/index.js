@@ -28263,6 +28263,7 @@ const core = __importStar(__nccwpck_require__(6966));
 const node_fs_1 = __nccwpck_require__(3024);
 const node_path_1 = __nccwpck_require__(6760);
 const junit_1 = __nccwpck_require__(2245);
+const ctrf_1 = __nccwpck_require__(9102);
 const VALID_FORMATS = new Set(['junit', 'ctrf', 'auto']);
 function detectFormat(filePath, explicit) {
     if (explicit && explicit !== 'auto') {
@@ -28295,7 +28296,8 @@ async function run() {
             core.info(`Parsed ${result.summary.total} tests: ${result.summary.passed} passed, ${result.summary.failed} failed, ${result.summary.skipped} skipped, ${result.summary.errored} errored`);
         }
         else if (format === 'ctrf') {
-            core.warning('CTRF JSON parsing not yet implemented (Story 1.2)');
+            const result = (0, ctrf_1.parseCtrfJson)(content);
+            core.info(`Parsed ${result.summary.total} tests: ${result.summary.passed} passed, ${result.summary.failed} failed, ${result.summary.skipped} skipped, ${result.summary.errored} errored`);
         }
     }
     catch (err) {
@@ -28303,6 +28305,113 @@ async function run() {
     }
 }
 run();
+
+
+/***/ }),
+
+/***/ 9102:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseCtrfJson = parseCtrfJson;
+const errors_1 = __nccwpck_require__(7673);
+const STATUS_MAP = {
+    passed: 'passed',
+    failed: 'failed',
+    skipped: 'skipped',
+    pending: 'skipped',
+    other: 'errored',
+};
+function validateCtrfStructure(raw) {
+    if (!raw || typeof raw !== 'object') {
+        throw new errors_1.ParseError('CTRF content is not a JSON object');
+    }
+    const obj = raw;
+    if (!obj.results || typeof obj.results !== 'object') {
+        throw new errors_1.ParseError('Missing required field: results');
+    }
+    const results = obj.results;
+    if (!Array.isArray(results.tests)) {
+        throw new errors_1.ParseError('Missing required field: results.tests (expected array)');
+    }
+    if (!results.tool || typeof results.tool !== 'object') {
+        throw new errors_1.ParseError('Missing required field: results.tool');
+    }
+    const tool = results.tool;
+    if (typeof tool.name !== 'string') {
+        throw new errors_1.ParseError('Missing required field: results.tool.name (expected string)');
+    }
+    if (!results.summary || typeof results.summary !== 'object') {
+        throw new errors_1.ParseError('Missing required field: results.summary');
+    }
+    return raw;
+}
+function parseCtrfJson(content) {
+    if (!content || content.trim().length === 0) {
+        throw new errors_1.ParseError('CTRF file is empty');
+    }
+    let raw;
+    try {
+        raw = JSON.parse(content);
+    }
+    catch (err) {
+        throw new errors_1.ParseError(`Invalid JSON: ${err.message}`);
+    }
+    const report = validateCtrfStructure(raw);
+    const { results } = report;
+    const toolName = results.tool.name;
+    const suiteMap = new Map();
+    for (const test of results.tests) {
+        const suiteName = test.suite || test.filePath || toolName;
+        const durationSeconds = (test.duration ?? 0) / 1000;
+        const status = STATUS_MAP[test.status] ?? 'errored';
+        const hasError = status === 'failed' || status === 'errored';
+        const testCase = {
+            name: test.name,
+            suite: suiteName,
+            status,
+            duration: durationSeconds,
+            ...(hasError && test.message ? { errorMessage: test.message } : {}),
+            ...(hasError && test.trace ? { errorType: test.trace.split('\n')[0] } : {}),
+        };
+        const existing = suiteMap.get(suiteName);
+        if (existing) {
+            existing.push(testCase);
+        }
+        else {
+            suiteMap.set(suiteName, [testCase]);
+        }
+    }
+    const suites = [];
+    for (const [name, tests] of suiteMap) {
+        suites.push({
+            name,
+            tests,
+            duration: tests.reduce((sum, t) => sum + t.duration, 0),
+        });
+    }
+    const allTests = suites.flatMap((s) => s.tests);
+    let totalDuration = 0;
+    if (results.summary.start != null && results.summary.stop != null) {
+        totalDuration = (results.summary.stop - results.summary.start) / 1000;
+    }
+    else {
+        totalDuration = suites.reduce((sum, s) => sum + s.duration, 0);
+    }
+    return {
+        summary: {
+            total: allTests.length,
+            passed: allTests.filter((t) => t.status === 'passed').length,
+            failed: allTests.filter((t) => t.status === 'failed').length,
+            skipped: allTests.filter((t) => t.status === 'skipped').length,
+            errored: allTests.filter((t) => t.status === 'errored').length,
+            duration: totalDuration,
+        },
+        suites,
+    };
+}
 
 
 /***/ }),
@@ -28315,6 +28424,7 @@ run();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.parseJunitXml = parseJunitXml;
 const fast_xml_parser_1 = __nccwpck_require__(2229);
+const errors_1 = __nccwpck_require__(7673);
 const BOM = '\uFEFF';
 const xmlParser = new fast_xml_parser_1.XMLParser({
     ignoreAttributes: false,
@@ -28392,14 +28502,14 @@ function parseJunitXml(content) {
     }
     xml = xml.trim();
     if (!xml) {
-        throw new Error('JUnit XML is empty');
+        throw new errors_1.ParseError('JUnit XML is empty');
     }
     let parsed;
     try {
         parsed = xmlParser.parse(xml);
     }
     catch (err) {
-        throw new Error(`Failed to parse JUnit XML: ${err instanceof Error ? err.message : String(err)}`);
+        throw new errors_1.ParseError(`Failed to parse JUnit XML: ${err instanceof Error ? err.message : String(err)}`);
     }
     const suites = [];
     const testsuites = parsed['testsuites'];
@@ -28431,6 +28541,24 @@ function parseJunitXml(content) {
     };
     return { summary, suites };
 }
+
+
+/***/ }),
+
+/***/ 7673:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ParseError = void 0;
+class ParseError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'ParseError';
+    }
+}
+exports.ParseError = ParseError;
 
 
 /***/ }),
