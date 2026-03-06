@@ -1,0 +1,77 @@
+{
+  "results": {
+    "tool": {
+      "name": "vitest",
+      "version": "3.0.0"
+    },
+    "summary": {
+      "tests": 8,
+      "passed": 5,
+      "failed": 2,
+      "skipped": 1,
+      "pending": 0,
+      "other": 0,
+      "start": 1709136000000,
+      "stop": 1709136012345
+    },
+    "tests": [
+      {
+        "name": "should authenticate with valid credentials",
+        "status": "passed",
+        "duration": 123,
+        "suite": "auth.login"
+      },
+      {
+        "name": "should reject expired token",
+        "status": "passed",
+        "duration": 45,
+        "suite": "auth.login"
+      },
+      {
+        "name": "should hash password correctly",
+        "status": "passed",
+        "duration": 210,
+        "suite": "auth.login"
+      },
+      {
+        "name": "should return user profile",
+        "status": "passed",
+        "duration": 89,
+        "suite": "auth.login"
+      },
+      {
+        "name": "should handle concurrent sessions",
+        "status": "passed",
+        "duration": 334,
+        "suite": "auth.login"
+      },
+      {
+        "name": "should reject invalid password",
+        "status": "failed",
+        "duration": 56,
+        "suite": "auth.login",
+        "message": "Expected 401 but received 200",
+        "trace": "AssertionError: Expected 401 but received 200\n    at Object.<anonymous> (src/auth.test.ts:42:5)"
+      },
+      {
+        "name": "should enforce rate limiting",
+        "status": "failed",
+        "duration": 1200,
+        "suite": "auth.login",
+        "message": "Rate limit not enforced after 100 requests",
+        "trace": "Error: Rate limit not enforced after 100 requests\n    at checkRateLimit (src/auth.test.ts:78:9)"
+      },
+      {
+        "name": "should skip disabled feature",
+        "status": "skipped",
+        "duration": 0,
+        "suite": "auth.login"
+      }
+    ],
+    "environment": {
+      "appName": "testglance",
+      "buildName": "CI",
+      "buildNumber": "42"
+    }
+  }
+}

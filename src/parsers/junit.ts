@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import type { ParsedTestRun, ParsedSuite, ParsedTestCase } from '../types';
+import { ParseError } from '../utils/errors';
 
 const BOM = '\uFEFF';
 
@@ -100,14 +101,14 @@ export function parseJunitXml(content: string): ParsedTestRun {
   xml = xml.trim();
 
   if (!xml) {
-    throw new Error('JUnit XML is empty');
+    throw new ParseError('JUnit XML is empty');
   }
 
   let parsed: Record<string, unknown>;
   try {
     parsed = xmlParser.parse(xml) as Record<string, unknown>;
   } catch (err) {
-    throw new Error(
+    throw new ParseError(
       `Failed to parse JUnit XML: ${err instanceof Error ? err.message : String(err)}`,
     );
   }

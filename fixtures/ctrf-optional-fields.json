@@ -1,0 +1,37 @@
+{
+  "results": {
+    "tool": {
+      "name": "pytest"
+    },
+    "summary": {
+      "tests": 4,
+      "passed": 3,
+      "failed": 1,
+      "skipped": 0,
+      "pending": 0,
+      "other": 0
+    },
+    "tests": [
+      {
+        "name": "test_add",
+        "status": "passed",
+        "duration": 10
+      },
+      {
+        "name": "test_subtract",
+        "status": "passed",
+        "duration": 8
+      },
+      {
+        "name": "test_multiply",
+        "status": "passed",
+        "duration": 12
+      },
+      {
+        "name": "test_divide_by_zero",
+        "status": "failed",
+        "duration": 5
+      }
+    ]
+  }
+}
