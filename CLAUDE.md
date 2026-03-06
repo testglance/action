@@ -24,7 +24,7 @@ pnpm lint          # eslint
 
 ```
 src/
-  index.ts              # Action entry point — reads inputs, dispatches to parser
+  index.ts              # Action entry point — reads inputs, detects format, parses, sends to API
   types.ts              # ParsedTestRun / ParsedSuite / ParsedTestCase (shared contract)
   parsers/
     junit.ts            # JUnit XML parser (fast-xml-parser)
@@ -32,8 +32,18 @@ src/
     __tests__/
       junit.test.ts     # JUnit parser tests using fixtures/
       ctrf.test.ts      # CTRF parser tests using fixtures/
+  api/
+    client.ts           # HTTP API client with retry logic (POST /api/v1/runs)
+    __tests__/
+      client.test.ts    # API client unit tests
   utils/
-    errors.ts           # ParseError class (shared by both parsers)
+    errors.ts           # ParseError class + non-blocking error handlers (core.warning only)
+    detect-format.ts    # Report format auto-detection from file extension
+    __tests__/
+      detect-format.test.ts
+      errors.test.ts
+  __tests__/
+    index.test.ts       # Integration tests for full run() pipeline
 fixtures/               # Test fixtures (XML + JSON). Large fixtures generated at test time.
 dist/                   # Compiled output (COMMITTED — GitHub Actions requirement)
 action.yml              # Action metadata (inputs, runtime)
@@ -63,6 +73,4 @@ Both JUnit and CTRF parsers must output `ParsedTestRun` (defined in `src/types.t
 
 ## Upcoming Stories (do NOT implement yet)
 
-- **Story 1.3:** API ingestion endpoint (SaaS side)
-- **Story 1.4:** API client + non-blocking integration (`src/api/client.ts`)
 - **Story 1.5:** CI log summary + Action packaging (`src/output/summary.ts`)

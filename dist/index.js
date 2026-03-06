@@ -28220,6 +28220,79 @@ module.exports = {
 
 /***/ }),
 
+/***/ 7246:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.sendTestRun = sendTestRun;
+const MAX_RETRIES = 3;
+const INITIAL_DELAY_MS = 1000;
+const REQUEST_TIMEOUT_MS = 10000;
+const NON_RETRYABLE_STATUS_CODES = [400, 401, 403];
+async function sendTestRun(apiUrl, apiKey, parsedRun) {
+    let lastError;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        let timeout;
+        try {
+            const controller = new AbortController();
+            timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+            const response = await fetch(`${apiUrl}/api/v1/runs`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify(parsedRun),
+                signal: controller.signal,
+            });
+            if (response.ok) {
+                const body = await response.json().catch(() => ({}));
+                return {
+                    success: true,
+                    runId: body.data?.runId,
+                    healthScore: body.data?.healthScore,
+                };
+            }
+            const errorBody = await response.json().catch(() => ({
+                error: { code: 'UNKNOWN', message: `HTTP ${response.status}` },
+            }));
+            const errorCode = errorBody.error?.code ?? 'UNKNOWN';
+            const errorMessage = errorBody.error?.message ?? `HTTP ${response.status}`;
+            lastError = `${errorCode} - ${errorMessage}`;
+            if (NON_RETRYABLE_STATUS_CODES.includes(response.status)) {
+                return { success: false, errorCode, errorMessage };
+            }
+            if (attempt < MAX_RETRIES) {
+                const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+                await sleep(delay);
+            }
+        }
+        catch (err) {
+            lastError = err.message;
+            if (attempt < MAX_RETRIES) {
+                const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+                await sleep(delay);
+            }
+        }
+        finally {
+            clearTimeout(timeout);
+        }
+    }
+    return {
+        success: false,
+        errorCode: 'NETWORK_ERROR',
+        errorMessage: lastError ?? 'API unreachable after retries',
+    };
+}
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+
+/***/ }),
+
 /***/ 6866:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -28259,49 +28332,80 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.run = run;
 const core = __importStar(__nccwpck_require__(6966));
 const node_fs_1 = __nccwpck_require__(3024);
-const node_path_1 = __nccwpck_require__(6760);
 const junit_1 = __nccwpck_require__(2245);
 const ctrf_1 = __nccwpck_require__(9102);
-const VALID_FORMATS = new Set(['junit', 'ctrf', 'auto']);
-function detectFormat(filePath, explicit) {
-    if (explicit && explicit !== 'auto') {
-        if (!VALID_FORMATS.has(explicit)) {
-            core.warning(`Unrecognized report-format "${explicit}". Valid values: junit, ctrf, auto. Falling back to auto-detect.`);
-        }
-        else {
-            return explicit;
-        }
-    }
-    const ext = (0, node_path_1.extname)(filePath).toLowerCase();
-    if (ext === '.xml')
-        return 'junit';
-    if (ext === '.json')
-        return 'ctrf';
-    core.warning(`Could not detect report format from extension "${ext}". Defaulting to junit.`);
-    return 'junit';
-}
+const client_1 = __nccwpck_require__(7246);
+const detect_format_1 = __nccwpck_require__(4469);
+const errors_1 = __nccwpck_require__(7673);
 async function run() {
     try {
         const reportPath = core.getInput('report-path', { required: true });
         const apiKey = core.getInput('api-key', { required: true });
-        const format = detectFormat(reportPath, core.getInput('report-format'));
-        if (apiKey) {
-            core.info('API key provided (submission will be enabled in a future release)');
+        const apiUrl = core.getInput('api-url') || 'https://api.testglance.com';
+        const reportFormat = core.getInput('report-format') || 'auto';
+        if (!(0, node_fs_1.existsSync)(reportPath)) {
+            (0, errors_1.handleFileNotFound)(reportPath);
+            return;
         }
         const content = (0, node_fs_1.readFileSync)(reportPath, 'utf-8');
+        let parsed = null;
+        const format = reportFormat === 'auto' ? (0, detect_format_1.detectFormat)(reportPath) : reportFormat;
         if (format === 'junit') {
-            const result = (0, junit_1.parseJunitXml)(content);
-            core.info(`Parsed ${result.summary.total} tests: ${result.summary.passed} passed, ${result.summary.failed} failed, ${result.summary.skipped} skipped, ${result.summary.errored} errored`);
+            try {
+                parsed = (0, junit_1.parseJunitXml)(content);
+            }
+            catch (err) {
+                (0, errors_1.handleParseError)('JUnit XML', err);
+                return;
+            }
         }
         else if (format === 'ctrf') {
-            const result = (0, ctrf_1.parseCtrfJson)(content);
-            core.info(`Parsed ${result.summary.total} tests: ${result.summary.passed} passed, ${result.summary.failed} failed, ${result.summary.skipped} skipped, ${result.summary.errored} errored`);
+            try {
+                parsed = (0, ctrf_1.parseCtrfJson)(content);
+            }
+            catch (err) {
+                (0, errors_1.handleParseError)('CTRF JSON', err);
+                return;
+            }
         }
+        else {
+            // Auto-detect returned null (unknown extension) — try both parsers
+            try {
+                parsed = (0, junit_1.parseJunitXml)(content);
+            }
+            catch {
+                try {
+                    parsed = (0, ctrf_1.parseCtrfJson)(content);
+                }
+                catch (err) {
+                    (0, errors_1.handleParseError)('auto-detected', err);
+                    return;
+                }
+            }
+        }
+        if (!parsed)
+            return;
+        core.info(`Parsed ${parsed.summary.total} tests: ${parsed.summary.passed} passed, ${parsed.summary.failed} failed, ${parsed.summary.skipped} skipped, ${parsed.summary.errored} errored`);
+        const result = await (0, client_1.sendTestRun)(apiUrl, apiKey, parsed);
+        if (result.success) {
+            core.info(`TestGlance: Test run submitted successfully (${result.runId})`);
+            if (result.healthScore !== null && result.healthScore !== undefined) {
+                core.info(`TestGlance: Health score: ${result.healthScore}`);
+            }
+        }
+        else if (result.errorCode === 'NETWORK_ERROR') {
+            (0, errors_1.handleApiUnreachable)();
+        }
+        else {
+            (0, errors_1.handleApiError)(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
+        }
+        // Story 1.5 integration point: generateSummary(parsed, result)
     }
     catch (err) {
-        core.warning(`TestGlance encountered an error: ${err instanceof Error ? err.message : String(err)}`);
+        (0, errors_1.handleUnexpectedError)(err instanceof Error ? err : new Error(String(err)));
     }
 }
 run();
@@ -28545,13 +28649,71 @@ function parseJunitXml(content) {
 
 /***/ }),
 
-/***/ 7673:
+/***/ 4469:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.detectFormat = detectFormat;
+function detectFormat(filePath) {
+    const ext = filePath.split('.').pop()?.toLowerCase();
+    if (ext === 'xml')
+        return 'junit';
+    if (ext === 'json')
+        return 'ctrf';
+    return null;
+}
+
+
+/***/ }),
+
+/***/ 7673:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.ParseError = void 0;
+exports.handleFileNotFound = handleFileNotFound;
+exports.handleParseError = handleParseError;
+exports.handleApiUnreachable = handleApiUnreachable;
+exports.handleApiError = handleApiError;
+exports.handleUnexpectedError = handleUnexpectedError;
+const core = __importStar(__nccwpck_require__(6966));
 class ParseError extends Error {
     constructor(message) {
         super(message);
@@ -28559,6 +28721,21 @@ class ParseError extends Error {
     }
 }
 exports.ParseError = ParseError;
+function handleFileNotFound(path) {
+    core.warning(`Test report file not found at ${path}.`);
+}
+function handleParseError(format, error) {
+    core.warning(`Failed to parse test report as ${format}: ${error.message}`);
+}
+function handleApiUnreachable() {
+    core.warning('TestGlance API unreachable. Test data was not submitted. Your CI pipeline is unaffected.');
+}
+function handleApiError(code, message) {
+    core.warning(`TestGlance API error: ${code} - ${message}`);
+}
+function handleUnexpectedError(error) {
+    core.warning(`TestGlance encountered an unexpected error: ${error.message}. Your CI pipeline is unaffected.`);
+}
 
 
 /***/ }),
@@ -28688,14 +28865,6 @@ module.exports = require("node:events");
 
 "use strict";
 module.exports = require("node:fs");
-
-/***/ }),
-
-/***/ 6760:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:path");
 
 /***/ }),
 
