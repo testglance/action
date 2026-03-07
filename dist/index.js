@@ -28340,6 +28340,7 @@ const ctrf_1 = __nccwpck_require__(9102);
 const client_1 = __nccwpck_require__(7246);
 const detect_format_1 = __nccwpck_require__(4469);
 const errors_1 = __nccwpck_require__(7673);
+const summary_1 = __nccwpck_require__(5942);
 async function run() {
     try {
         const reportPath = core.getInput('report-path', { required: true });
@@ -28402,13 +28403,140 @@ async function run() {
         else {
             (0, errors_1.handleApiError)(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
         }
-        // Story 1.5 integration point: generateSummary(parsed, result)
+        await (0, summary_1.generateSummary)({
+            parsed,
+            apiSuccess: result.success,
+            runId: result.runId,
+            healthScore: result.healthScore,
+            dashboardUrl: result.success ? `https://testglance.com/runs/${result.runId}` : undefined,
+        });
     }
     catch (err) {
         (0, errors_1.handleUnexpectedError)(err instanceof Error ? err : new Error(String(err)));
     }
 }
 run();
+
+
+/***/ }),
+
+/***/ 5942:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.generateSummary = generateSummary;
+exports.formatDuration = formatDuration;
+exports.truncate = truncate;
+exports.collectFailedTests = collectFailedTests;
+const core = __importStar(__nccwpck_require__(6966));
+const MAX_FAILED_TESTS_SHOWN = 10;
+const MAX_ERROR_MESSAGE_LENGTH = 200;
+async function generateSummary(options) {
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount } = options;
+    const { summary } = parsed;
+    const passRate = summary.total > 0
+        ? ((summary.passed / summary.total) * 100).toFixed(1)
+        : '0.0';
+    core.summary.addHeading('TestGlance Results', 2);
+    core.summary.addTable([
+        [{ data: 'Metric', header: true }, { data: 'Value', header: true }],
+        ['Total', String(summary.total)],
+        ['Passed', String(summary.passed)],
+        ['Failed', String(summary.failed)],
+        ['Skipped', String(summary.skipped)],
+        ['Errored', String(summary.errored)],
+        ['Pass Rate', `${passRate}%`],
+        ['Duration', formatDuration(summary.duration)],
+    ]);
+    if (apiSuccess && healthScore !== null && healthScore !== undefined) {
+        core.summary.addRaw(`**Health Score:** ${healthScore}/100\n\n`);
+    }
+    else if (apiSuccess) {
+        core.summary.addRaw('**Health Score:** available after 5 runs\n\n');
+    }
+    if (flakyCount && flakyCount > 0) {
+        core.summary.addRaw(`**Flaky tests detected:** ${flakyCount}\n\n`);
+    }
+    const failedTests = collectFailedTests(parsed);
+    if (failedTests.length > 0) {
+        core.summary.addHeading('Failed Tests', 3);
+        const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
+        const rows = shown.map(t => [
+            t.suite,
+            t.name,
+            truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
+        ]);
+        core.summary.addTable([
+            [
+                { data: 'Suite', header: true },
+                { data: 'Test', header: true },
+                { data: 'Error', header: true },
+            ],
+            ...rows,
+        ]);
+        if (failedTests.length > MAX_FAILED_TESTS_SHOWN) {
+            core.summary.addRaw(`... and ${failedTests.length - MAX_FAILED_TESTS_SHOWN} more failed tests\n\n`);
+        }
+    }
+    if (!apiSuccess) {
+        core.summary.addRaw('> **Note:** API submission failed — dashboard data not updated.\n\n');
+    }
+    if (dashboardUrl) {
+        core.summary.addLink('View Dashboard', dashboardUrl);
+        core.summary.addRaw('\n');
+    }
+    await core.summary.write();
+}
+function formatDuration(seconds) {
+    if (seconds < 60)
+        return `${seconds.toFixed(1)}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs.toFixed(1)}s`;
+}
+function truncate(str, maxLen) {
+    if (str.length <= maxLen)
+        return str;
+    return str.slice(0, maxLen - 3) + '...';
+}
+function collectFailedTests(parsed) {
+    return parsed.suites.flatMap(suite => suite.tests.filter(t => t.status === 'failed' || t.status === 'errored'));
+}
 
 
 /***/ }),
