@@ -11,6 +11,7 @@ import {
   handleApiError,
   handleUnexpectedError,
 } from './utils/errors';
+import { generateSummary } from './output/summary';
 import type { ParsedTestRun } from './types';
 
 export async function run(): Promise<void> {
@@ -77,7 +78,13 @@ export async function run(): Promise<void> {
       handleApiError(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
     }
 
-    // Story 1.5 integration point: generateSummary(parsed, result)
+    await generateSummary({
+      parsed,
+      apiSuccess: result.success,
+      runId: result.runId,
+      healthScore: result.healthScore,
+      dashboardUrl: result.success ? `https://testglance.com/runs/${result.runId}` : undefined,
+    });
   } catch (err) {
     handleUnexpectedError(err instanceof Error ? err : new Error(String(err)));
   }

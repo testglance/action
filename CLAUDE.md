@@ -71,6 +71,7 @@ action.yml              # Action metadata (inputs, runtime)
 
 Both JUnit and CTRF parsers must output `ParsedTestRun` (defined in `src/types.ts`). This is the normalized structure sent to `POST /api/v1/runs`.
 
-## Upcoming Stories (do NOT implement yet)
+## Architecture — Summary Output
 
-- **Story 1.5:** CI log summary + Action packaging (`src/output/summary.ts`)
+- `src/output/summary.ts` — CI log summary generator using `@actions/core` summary API
+- `src/output/__tests__/summary.test.ts` — Unit tests for summary generator

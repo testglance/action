@@ -1,5 +1,6 @@
 name: 'TestGlance'
 description: 'Track test suite health over time. Parse JUnit XML or CTRF JSON and send to TestGlance.'
+author: 'TestGlance'
 inputs:
   report-path:
     description: 'Path to the test report file (JUnit XML or CTRF JSON)'
@@ -18,3 +19,7 @@ inputs:
 runs:
   using: 'node20'
   main: 'dist/index.js'
+
+branding:
+  icon: 'activity'
+  color: 'green'

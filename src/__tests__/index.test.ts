@@ -48,6 +48,11 @@ vi.mock('../utils/errors', () => ({
   handleUnexpectedError: vi.fn(),
 }));
 
+const mockGenerateSummary = vi.fn().mockResolvedValue(undefined);
+vi.mock('../output/summary', () => ({
+  generateSummary: (...args: unknown[]) => mockGenerateSummary(...args),
+}));
+
 import { run } from '../index';
 import * as errors from '../utils/errors';
 import type { ParsedTestRun } from '../types';
@@ -307,6 +312,50 @@ describe('run() integration', () => {
         (c: string[]) => c[0]?.includes('Health score'),
       );
       expect(healthCalls).toHaveLength(0);
+    });
+  });
+
+  describe('summary generation (Story 1.5)', () => {
+    it('calls generateSummary with correct args on API success', async () => {
+      await run();
+
+      expect(mockGenerateSummary).toHaveBeenCalledWith({
+        parsed: VALID_PARSED_RUN,
+        apiSuccess: true,
+        runId: 'run-1',
+        healthScore: 85,
+        dashboardUrl: 'https://testglance.com/runs/run-1',
+      });
+    });
+
+    it('calls generateSummary with apiSuccess=false on API failure', async () => {
+      mockSendTestRun.mockResolvedValue({
+        success: false,
+        errorCode: 'NETWORK_ERROR',
+        errorMessage: 'fetch failed',
+      });
+
+      await run();
+
+      expect(mockGenerateSummary).toHaveBeenCalledWith({
+        parsed: VALID_PARSED_RUN,
+        apiSuccess: false,
+        runId: undefined,
+        healthScore: undefined,
+        dashboardUrl: undefined,
+      });
+    });
+
+    it('does not call generateSummary when file not found', async () => {
+      mockExistsSync.mockReturnValue(false);
+      await run();
+      expect(mockGenerateSummary).not.toHaveBeenCalled();
+    });
+
+    it('does not call generateSummary when parse fails', async () => {
+      mockParseJunitXml.mockImplementation(() => { throw new Error('bad xml'); });
+      await run();
+      expect(mockGenerateSummary).not.toHaveBeenCalled();
     });
   });
 });
