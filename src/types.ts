@@ -10,6 +10,18 @@ export interface ParsedTestRun {
   suites: ParsedSuite[];
 }
 
+export interface ApiPayload extends ParsedTestRun {
+  repository: {
+    name: string;
+    id: number;
+  };
+  git: {
+    sha: string;
+    branch: string;
+  };
+  ciRunId: string;
+}
+
 export interface ParsedSuite {
   name: string;
   tests: ParsedTestCase[];
