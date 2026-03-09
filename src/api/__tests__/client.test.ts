@@ -7,6 +7,14 @@ vi.stubGlobal('fetch', mockFetch);
 const FAKE_API_URL = 'https://api.testglance.com';
 const FAKE_API_KEY = 'tg_test_key_123';
 
+const FAKE_ENV = {
+  GITHUB_REPOSITORY: 'testorg/my-repo',
+  GITHUB_REPOSITORY_ID: '987654321',
+  GITHUB_SHA: 'abc123def456',
+  GITHUB_REF_NAME: 'main',
+  GITHUB_RUN_ID: '1122334455',
+};
+
 const PARSED_RUN: ParsedTestRun = {
   summary: { total: 3, passed: 2, failed: 1, skipped: 0, errored: 0, duration: 1.5 },
   suites: [
@@ -47,6 +55,7 @@ let sendTestRun: typeof import('../client').sendTestRun;
 beforeEach(async () => {
   mockFetch.mockReset();
   vi.useFakeTimers();
+  Object.assign(process.env, FAKE_ENV);
   const mod = await import('../client');
   sendTestRun = mod.sendTestRun;
 });
@@ -114,13 +123,18 @@ describe('sendTestRun', () => {
       expect(callArgs.headers['Content-Type']).toBe('application/json');
     });
 
-    it('sends ParsedTestRun as JSON body', async () => {
+    it('sends payload with test run data and repository metadata', async () => {
       mockFetch.mockResolvedValueOnce(okResponse('run-1'));
 
       await runWithTimers(() => sendTestRun(FAKE_API_URL, FAKE_API_KEY, PARSED_RUN));
 
       const callArgs = mockFetch.mock.calls[0][1];
-      expect(JSON.parse(callArgs.body)).toEqual(PARSED_RUN);
+      const body = JSON.parse(callArgs.body);
+      expect(body.summary).toEqual(PARSED_RUN.summary);
+      expect(body.suites).toEqual(PARSED_RUN.suites);
+      expect(body.repository).toEqual({ name: 'testorg/my-repo', id: 987654321 });
+      expect(body.git).toEqual({ sha: 'abc123def456', branch: 'main' });
+      expect(body.ciRunId).toBe('1122334455');
     });
   });
 

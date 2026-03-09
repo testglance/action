@@ -1,4 +1,4 @@
-import type { ParsedTestRun } from '../types';
+import type { ApiPayload, ParsedTestRun } from '../types';
 
 const MAX_RETRIES = 3;
 const INITIAL_DELAY_MS = 1000;
@@ -22,11 +22,27 @@ export interface SendResult {
   errorMessage?: string;
 }
 
+function buildPayload(parsedRun: ParsedTestRun): ApiPayload {
+  return {
+    ...parsedRun,
+    repository: {
+      name: process.env.GITHUB_REPOSITORY ?? '',
+      id: Number(process.env.GITHUB_REPOSITORY_ID) || 0,
+    },
+    git: {
+      sha: process.env.GITHUB_SHA ?? '',
+      branch: process.env.GITHUB_REF_NAME ?? '',
+    },
+    ciRunId: process.env.GITHUB_RUN_ID ?? '',
+  };
+}
+
 export async function sendTestRun(
   apiUrl: string,
   apiKey: string,
   parsedRun: ParsedTestRun,
 ): Promise<SendResult> {
+  const payload = buildPayload(parsedRun);
   let lastError: string | undefined;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -41,7 +57,7 @@ export async function sendTestRun(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify(parsedRun),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
 
