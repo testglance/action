@@ -11,7 +11,7 @@ inputs:
   api-url:
     description: 'TestGlance API URL'
     required: false
-    default: 'https://api.testglance.com'
+    default: 'https://www.testglance.dev'
   report-format:
     description: "Report format: junit, ctrf, or auto (default: auto-detect from file extension)"
     required: false

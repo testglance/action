@@ -18,7 +18,7 @@ export async function run(): Promise<void> {
   try {
     const reportPath = core.getInput('report-path', { required: true });
     const apiKey = core.getInput('api-key', { required: true });
-    const apiUrl = core.getInput('api-url') || 'https://api.testglance.com';
+    const apiUrl = core.getInput('api-url') || 'https://www.testglance.dev';
     const reportFormat = core.getInput('report-format') || 'auto';
 
     if (!existsSync(reportPath)) {
