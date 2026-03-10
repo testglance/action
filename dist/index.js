@@ -28231,7 +28231,22 @@ const MAX_RETRIES = 3;
 const INITIAL_DELAY_MS = 1000;
 const REQUEST_TIMEOUT_MS = 10000;
 const NON_RETRYABLE_STATUS_CODES = [400, 401, 403];
+function buildPayload(parsedRun) {
+    return {
+        ...parsedRun,
+        repository: {
+            name: process.env.GITHUB_REPOSITORY ?? '',
+            id: Number(process.env.GITHUB_REPOSITORY_ID) || 0,
+        },
+        git: {
+            sha: process.env.GITHUB_SHA ?? '',
+            branch: process.env.GITHUB_REF_NAME ?? '',
+        },
+        ciRunId: process.env.GITHUB_RUN_ID ?? '',
+    };
+}
 async function sendTestRun(apiUrl, apiKey, parsedRun) {
+    const payload = buildPayload(parsedRun);
     let lastError;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         let timeout;
@@ -28244,7 +28259,7 @@ async function sendTestRun(apiUrl, apiKey, parsedRun) {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${apiKey}`,
                 },
-                body: JSON.stringify(parsedRun),
+                body: JSON.stringify(payload),
                 signal: controller.signal,
             });
             if (response.ok) {
