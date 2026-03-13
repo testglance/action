@@ -67,6 +67,11 @@ action.yml              # Action metadata (inputs, runtime)
 5. **`dist/` must be rebuilt and committed** after any source change (`pnpm build`).
 6. **Tests use real fixture files** from `fixtures/`. Large fixtures are generated at test time, not committed.
 
+## Release
+
+- After any source change: `pnpm build`, commit `dist/`, push, then `git tag -f v1 && git push origin v1 --force`
+- Action consumers reference `testglance/action@v1` — a floating major-version tag
+
 ## Parser Contract
 
 Both JUnit and CTRF parsers must output `ParsedTestRun` (defined in `src/types.ts`). This is the normalized structure sent to `POST /api/v1/runs`.
