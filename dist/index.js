@@ -28423,7 +28423,7 @@ async function run() {
             apiSuccess: result.success,
             runId: result.runId,
             healthScore: result.healthScore,
-            dashboardUrl: result.success ? `https://testglance.com/runs/${result.runId}` : undefined,
+            dashboardUrl: result.success ? `https://www.testglance.dev/runs/${result.runId}` : undefined,
         });
     }
     catch (err) {
