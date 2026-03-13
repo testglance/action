@@ -4,7 +4,7 @@ import type { ParsedTestRun } from '../../types';
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
-const FAKE_API_URL = 'https://api.testglance.com';
+const FAKE_API_URL = 'https://www.testglance.dev';
 const FAKE_API_KEY = 'tg_test_key_123';
 
 const FAKE_ENV = {
