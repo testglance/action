@@ -100,7 +100,7 @@ describe('run() integration', () => {
       expect(mockReadFileSync).toHaveBeenCalledWith('/path/to/report.xml', 'utf-8');
       expect(mockParseJunitXml).toHaveBeenCalled();
       expect(mockSendTestRun).toHaveBeenCalledWith(
-        'https://api.testglance.com',
+        'https://www.testglance.dev',
         'tg_key_123',
         VALID_PARSED_RUN,
       );
@@ -286,7 +286,7 @@ describe('run() integration', () => {
     it('uses default URL when api-url is empty', async () => {
       await run();
       expect(mockSendTestRun).toHaveBeenCalledWith(
-        'https://api.testglance.com',
+        'https://www.testglance.dev',
         expect.any(String),
         expect.any(Object),
       );
@@ -324,7 +324,7 @@ describe('run() integration', () => {
         apiSuccess: true,
         runId: 'run-1',
         healthScore: 85,
-        dashboardUrl: 'https://testglance.com/runs/run-1',
+        dashboardUrl: 'https://www.testglance.dev/runs/run-1',
       });
     });
 

@@ -21,7 +21,7 @@ That's it. Two lines, zero permissions required.
 |-------|----------|---------|-------------|
 | `report-path` | Yes | | Path to the test report file |
 | `api-key` | Yes | | TestGlance project API key |
-| `api-url` | No | `https://api.testglance.com` | TestGlance API URL |
+| `api-url` | No | `https://www.testglance.dev` | TestGlance API URL |
 | `report-format` | No | `auto` | Format: `junit`, `ctrf`, or `auto` (detect from extension) |
 
 ## Supported Formats
@@ -81,7 +81,7 @@ This Action **never fails your CI pipeline**. If anything goes wrong — file no
 
 ## Getting Started
 
-1. Sign up at [testglance.com](https://testglance.com)
+1. Sign up at [www.testglance.dev](https://www.testglance.dev)
 2. Create a project and connect your repository
 3. Copy your project API key
 4. Add it as a repository secret: `Settings > Secrets > TESTGLANCE_API_KEY`

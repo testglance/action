@@ -192,12 +192,12 @@ describe('generateSummary', () => {
     await generateSummary({
       parsed: makeParsed(),
       apiSuccess: true,
-      dashboardUrl: 'https://testglance.com/projects/my-project',
+      dashboardUrl: 'https://www.testglance.dev/projects/my-project',
     });
 
     expect(mockSummary.addLink).toHaveBeenCalledWith(
       'View Dashboard',
-      'https://testglance.com/projects/my-project',
+      'https://www.testglance.dev/projects/my-project',
     );
   });
 

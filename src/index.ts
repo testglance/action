@@ -83,7 +83,7 @@ export async function run(): Promise<void> {
       apiSuccess: result.success,
       runId: result.runId,
       healthScore: result.healthScore,
-      dashboardUrl: result.success ? `https://testglance.com/runs/${result.runId}` : undefined,
+      dashboardUrl: result.success ? `https://www.testglance.dev/runs/${result.runId}` : undefined,
     });
   } catch (err) {
     handleUnexpectedError(err instanceof Error ? err : new Error(String(err)));
