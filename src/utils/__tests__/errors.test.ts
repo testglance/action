@@ -21,14 +21,18 @@ describe('error handlers', () => {
   describe('handleFileNotFound', () => {
     it('calls core.warning with the file path', () => {
       handleFileNotFound('/path/to/report.xml');
-      expect(core.warning).toHaveBeenCalledWith('Test report file not found at /path/to/report.xml.');
+      expect(core.warning).toHaveBeenCalledWith(
+        'Test report file not found at /path/to/report.xml.',
+      );
     });
   });
 
   describe('handleParseError', () => {
     it('calls core.warning with format and error message', () => {
       handleParseError('JUnit XML', new Error('Invalid XML'));
-      expect(core.warning).toHaveBeenCalledWith('Failed to parse test report as JUnit XML: Invalid XML');
+      expect(core.warning).toHaveBeenCalledWith(
+        'Failed to parse test report as JUnit XML: Invalid XML',
+      );
     });
   });
 
@@ -44,7 +48,9 @@ describe('error handlers', () => {
   describe('handleApiError', () => {
     it('calls core.warning with error code and message', () => {
       handleApiError('UNAUTHORIZED', 'Invalid API key');
-      expect(core.warning).toHaveBeenCalledWith('TestGlance API error: UNAUTHORIZED - Invalid API key');
+      expect(core.warning).toHaveBeenCalledWith(
+        'TestGlance API error: UNAUTHORIZED - Invalid API key',
+      );
     });
   });
 

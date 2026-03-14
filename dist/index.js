@@ -28263,16 +28263,16 @@ async function sendTestRun(apiUrl, apiKey, parsedRun) {
                 signal: controller.signal,
             });
             if (response.ok) {
-                const body = await response.json().catch(() => ({}));
+                const body = (await response.json().catch(() => ({})));
                 return {
                     success: true,
                     runId: body.data?.runId,
                     healthScore: body.data?.healthScore,
                 };
             }
-            const errorBody = await response.json().catch(() => ({
+            const errorBody = (await response.json().catch(() => ({
                 error: { code: 'UNKNOWN', message: `HTTP ${response.status}` },
-            }));
+            })));
             const errorCode = errorBody.error?.code ?? 'UNKNOWN';
             const errorMessage = errorBody.error?.message ?? `HTTP ${response.status}`;
             lastError = `${errorCode} - ${errorMessage}`;
@@ -28484,12 +28484,13 @@ const MAX_ERROR_MESSAGE_LENGTH = 200;
 async function generateSummary(options) {
     const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount } = options;
     const { summary } = parsed;
-    const passRate = summary.total > 0
-        ? ((summary.passed / summary.total) * 100).toFixed(1)
-        : '0.0';
+    const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
     core.summary.addHeading('TestGlance Results', 2);
     core.summary.addTable([
-        [{ data: 'Metric', header: true }, { data: 'Value', header: true }],
+        [
+            { data: 'Metric', header: true },
+            { data: 'Value', header: true },
+        ],
         ['Total', String(summary.total)],
         ['Passed', String(summary.passed)],
         ['Failed', String(summary.failed)],
@@ -28511,7 +28512,7 @@ async function generateSummary(options) {
     if (failedTests.length > 0) {
         core.summary.addHeading('Failed Tests', 3);
         const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
-        const rows = shown.map(t => [
+        const rows = shown.map((t) => [
             t.suite,
             t.name,
             truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
@@ -28550,7 +28551,7 @@ function truncate(str, maxLen) {
     return str.slice(0, maxLen - 3) + '...';
 }
 function collectFailedTests(parsed) {
-    return parsed.suites.flatMap(suite => suite.tests.filter(t => t.status === 'failed' || t.status === 'errored'));
+    return parsed.suites.flatMap((suite) => suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'));
 }
 
 

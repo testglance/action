@@ -59,14 +59,16 @@ import type { ParsedTestRun } from '../types';
 
 const VALID_PARSED_RUN: ParsedTestRun = {
   summary: { total: 2, passed: 1, failed: 1, skipped: 0, errored: 0, duration: 1.0 },
-  suites: [{
-    name: 'suite1',
-    duration: 1.0,
-    tests: [
-      { name: 'test1', suite: 'suite1', status: 'passed', duration: 0.5 },
-      { name: 'test2', suite: 'suite1', status: 'failed', duration: 0.5, errorMessage: 'fail' },
-    ],
-  }],
+  suites: [
+    {
+      name: 'suite1',
+      duration: 1.0,
+      tests: [
+        { name: 'test1', suite: 'suite1', status: 'passed', duration: 0.5 },
+        { name: 'test2', suite: 'suite1', status: 'failed', duration: 0.5, errorMessage: 'fail' },
+      ],
+    },
+  ],
 };
 
 function setupInputs(overrides: Record<string, string> = {}) {
@@ -136,7 +138,9 @@ describe('run() integration', () => {
 
   describe('parse error (AC6)', () => {
     it('calls handleParseError for JUnit, never calls setFailed', async () => {
-      mockParseJunitXml.mockImplementation(() => { throw new Error('Invalid XML'); });
+      mockParseJunitXml.mockImplementation(() => {
+        throw new Error('Invalid XML');
+      });
 
       await run();
 
@@ -148,7 +152,9 @@ describe('run() integration', () => {
     it('calls handleParseError for CTRF, never calls setFailed', async () => {
       setupInputs({ 'report-path': '/path/to/report.json' });
       mockDetectFormat.mockReturnValue('ctrf');
-      mockParseCtrfJson.mockImplementation(() => { throw new Error('Invalid JSON'); });
+      mockParseCtrfJson.mockImplementation(() => {
+        throw new Error('Invalid JSON');
+      });
 
       await run();
 
@@ -189,7 +195,9 @@ describe('run() integration', () => {
 
   describe('unexpected exception (AC7)', () => {
     it('calls handleUnexpectedError, never calls setFailed', async () => {
-      mockExistsSync.mockImplementation(() => { throw new Error('Disk error'); });
+      mockExistsSync.mockImplementation(() => {
+        throw new Error('Disk error');
+      });
 
       await run();
 
@@ -222,7 +230,9 @@ describe('run() integration', () => {
     it('tries both parsers when auto-detect returns null', async () => {
       setupInputs({ 'report-path': '/path/to/report.dat' });
       mockDetectFormat.mockReturnValue(null);
-      mockParseJunitXml.mockImplementation(() => { throw new Error('not xml'); });
+      mockParseJunitXml.mockImplementation(() => {
+        throw new Error('not xml');
+      });
 
       await run();
 
@@ -264,7 +274,9 @@ describe('run() integration', () => {
     });
 
     it('is not called on parse error', async () => {
-      mockParseJunitXml.mockImplementation(() => { throw new Error('bad'); });
+      mockParseJunitXml.mockImplementation(() => {
+        throw new Error('bad');
+      });
       await run();
       expect(mockSetFailed).not.toHaveBeenCalled();
     });
@@ -276,7 +288,9 @@ describe('run() integration', () => {
     });
 
     it('is not called on unexpected exception', async () => {
-      mockExistsSync.mockImplementation(() => { throw new Error('boom'); });
+      mockExistsSync.mockImplementation(() => {
+        throw new Error('boom');
+      });
       await run();
       expect(mockSetFailed).not.toHaveBeenCalled();
     });
@@ -308,8 +322,8 @@ describe('run() integration', () => {
       mockSendTestRun.mockResolvedValue({ success: true, runId: 'run-1', healthScore: null });
       await run();
 
-      const healthCalls = mockInfo.mock.calls.filter(
-        (c: string[]) => c[0]?.includes('Health score'),
+      const healthCalls = mockInfo.mock.calls.filter((c: string[]) =>
+        c[0]?.includes('Health score'),
       );
       expect(healthCalls).toHaveLength(0);
     });
@@ -353,7 +367,9 @@ describe('run() integration', () => {
     });
 
     it('does not call generateSummary when parse fails', async () => {
-      mockParseJunitXml.mockImplementation(() => { throw new Error('bad xml'); });
+      mockParseJunitXml.mockImplementation(() => {
+        throw new Error('bad xml');
+      });
       await run();
       expect(mockGenerateSummary).not.toHaveBeenCalled();
     });

@@ -17,12 +17,12 @@ That's it. Two lines, zero permissions required.
 
 ## Inputs
 
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `report-path` | Yes | | Path to the test report file |
-| `api-key` | Yes | | TestGlance project API key |
-| `api-url` | No | `https://www.testglance.dev` | TestGlance API URL |
-| `report-format` | No | `auto` | Format: `junit`, `ctrf`, or `auto` (detect from extension) |
+| Input           | Required | Default                      | Description                                                |
+| --------------- | -------- | ---------------------------- | ---------------------------------------------------------- |
+| `report-path`   | Yes      |                              | Path to the test report file                               |
+| `api-key`       | Yes      |                              | TestGlance project API key                                 |
+| `api-url`       | No       | `https://www.testglance.dev` | TestGlance API URL                                         |
+| `report-format` | No       | `auto`                       | Format: `junit`, `ctrf`, or `auto` (detect from extension) |
 
 ## Supported Formats
 

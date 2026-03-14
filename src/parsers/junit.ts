@@ -8,8 +8,7 @@ const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
-  isArray: (tagName: string) =>
-    ['testsuite', 'testcase', 'property'].includes(tagName),
+  isArray: (tagName: string) => ['testsuite', 'testcase', 'property'].includes(tagName),
   trimValues: true,
 });
 
@@ -63,16 +62,11 @@ function extractTestCases(
   });
 }
 
-function flattenSuites(
-  suite: Record<string, unknown>,
-  parentName?: string,
-): ParsedSuite[] {
+function flattenSuites(suite: Record<string, unknown>, parentName?: string): ParsedSuite[] {
   const name = (suite['@_name'] as string) ?? parentName ?? 'unknown';
   const results: ParsedSuite[] = [];
 
-  const nestedSuites = suite['testsuite'] as
-    | Record<string, unknown>[]
-    | undefined;
+  const nestedSuites = suite['testsuite'] as Record<string, unknown>[] | undefined;
   const testcases = (suite['testcase'] as Record<string, unknown>[]) ?? [];
 
   if (testcases.length > 0) {
@@ -115,20 +109,14 @@ export function parseJunitXml(content: string): ParsedTestRun {
 
   const suites: ParsedSuite[] = [];
 
-  const testsuites = parsed['testsuites'] as
-    | Record<string, unknown>
-    | undefined;
-  const topSuite = parsed['testsuite'] as
-    | Record<string, unknown>[]
-    | undefined;
+  const testsuites = parsed['testsuites'] as Record<string, unknown> | undefined;
+  const topSuite = parsed['testsuite'] as Record<string, unknown>[] | undefined;
 
   let rootDuration: number | undefined;
 
   if (testsuites) {
     rootDuration = parseFloat(testsuites['@_time'] as string) || undefined;
-    const innerSuites = testsuites['testsuite'] as
-      | Record<string, unknown>[]
-      | undefined;
+    const innerSuites = testsuites['testsuite'] as Record<string, unknown>[] | undefined;
     if (innerSuites) {
       for (const s of innerSuites) {
         suites.push(...flattenSuites(s));

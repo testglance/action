@@ -15,7 +15,10 @@ vi.mock('@actions/core', () => ({
 
 import { generateSummary, formatDuration, truncate, collectFailedTests } from '../summary';
 
-function makeParsed(overrides: Partial<ParsedTestRun['summary']> = {}, suites: ParsedTestRun['suites'] = []): ParsedTestRun {
+function makeParsed(
+  overrides: Partial<ParsedTestRun['summary']> = {},
+  suites: ParsedTestRun['suites'] = [],
+): ParsedTestRun {
   return {
     summary: {
       total: 142,
@@ -40,7 +43,10 @@ describe('generateSummary', () => {
 
     expect(mockSummary.addHeading).toHaveBeenCalledWith('TestGlance Results', 2);
     expect(mockSummary.addTable).toHaveBeenCalledWith([
-      [{ data: 'Metric', header: true }, { data: 'Value', header: true }],
+      [
+        { data: 'Metric', header: true },
+        { data: 'Value', header: true },
+      ],
       ['Total', '142'],
       ['Passed', '138'],
       ['Failed', '3'],
@@ -80,8 +86,8 @@ describe('generateSummary', () => {
   it('does not show health score section when API failed', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: false });
 
-    const healthCalls = mockSummary.addRaw.mock.calls.filter(
-      (c: string[]) => c[0].includes('Health Score'),
+    const healthCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) =>
+      c[0].includes('Health Score'),
     );
     expect(healthCalls).toHaveLength(0);
   });
@@ -95,8 +101,8 @@ describe('generateSummary', () => {
   it('omits flaky section when count is 0', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true, flakyCount: 0 });
 
-    const flakyCalls = mockSummary.addRaw.mock.calls.filter(
-      (c: string[]) => c[0].includes('Flaky'),
+    const flakyCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) =>
+      c[0].includes('Flaky'),
     );
     expect(flakyCalls).toHaveLength(0);
   });
@@ -104,8 +110,8 @@ describe('generateSummary', () => {
   it('omits flaky section when count is undefined', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true });
 
-    const flakyCalls = mockSummary.addRaw.mock.calls.filter(
-      (c: string[]) => c[0].includes('Flaky'),
+    const flakyCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) =>
+      c[0].includes('Flaky'),
     );
     expect(flakyCalls).toHaveLength(0);
   });
@@ -116,7 +122,13 @@ describe('generateSummary', () => {
         name: 'auth.login',
         duration: 1.0,
         tests: [
-          { name: 'should reject expired token', suite: 'auth.login', status: 'failed', duration: 0.5, errorMessage: 'Expected 401 but received 200' },
+          {
+            name: 'should reject expired token',
+            suite: 'auth.login',
+            status: 'failed',
+            duration: 0.5,
+            errorMessage: 'Expected 401 but received 200',
+          },
           { name: 'should login ok', suite: 'auth.login', status: 'passed', duration: 0.3 },
         ],
       },
@@ -127,7 +139,11 @@ describe('generateSummary', () => {
     expect(mockSummary.addHeading).toHaveBeenCalledWith('Failed Tests', 3);
     const tableCall = mockSummary.addTable.mock.calls[1];
     expect(tableCall[0]).toEqual([
-      [{ data: 'Suite', header: true }, { data: 'Test', header: true }, { data: 'Error', header: true }],
+      [
+        { data: 'Suite', header: true },
+        { data: 'Test', header: true },
+        { data: 'Error', header: true },
+      ],
       ['auth.login', 'should reject expired token', 'Expected 401 but received 200'],
     ]);
   });
@@ -139,7 +155,13 @@ describe('generateSummary', () => {
         name: 'suite1',
         duration: 1.0,
         tests: [
-          { name: 'test1', suite: 'suite1', status: 'failed', duration: 0.1, errorMessage: longError },
+          {
+            name: 'test1',
+            suite: 'suite1',
+            status: 'failed',
+            duration: 0.1,
+            errorMessage: longError,
+          },
         ],
       },
     ]);
@@ -174,9 +196,7 @@ describe('generateSummary', () => {
       {
         name: 'suite1',
         duration: 1.0,
-        tests: [
-          { name: 'test1', suite: 'suite1', status: 'passed', duration: 0.1 },
-        ],
+        tests: [{ name: 'test1', suite: 'suite1', status: 'passed', duration: 0.1 }],
       },
     ]);
 
@@ -214,7 +234,10 @@ describe('generateSummary', () => {
   });
 
   it('handles 0 total tests with 0.0% pass rate', async () => {
-    await generateSummary({ parsed: makeParsed({ total: 0, passed: 0, failed: 0, skipped: 0, errored: 0 }), apiSuccess: true });
+    await generateSummary({
+      parsed: makeParsed({ total: 0, passed: 0, failed: 0, skipped: 0, errored: 0 }),
+      apiSuccess: true,
+    });
 
     const tableCall = mockSummary.addTable.mock.calls[0];
     const passRateRow = tableCall[0].find((row: string[]) => row[0] === 'Pass Rate');
@@ -226,9 +249,7 @@ describe('generateSummary', () => {
       {
         name: 'suite1',
         duration: 1.0,
-        tests: [
-          { name: 'test1', suite: 'suite1', status: 'failed', duration: 0.1 },
-        ],
+        tests: [{ name: 'test1', suite: 'suite1', status: 'failed', duration: 0.1 }],
       },
     ]);
 
@@ -307,9 +328,7 @@ describe('collectFailedTests', () => {
       {
         name: 'suite1',
         duration: 1.0,
-        tests: [
-          { name: 'pass1', suite: 'suite1', status: 'passed', duration: 0.1 },
-        ],
+        tests: [{ name: 'pass1', suite: 'suite1', status: 'passed', duration: 0.1 }],
       },
     ]);
 

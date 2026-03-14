@@ -4,11 +4,9 @@ import { join } from 'node:path';
 import { parseJunitXml } from '../junit';
 import type { ParsedTestRun } from '../../types';
 
-const fixture = (name: string) =>
-  readFileSync(join(__dirname, '../../../fixtures', name), 'utf-8');
+const fixture = (name: string) => readFileSync(join(__dirname, '../../../fixtures', name), 'utf-8');
 
-const fixtureRaw = (name: string) =>
-  readFileSync(join(__dirname, '../../../fixtures', name));
+const fixtureRaw = (name: string) => readFileSync(join(__dirname, '../../../fixtures', name));
 
 describe('parseJunitXml', () => {
   describe('basic parsing (junit-basic.xml)', () => {
@@ -55,17 +53,13 @@ describe('parseJunitXml', () => {
     });
 
     it('extracts error messages from failure elements', () => {
-      const failed = result.suites[0].tests.find(
-        (t) => t.status === 'failed',
-      );
+      const failed = result.suites[0].tests.find((t) => t.status === 'failed');
       expect(failed?.errorMessage).toBe('Expected 401 but got 200');
       expect(failed?.errorType).toBe('AssertionError');
     });
 
     it('extracts error messages from error elements', () => {
-      const errored = result.suites[0].tests.find(
-        (t) => t.status === 'errored',
-      );
+      const errored = result.suites[0].tests.find((t) => t.status === 'errored');
       expect(errored?.errorMessage).toBe('Connection timeout');
       expect(errored?.errorType).toBe('TimeoutError');
     });
@@ -147,9 +141,7 @@ describe('parseJunitXml', () => {
 
     it('handles XML entities', () => {
       const result = parseJunitXml(fixture('junit-encoding.xml'));
-      const entityTest = result.suites[0].tests.find((t) =>
-        t.name.includes('XML entities'),
-      );
+      const entityTest = result.suites[0].tests.find((t) => t.name.includes('XML entities'));
       expect(entityTest).toBeDefined();
       expect(entityTest!.name).toContain('&');
       expect(entityTest!.name).toContain('<');
@@ -157,9 +149,7 @@ describe('parseJunitXml', () => {
 
     it('handles emoji in test names', () => {
       const result = parseJunitXml(fixture('junit-encoding.xml'));
-      const emojiTest = result.suites[0].tests.find((t) =>
-        t.name.includes('emoji'),
-      );
+      const emojiTest = result.suites[0].tests.find((t) => t.name.includes('emoji'));
       expect(emojiTest).toBeDefined();
     });
   });
