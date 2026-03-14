@@ -16,14 +16,15 @@ const MAX_ERROR_MESSAGE_LENGTH = 200;
 export async function generateSummary(options: SummaryOptions): Promise<void> {
   const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount } = options;
   const { summary } = parsed;
-  const passRate = summary.total > 0
-    ? ((summary.passed / summary.total) * 100).toFixed(1)
-    : '0.0';
+  const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
 
   core.summary.addHeading('TestGlance Results', 2);
 
   core.summary.addTable([
-    [{ data: 'Metric', header: true }, { data: 'Value', header: true }],
+    [
+      { data: 'Metric', header: true },
+      { data: 'Value', header: true },
+    ],
     ['Total', String(summary.total)],
     ['Passed', String(summary.passed)],
     ['Failed', String(summary.failed)],
@@ -47,7 +48,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   if (failedTests.length > 0) {
     core.summary.addHeading('Failed Tests', 3);
     const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
-    const rows = shown.map(t => [
+    const rows = shown.map((t) => [
       t.suite,
       t.name,
       truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
@@ -68,9 +69,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   }
 
   if (!apiSuccess) {
-    core.summary.addRaw(
-      '> **Note:** API submission failed — dashboard data not updated.\n\n',
-    );
+    core.summary.addRaw('> **Note:** API submission failed — dashboard data not updated.\n\n');
   }
 
   if (dashboardUrl) {
@@ -94,7 +93,7 @@ export function truncate(str: string, maxLen: number): string {
 }
 
 export function collectFailedTests(parsed: ParsedTestRun): ParsedTestCase[] {
-  return parsed.suites.flatMap(suite =>
-    suite.tests.filter(t => t.status === 'failed' || t.status === 'errored'),
+  return parsed.suites.flatMap((suite) =>
+    suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'),
   );
 }

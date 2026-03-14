@@ -1,0 +1,6 @@
+dist/
+coverage/
+node_modules/
+fixtures/
+pnpm-lock.yaml
+licenses.txt

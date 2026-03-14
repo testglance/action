@@ -13,7 +13,7 @@ inputs:
     required: false
     default: 'https://www.testglance.dev'
   report-format:
-    description: "Report format: junit, ctrf, or auto (default: auto-detect from file extension)"
+    description: 'Report format: junit, ctrf, or auto (default: auto-detect from file extension)'
     required: false
     default: 'auto'
 runs:

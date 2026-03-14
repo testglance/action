@@ -31,17 +31,17 @@ const PARSED_RUN: ParsedTestRun = {
 };
 
 function okResponse(runId: string, healthScore: number | null = null) {
-  return new Response(
-    JSON.stringify({ data: { runId, healthScore } }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } },
-  );
+  return new Response(JSON.stringify({ data: { runId, healthScore } }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 function errorResponse(status: number, code: string, message: string) {
-  return new Response(
-    JSON.stringify({ error: { code, message } }),
-    { status, headers: { 'Content-Type': 'application/json' } },
-  );
+  return new Response(JSON.stringify({ error: { code, message } }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 // Mock the sleep function to resolve immediately
@@ -61,9 +61,7 @@ beforeEach(async () => {
 });
 
 // Helper: run sendTestRun while advancing fake timers to resolve sleep() calls
-async function runWithTimers(
-  fn: () => Promise<unknown>,
-): Promise<unknown> {
+async function runWithTimers(fn: () => Promise<unknown>): Promise<unknown> {
   const promise = fn();
   // Advance timers repeatedly to resolve any pending sleep() calls
   for (let i = 0; i < 10; i++) {

@@ -18,6 +18,10 @@ pnpm test          # run tests
 pnpm test:watch    # run tests in watch mode
 pnpm build         # compile to dist/index.js
 pnpm lint          # eslint
+pnpm lint:fix      # eslint --fix
+pnpm format        # prettier --write
+pnpm format:check  # prettier --check
+pnpm typecheck     # tsc --noEmit
 ```
 
 ## Architecture

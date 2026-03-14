@@ -5,8 +5,7 @@ import { parseCtrfJson } from '../ctrf';
 import { ParseError } from '../../utils/errors';
 import type { ParsedTestRun } from '../../types';
 
-const fixture = (name: string) =>
-  readFileSync(join(__dirname, '../../../fixtures', name), 'utf-8');
+const fixture = (name: string) => readFileSync(join(__dirname, '../../../fixtures', name), 'utf-8');
 
 describe('parseCtrfJson', () => {
   describe('basic parsing (ctrf-basic.json)', () => {
@@ -262,9 +261,7 @@ describe('parseCtrfJson', () => {
 
   describe('invalid JSON handling (ctrf-malformed.json)', () => {
     it('throws a descriptive ParseError', () => {
-      expect(() => parseCtrfJson(fixture('ctrf-malformed.json'))).toThrowError(
-        /Invalid JSON/,
-      );
+      expect(() => parseCtrfJson(fixture('ctrf-malformed.json'))).toThrowError(/Invalid JSON/);
     });
 
     it('throws ParseError (not an unhandled exception)', () => {

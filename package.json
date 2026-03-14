@@ -4,20 +4,41 @@
   "private": true,
   "description": "TestGlance GitHub Action - Track test suite health over time",
   "main": "dist/index.js",
+  "packageManager": "pnpm@10.28.2",
   "scripts": {
     "build": "ncc build src/index.ts --out dist --source-map --license licenses.txt",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css,mjs,js,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
     "fast-xml-parser": "^4.5.1"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.4.4",
+    "@commitlint/config-conventional": "^20.4.4",
     "@types/node": "^20.17.19",
     "@vercel/ncc": "^0.38.3",
     "eslint": "^9.21.0",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.1",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.25.0",
     "vitest": "^3.0.7"
@@ -26,6 +47,8 @@
     "node": ">=20"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }
