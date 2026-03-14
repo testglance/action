@@ -131,5 +131,6 @@ export function parseCtrfJson(content: string): ParsedTestRun {
       duration: totalDuration,
     },
     suites,
+    toolName,
   };
 }

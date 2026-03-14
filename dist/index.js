@@ -28226,27 +28226,41 @@ module.exports = {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.buildPayload = buildPayload;
 exports.sendTestRun = sendTestRun;
 const MAX_RETRIES = 3;
 const INITIAL_DELAY_MS = 1000;
 const REQUEST_TIMEOUT_MS = 10000;
 const NON_RETRYABLE_STATUS_CODES = [400, 401, 403];
-function buildPayload(parsedRun) {
+function buildPayload(parsedRun, metaFields) {
+    const meta = {
+        workflow: process.env.GITHUB_WORKFLOW ?? '',
+        job: process.env.GITHUB_JOB ?? '',
+    };
+    if (metaFields?.framework) {
+        meta.framework = metaFields.framework;
+    }
+    if (metaFields?.testJobName) {
+        meta.testJobName = metaFields.testJobName;
+    }
     return {
-        ...parsedRun,
-        repository: {
-            name: process.env.GITHUB_REPOSITORY ?? '',
-            id: Number(process.env.GITHUB_REPOSITORY_ID) || 0,
+        meta,
+        results: {
+            ...parsedRun,
+            repository: {
+                name: process.env.GITHUB_REPOSITORY ?? '',
+                id: Number(process.env.GITHUB_REPOSITORY_ID) || 0,
+            },
+            git: {
+                sha: process.env.GITHUB_SHA ?? '',
+                branch: process.env.GITHUB_REF_NAME ?? '',
+            },
+            ciRunId: process.env.GITHUB_RUN_ID ?? '',
         },
-        git: {
-            sha: process.env.GITHUB_SHA ?? '',
-            branch: process.env.GITHUB_REF_NAME ?? '',
-        },
-        ciRunId: process.env.GITHUB_RUN_ID ?? '',
     };
 }
-async function sendTestRun(apiUrl, apiKey, parsedRun) {
-    const payload = buildPayload(parsedRun);
+async function sendTestRun(apiUrl, apiKey, parsedRun, metaFields) {
+    const payload = buildPayload(parsedRun, metaFields);
     let lastError;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         let timeout;
@@ -28354,6 +28368,7 @@ const junit_1 = __nccwpck_require__(2245);
 const ctrf_1 = __nccwpck_require__(9102);
 const client_1 = __nccwpck_require__(7246);
 const detect_format_1 = __nccwpck_require__(4469);
+const detect_framework_1 = __nccwpck_require__(6039);
 const errors_1 = __nccwpck_require__(7673);
 const summary_1 = __nccwpck_require__(5942);
 async function run() {
@@ -28362,6 +28377,7 @@ async function run() {
         const apiKey = core.getInput('api-key', { required: true });
         const apiUrl = core.getInput('api-url') || 'https://www.testglance.dev';
         const reportFormat = core.getInput('report-format') || 'auto';
+        const testJobName = core.getInput('test-job-name') || '';
         if (!(0, node_fs_1.existsSync)(reportPath)) {
             (0, errors_1.handleFileNotFound)(reportPath);
             return;
@@ -28388,7 +28404,6 @@ async function run() {
             }
         }
         else {
-            // Auto-detect returned null (unknown extension) — try both parsers
             try {
                 parsed = (0, junit_1.parseJunitXml)(content);
             }
@@ -28405,7 +28420,11 @@ async function run() {
         if (!parsed)
             return;
         core.info(`Parsed ${parsed.summary.total} tests: ${parsed.summary.passed} passed, ${parsed.summary.failed} failed, ${parsed.summary.skipped} skipped, ${parsed.summary.errored} errored`);
-        const result = await (0, client_1.sendTestRun)(apiUrl, apiKey, parsed);
+        const framework = (0, detect_framework_1.detectFramework)(reportPath, format === 'junit' || format === 'ctrf' ? format : null, parsed.toolName);
+        const result = await (0, client_1.sendTestRun)(apiUrl, apiKey, parsed, {
+            framework,
+            testJobName: testJobName || undefined,
+        });
         if (result.success) {
             core.info(`TestGlance: Test run submitted successfully (${result.runId})`);
             if (result.healthScore !== null && result.healthScore !== undefined) {
@@ -28658,6 +28677,7 @@ function parseCtrfJson(content) {
             duration: totalDuration,
         },
         suites,
+        toolName,
     };
 }
 
@@ -28807,6 +28827,34 @@ function detectFormat(filePath) {
     if (ext === 'json')
         return 'ctrf';
     return null;
+}
+
+
+/***/ }),
+
+/***/ 6039:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.detectFramework = detectFramework;
+const PATH_HEURISTICS = [
+    [/vitest/i, 'vitest'],
+    [/jest/i, 'jest'],
+    [/pytest/i, 'pytest'],
+    [/surefire/i, 'maven-surefire'],
+];
+function detectFramework(reportPath, format, ctrfToolName) {
+    if (format === 'ctrf' && ctrfToolName) {
+        return ctrfToolName;
+    }
+    for (const [pattern, framework] of PATH_HEURISTICS) {
+        if (pattern.test(reportPath)) {
+            return framework;
+        }
+    }
+    return undefined;
 }
 
 

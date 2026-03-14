@@ -13,6 +13,8 @@ const FAKE_ENV = {
   GITHUB_SHA: 'abc123def456',
   GITHUB_REF_NAME: 'main',
   GITHUB_RUN_ID: '1122334455',
+  GITHUB_WORKFLOW: 'CI',
+  GITHUB_JOB: 'test',
 };
 
 const PARSED_RUN: ParsedTestRun = {
@@ -51,6 +53,7 @@ vi.mock('../client', async (importOriginal) => {
 });
 
 let sendTestRun: typeof import('../client').sendTestRun;
+let buildPayload: typeof import('../client').buildPayload;
 
 beforeEach(async () => {
   mockFetch.mockReset();
@@ -58,6 +61,7 @@ beforeEach(async () => {
   Object.assign(process.env, FAKE_ENV);
   const mod = await import('../client');
   sendTestRun = mod.sendTestRun;
+  buildPayload = mod.buildPayload;
 });
 
 // Helper: run sendTestRun while advancing fake timers to resolve sleep() calls
@@ -121,18 +125,19 @@ describe('sendTestRun', () => {
       expect(callArgs.headers['Content-Type']).toBe('application/json');
     });
 
-    it('sends payload with test run data and repository metadata', async () => {
+    it('sends payload with envelope structure containing meta and results', async () => {
       mockFetch.mockResolvedValueOnce(okResponse('run-1'));
 
       await runWithTimers(() => sendTestRun(FAKE_API_URL, FAKE_API_KEY, PARSED_RUN));
 
       const callArgs = mockFetch.mock.calls[0][1];
       const body = JSON.parse(callArgs.body);
-      expect(body.summary).toEqual(PARSED_RUN.summary);
-      expect(body.suites).toEqual(PARSED_RUN.suites);
-      expect(body.repository).toEqual({ name: 'testorg/my-repo', id: 987654321 });
-      expect(body.git).toEqual({ sha: 'abc123def456', branch: 'main' });
-      expect(body.ciRunId).toBe('1122334455');
+      expect(body.meta).toEqual({ workflow: 'CI', job: 'test' });
+      expect(body.results.summary).toEqual(PARSED_RUN.summary);
+      expect(body.results.suites).toEqual(PARSED_RUN.suites);
+      expect(body.results.repository).toEqual({ name: 'testorg/my-repo', id: 987654321 });
+      expect(body.results.git).toEqual({ sha: 'abc123def456', branch: 'main' });
+      expect(body.results.ciRunId).toBe('1122334455');
     });
   });
 
@@ -290,5 +295,65 @@ describe('sendTestRun', () => {
 
       expect(result).toMatchObject({ success: false, errorCode: 'UNKNOWN' });
     });
+  });
+});
+
+describe('buildPayload', () => {
+  it('produces envelope structure with meta and results', () => {
+    const payload = buildPayload(PARSED_RUN);
+    expect(payload).toHaveProperty('meta');
+    expect(payload).toHaveProperty('results');
+    expect(payload.meta.workflow).toBe('CI');
+    expect(payload.meta.job).toBe('test');
+  });
+
+  it('reads GITHUB_WORKFLOW and GITHUB_JOB env vars', () => {
+    process.env.GITHUB_WORKFLOW = 'Deploy';
+    process.env.GITHUB_JOB = 'build-and-test';
+    const payload = buildPayload(PARSED_RUN);
+    expect(payload.meta.workflow).toBe('Deploy');
+    expect(payload.meta.job).toBe('build-and-test');
+  });
+
+  it('falls back to empty string when env vars are not set', () => {
+    delete process.env.GITHUB_WORKFLOW;
+    delete process.env.GITHUB_JOB;
+    const payload = buildPayload(PARSED_RUN);
+    expect(payload.meta.workflow).toBe('');
+    expect(payload.meta.job).toBe('');
+  });
+
+  it('includes meta.framework when provided', () => {
+    const payload = buildPayload(PARSED_RUN, { framework: 'vitest' });
+    expect(payload.meta.framework).toBe('vitest');
+  });
+
+  it('includes meta.testJobName when provided', () => {
+    const payload = buildPayload(PARSED_RUN, { testJobName: 'Unit Tests' });
+    expect(payload.meta.testJobName).toBe('Unit Tests');
+  });
+
+  it('omits meta.framework when undefined', () => {
+    const payload = buildPayload(PARSED_RUN, { framework: undefined });
+    expect(payload.meta).not.toHaveProperty('framework');
+  });
+
+  it('omits meta.testJobName when empty string', () => {
+    const payload = buildPayload(PARSED_RUN, { testJobName: '' });
+    expect(payload.meta).not.toHaveProperty('testJobName');
+  });
+
+  it('omits meta.testJobName when undefined', () => {
+    const payload = buildPayload(PARSED_RUN);
+    expect(payload.meta).not.toHaveProperty('testJobName');
+  });
+
+  it('nests test data under results with repository metadata', () => {
+    const payload = buildPayload(PARSED_RUN);
+    expect(payload.results.summary).toEqual(PARSED_RUN.summary);
+    expect(payload.results.suites).toEqual(PARSED_RUN.suites);
+    expect(payload.results.repository).toEqual({ name: 'testorg/my-repo', id: 987654321 });
+    expect(payload.results.git).toEqual({ sha: 'abc123def456', branch: 'main' });
+    expect(payload.results.ciRunId).toBe('1122334455');
   });
 });
