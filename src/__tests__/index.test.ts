@@ -40,6 +40,11 @@ vi.mock('../utils/detect-format', () => ({
   detectFormat: (...args: unknown[]) => mockDetectFormat(...args),
 }));
 
+const mockDetectFramework = vi.fn();
+vi.mock('../utils/detect-framework', () => ({
+  detectFramework: (...args: unknown[]) => mockDetectFramework(...args),
+}));
+
 vi.mock('../utils/errors', () => ({
   handleFileNotFound: vi.fn(),
   handleParseError: vi.fn(),
@@ -77,6 +82,7 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'api-key': 'tg_key_123',
     'api-url': '',
     'report-format': '',
+    'test-job-name': '',
   };
   const inputs = { ...defaults, ...overrides };
   mockGetInput.mockImplementation((name: string) => inputs[name] ?? '');
@@ -105,6 +111,7 @@ describe('run() integration', () => {
         'https://www.testglance.dev',
         'tg_key_123',
         VALID_PARSED_RUN,
+        { framework: undefined, testJobName: undefined },
       );
       expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('submitted successfully'));
       expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('Health score: 85'));
@@ -303,6 +310,7 @@ describe('run() integration', () => {
         'https://www.testglance.dev',
         expect.any(String),
         expect.any(Object),
+        expect.any(Object),
       );
     });
 
@@ -312,6 +320,7 @@ describe('run() integration', () => {
       expect(mockSendTestRun).toHaveBeenCalledWith(
         'https://custom.api.com',
         expect.any(String),
+        expect.any(Object),
         expect.any(Object),
       );
     });
@@ -372,6 +381,97 @@ describe('run() integration', () => {
       });
       await run();
       expect(mockGenerateSummary).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('metadata envelope (Story 1.6)', () => {
+    it('passes test-job-name input through to sendTestRun metaFields', async () => {
+      setupInputs({ 'test-job-name': 'Unit Tests' });
+      await run();
+
+      expect(mockSendTestRun).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.any(Object),
+        expect.objectContaining({ testJobName: 'Unit Tests' }),
+      );
+    });
+
+    it('passes undefined testJobName when test-job-name is empty', async () => {
+      setupInputs({ 'test-job-name': '' });
+      await run();
+
+      expect(mockSendTestRun).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.any(Object),
+        expect.objectContaining({ testJobName: undefined }),
+      );
+    });
+
+    it('calls detectFramework with report path and format for CTRF', async () => {
+      setupInputs({ 'report-path': '/path/to/report.json' });
+      mockDetectFormat.mockReturnValue('ctrf');
+      const parsedWithTool = { ...VALID_PARSED_RUN, toolName: 'vitest' };
+      mockParseCtrfJson.mockReturnValue(parsedWithTool);
+
+      await run();
+
+      expect(mockDetectFramework).toHaveBeenCalledWith('/path/to/report.json', 'ctrf', 'vitest');
+    });
+
+    it('calls detectFramework with report path and format for JUnit', async () => {
+      setupInputs({ 'report-path': '/path/to/vitest-report/results.xml' });
+      mockDetectFormat.mockReturnValue('junit');
+
+      await run();
+
+      expect(mockDetectFramework).toHaveBeenCalledWith(
+        '/path/to/vitest-report/results.xml',
+        'junit',
+        undefined,
+      );
+    });
+
+    it('passes detected framework to sendTestRun', async () => {
+      mockDetectFramework.mockReturnValue('vitest');
+
+      await run();
+
+      expect(mockSendTestRun).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.any(Object),
+        expect.objectContaining({ framework: 'vitest' }),
+      );
+    });
+
+    it('passes undefined framework when detection returns undefined', async () => {
+      mockDetectFramework.mockReturnValue(undefined);
+
+      await run();
+
+      expect(mockSendTestRun).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.any(Object),
+        expect.objectContaining({ framework: undefined }),
+      );
+    });
+
+    it('passes CTRF toolName through to detectFramework', async () => {
+      setupInputs({ 'report-path': '/path/to/report.json' });
+      mockDetectFormat.mockReturnValue('ctrf');
+      const parsedWithTool = { ...VALID_PARSED_RUN, toolName: 'playwright' };
+      mockParseCtrfJson.mockReturnValue(parsedWithTool);
+
+      await run();
+
+      expect(mockDetectFramework).toHaveBeenCalledWith(
+        '/path/to/report.json',
+        'ctrf',
+        'playwright',
+      );
     });
   });
 });
