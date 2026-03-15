@@ -1,4 +1,4 @@
-import type { ApiPayload, ParsedTestRun } from '../types';
+import type { ApiPayload, MetaEnvelope, ParsedTestRun } from '../types';
 
 const MAX_RETRIES = 3;
 const INITIAL_DELAY_MS = 1000;
@@ -22,18 +22,39 @@ export interface SendResult {
   errorMessage?: string;
 }
 
-function buildPayload(parsedRun: ParsedTestRun): ApiPayload {
+export interface MetaFields {
+  framework?: string;
+  testJobName?: string;
+}
+
+export function buildPayload(parsedRun: ParsedTestRun, metaFields?: MetaFields): ApiPayload {
+  const meta: MetaEnvelope = {
+    workflow: process.env.GITHUB_WORKFLOW ?? '',
+    job: process.env.GITHUB_JOB ?? '',
+  };
+
+  if (metaFields?.framework) {
+    meta.framework = metaFields.framework;
+  }
+
+  if (metaFields?.testJobName) {
+    meta.testJobName = metaFields.testJobName;
+  }
+
   return {
-    ...parsedRun,
-    repository: {
-      name: process.env.GITHUB_REPOSITORY ?? '',
-      id: Number(process.env.GITHUB_REPOSITORY_ID) || 0,
+    meta,
+    results: {
+      ...parsedRun,
+      repository: {
+        name: process.env.GITHUB_REPOSITORY ?? '',
+        id: Number(process.env.GITHUB_REPOSITORY_ID) || 0,
+      },
+      git: {
+        sha: process.env.GITHUB_SHA ?? '',
+        branch: process.env.GITHUB_REF_NAME ?? '',
+      },
+      ciRunId: process.env.GITHUB_RUN_ID ?? '',
     },
-    git: {
-      sha: process.env.GITHUB_SHA ?? '',
-      branch: process.env.GITHUB_REF_NAME ?? '',
-    },
-    ciRunId: process.env.GITHUB_RUN_ID ?? '',
   };
 }
 
@@ -41,8 +62,9 @@ export async function sendTestRun(
   apiUrl: string,
   apiKey: string,
   parsedRun: ParsedTestRun,
+  metaFields?: MetaFields,
 ): Promise<SendResult> {
-  const payload = buildPayload(parsedRun);
+  const payload = buildPayload(parsedRun, metaFields);
   let lastError: string | undefined;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {

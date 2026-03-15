@@ -16,6 +16,10 @@ inputs:
     description: 'Report format: junit, ctrf, or auto (default: auto-detect from file extension)'
     required: false
     default: 'auto'
+  test-job-name:
+    description: 'Override the display name for this test job in TestGlance'
+    required: false
+    default: ''
 runs:
   using: 'node20'
   main: 'dist/index.js'

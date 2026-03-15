@@ -8,18 +8,23 @@ export interface ParsedTestRun {
     duration: number;
   };
   suites: ParsedSuite[];
+  toolName?: string;
 }
 
-export interface ApiPayload extends ParsedTestRun {
-  repository: {
-    name: string;
-    id: number;
+export interface MetaEnvelope {
+  workflow: string;
+  job: string;
+  framework?: string;
+  testJobName?: string;
+}
+
+export interface ApiPayload {
+  meta: MetaEnvelope;
+  results: ParsedTestRun & {
+    repository: { name: string; id: number };
+    git: { sha: string; branch: string };
+    ciRunId: string;
   };
-  git: {
-    sha: string;
-    branch: string;
-  };
-  ciRunId: string;
 }
 
 export interface ParsedSuite {

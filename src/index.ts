@@ -4,6 +4,7 @@ import { parseJunitXml } from './parsers/junit';
 import { parseCtrfJson } from './parsers/ctrf';
 import { sendTestRun } from './api/client';
 import { detectFormat } from './utils/detect-format';
+import { detectFramework } from './utils/detect-framework';
 import {
   handleFileNotFound,
   handleParseError,
@@ -20,6 +21,7 @@ export async function run(): Promise<void> {
     const apiKey = core.getInput('api-key', { required: true });
     const apiUrl = core.getInput('api-url') || 'https://www.testglance.dev';
     const reportFormat = core.getInput('report-format') || 'auto';
+    const testJobName = core.getInput('test-job-name') || '';
 
     if (!existsSync(reportPath)) {
       handleFileNotFound(reportPath);
@@ -46,7 +48,6 @@ export async function run(): Promise<void> {
         return;
       }
     } else {
-      // Auto-detect returned null (unknown extension) — try both parsers
       try {
         parsed = parseJunitXml(content);
       } catch {
@@ -65,7 +66,16 @@ export async function run(): Promise<void> {
       `Parsed ${parsed.summary.total} tests: ${parsed.summary.passed} passed, ${parsed.summary.failed} failed, ${parsed.summary.skipped} skipped, ${parsed.summary.errored} errored`,
     );
 
-    const result = await sendTestRun(apiUrl, apiKey, parsed);
+    const framework = detectFramework(
+      reportPath,
+      format === 'junit' || format === 'ctrf' ? format : null,
+      parsed.toolName,
+    );
+
+    const result = await sendTestRun(apiUrl, apiKey, parsed, {
+      framework,
+      testJobName: testJobName || undefined,
+    });
 
     if (result.success) {
       core.info(`TestGlance: Test run submitted successfully (${result.runId})`);
