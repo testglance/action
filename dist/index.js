@@ -28282,6 +28282,7 @@ async function sendTestRun(apiUrl, apiKey, parsedRun, metaFields) {
                     success: true,
                     runId: body.data?.runId,
                     healthScore: body.data?.healthScore,
+                    highlights: body.data?.highlights ?? [],
                 };
             }
             const errorBody = (await response.json().catch(() => ({
@@ -28437,12 +28438,16 @@ async function run() {
         else {
             (0, errors_1.handleApiError)(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
         }
+        const dashboardUrl = result.success
+            ? `https://www.testglance.dev/runs/${result.runId}`
+            : undefined;
         await (0, summary_1.generateSummary)({
             parsed,
             apiSuccess: result.success,
             runId: result.runId,
             healthScore: result.healthScore,
-            dashboardUrl: result.success ? `https://www.testglance.dev/runs/${result.runId}` : undefined,
+            dashboardUrl,
+            highlights: result.highlights ?? [],
         });
     }
     catch (err) {
@@ -28497,11 +28502,12 @@ exports.generateSummary = generateSummary;
 exports.formatDuration = formatDuration;
 exports.truncate = truncate;
 exports.collectFailedTests = collectFailedTests;
+exports.renderHighlights = renderHighlights;
 const core = __importStar(__nccwpck_require__(6966));
 const MAX_FAILED_TESTS_SHOWN = 10;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount } = options;
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights } = options;
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
     core.summary.addHeading('TestGlance Results', 2);
@@ -28526,6 +28532,9 @@ async function generateSummary(options) {
     }
     if (flakyCount && flakyCount > 0) {
         core.summary.addRaw(`**Flaky tests detected:** ${flakyCount}\n\n`);
+    }
+    if (highlights && highlights.length > 0) {
+        core.summary.addRaw(renderHighlights(highlights, dashboardUrl));
     }
     const failedTests = collectFailedTests(parsed);
     if (failedTests.length > 0) {
@@ -28571,6 +28580,68 @@ function truncate(str, maxLen) {
 }
 function collectFailedTests(parsed) {
     return parsed.suites.flatMap((suite) => suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'));
+}
+const MAX_HIGHLIGHTS_SHOWN = 3;
+const MAX_TEST_NAMES_SHOWN = 3;
+const SEVERITY_EMOJI = {
+    critical: '🔴',
+    warning: '🟡',
+    info: '🔵',
+};
+const SEVERITY_ORDER = {
+    critical: 0,
+    warning: 1,
+    info: 2,
+};
+function renderHighlights(highlights, dashboardUrl) {
+    const sorted = [...highlights].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+    const shown = sorted.slice(0, MAX_HIGHLIGHTS_SHOWN);
+    const lines = ['### Highlights\n\n'];
+    for (const h of shown) {
+        lines.push(`${SEVERITY_EMOJI[h.severity]} ${renderHighlightMessage(h)}\n\n`);
+    }
+    if (sorted.length > MAX_HIGHLIGHTS_SHOWN && dashboardUrl) {
+        lines.push(`**[View all highlights on dashboard →](${dashboardUrl})**\n\n`);
+    }
+    return lines.join('');
+}
+function renderHighlightMessage(h) {
+    const data = h.data;
+    switch (h.type) {
+        case 'new_failures': {
+            const tests = data.tests ?? [];
+            const names = tests.slice(0, MAX_TEST_NAMES_SHOWN).map((t) => t.name);
+            const suffix = tests.length > MAX_TEST_NAMES_SHOWN ? `, +${tests.length - MAX_TEST_NAMES_SHOWN} more` : '';
+            return `**NEW FAILURES:** ${names.join(', ')}${suffix}`;
+        }
+        case 'health_score_delta': {
+            const prev = data.previous;
+            const current = data.current;
+            const direction = data.direction;
+            const arrow = direction === 'down' ? '▼' : direction === 'up' ? '▲' : '';
+            return `**Health Score:** ${prev ?? '?'} → ${current ?? '?'} ${arrow}`;
+        }
+        case 'duration_delta': {
+            const currentDuration = data.currentDuration;
+            const deltaPercent = data.deltaPercent;
+            const sign = deltaPercent >= 0 ? '+' : '';
+            return `**Duration:** ${formatDuration(currentDuration)} (${sign}${deltaPercent}% vs baseline)`;
+        }
+        case 'fixed_tests': {
+            const tests = data.tests ?? [];
+            return `**Fixed:** ${tests.length} test(s) now passing`;
+        }
+        case 'new_tests': {
+            const count = data.count ?? 0;
+            return `**${count} new test(s) added**`;
+        }
+        case 'known_flaky': {
+            const tests = data.tests ?? [];
+            return `**${tests.length} known flaky test(s) in this run**`;
+        }
+        default:
+            return h.message;
+    }
 }
 
 

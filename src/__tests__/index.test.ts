@@ -348,6 +348,7 @@ describe('run() integration', () => {
         runId: 'run-1',
         healthScore: 85,
         dashboardUrl: 'https://www.testglance.dev/runs/run-1',
+        highlights: [],
       });
     });
 
@@ -366,6 +367,7 @@ describe('run() integration', () => {
         runId: undefined,
         healthScore: undefined,
         dashboardUrl: undefined,
+        highlights: [],
       });
     });
 
@@ -381,6 +383,49 @@ describe('run() integration', () => {
       });
       await run();
       expect(mockGenerateSummary).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('highlights passthrough (Story 3.12)', () => {
+    it('passes highlights from API response to generateSummary', async () => {
+      const highlights = [
+        {
+          type: 'new_failures',
+          severity: 'critical',
+          message: '1 failed',
+          data: { tests: [{ name: 'test1', suite: 'suite1' }] },
+        },
+      ];
+      mockSendTestRun.mockResolvedValue({
+        success: true,
+        runId: 'run-hl',
+        healthScore: 90,
+        highlights,
+      });
+
+      await run();
+
+      expect(mockGenerateSummary).toHaveBeenCalledWith(expect.objectContaining({ highlights }));
+    });
+
+    it('defaults highlights to empty array when API returns no highlights', async () => {
+      mockSendTestRun.mockResolvedValue({ success: true, runId: 'run-1', healthScore: 85 });
+
+      await run();
+
+      expect(mockGenerateSummary).toHaveBeenCalledWith(expect.objectContaining({ highlights: [] }));
+    });
+
+    it('defaults highlights to empty array on API failure', async () => {
+      mockSendTestRun.mockResolvedValue({
+        success: false,
+        errorCode: 'NETWORK_ERROR',
+        errorMessage: 'fail',
+      });
+
+      await run();
+
+      expect(mockGenerateSummary).toHaveBeenCalledWith(expect.objectContaining({ highlights: [] }));
     });
   });
 

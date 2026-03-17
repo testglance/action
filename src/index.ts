@@ -88,12 +88,17 @@ export async function run(): Promise<void> {
       handleApiError(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
     }
 
+    const dashboardUrl = result.success
+      ? `https://www.testglance.dev/runs/${result.runId}`
+      : undefined;
+
     await generateSummary({
       parsed,
       apiSuccess: result.success,
       runId: result.runId,
       healthScore: result.healthScore,
-      dashboardUrl: result.success ? `https://www.testglance.dev/runs/${result.runId}` : undefined,
+      dashboardUrl,
+      highlights: result.highlights ?? [],
     });
   } catch (err) {
     handleUnexpectedError(err instanceof Error ? err : new Error(String(err)));

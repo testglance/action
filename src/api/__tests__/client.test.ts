@@ -32,8 +32,19 @@ const PARSED_RUN: ParsedTestRun = {
   ],
 };
 
-function okResponse(runId: string, healthScore: number | null = null) {
-  return new Response(JSON.stringify({ data: { runId, healthScore } }), {
+function okResponse(
+  runId: string,
+  healthScore: number | null = null,
+  highlights?: Array<{
+    type: string;
+    severity: string;
+    message: string;
+    data: Record<string, unknown>;
+  }>,
+) {
+  const data: Record<string, unknown> = { runId, healthScore };
+  if (highlights !== undefined) data.highlights = highlights;
+  return new Response(JSON.stringify({ data }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   });
@@ -85,6 +96,7 @@ describe('sendTestRun', () => {
         success: true,
         runId: 'run-abc',
         healthScore: 87,
+        highlights: [],
       });
     });
 
@@ -138,6 +150,53 @@ describe('sendTestRun', () => {
       expect(body.results.repository).toEqual({ name: 'testorg/my-repo', id: 987654321 });
       expect(body.results.git).toEqual({ sha: 'abc123def456', branch: 'main' });
       expect(body.results.ciRunId).toBe('1122334455');
+    });
+  });
+
+  describe('highlights parsing', () => {
+    it('parses highlights from API response', async () => {
+      const highlights = [
+        {
+          type: 'new_failures',
+          severity: 'critical',
+          message: '2 tests failed',
+          data: { tests: [{ name: 'test1', suite: 'suite1' }] },
+        },
+      ];
+      mockFetch.mockResolvedValueOnce(okResponse('run-hl', 90, highlights));
+
+      const result = await runWithTimers(() => sendTestRun(FAKE_API_URL, FAKE_API_KEY, PARSED_RUN));
+
+      expect(result).toMatchObject({
+        success: true,
+        highlights,
+      });
+    });
+
+    it('defaults to empty array when highlights is not in response', async () => {
+      mockFetch.mockResolvedValueOnce(okResponse('run-no-hl', 85));
+
+      const result = await runWithTimers(() => sendTestRun(FAKE_API_URL, FAKE_API_KEY, PARSED_RUN));
+
+      expect(result).toMatchObject({
+        success: true,
+        highlights: [],
+      });
+    });
+
+    it('defaults to empty array when highlights is null', async () => {
+      const response = new Response(
+        JSON.stringify({ data: { runId: 'run-null-hl', healthScore: 80, highlights: null } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+      mockFetch.mockResolvedValueOnce(response);
+
+      const result = await runWithTimers(() => sendTestRun(FAKE_API_URL, FAKE_API_KEY, PARSED_RUN));
+
+      expect(result).toMatchObject({
+        success: true,
+        highlights: [],
+      });
     });
   });
 

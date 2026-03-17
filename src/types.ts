@@ -41,3 +41,20 @@ export interface ParsedTestCase {
   errorMessage?: string;
   errorType?: string;
 }
+
+export type HighlightType =
+  | 'new_failures'
+  | 'fixed_tests'
+  | 'new_tests'
+  | 'duration_delta'
+  | 'known_flaky'
+  | 'health_score_delta';
+
+export type HighlightSeverity = 'info' | 'warning' | 'critical';
+
+export interface Highlight {
+  type: HighlightType;
+  severity: HighlightSeverity;
+  message: string;
+  data: Record<string, unknown>;
+}

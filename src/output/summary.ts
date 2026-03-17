@@ -1,5 +1,5 @@
 import * as core from '@actions/core';
-import type { ParsedTestRun, ParsedTestCase } from '../types';
+import type { ParsedTestRun, ParsedTestCase, Highlight, HighlightSeverity } from '../types';
 
 export interface SummaryOptions {
   parsed: ParsedTestRun;
@@ -8,13 +8,14 @@ export interface SummaryOptions {
   healthScore?: number | null;
   dashboardUrl?: string;
   flakyCount?: number;
+  highlights?: Highlight[];
 }
 
 const MAX_FAILED_TESTS_SHOWN = 10;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 
 export async function generateSummary(options: SummaryOptions): Promise<void> {
-  const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount } = options;
+  const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights } = options;
   const { summary } = parsed;
   const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
 
@@ -42,6 +43,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
   if (flakyCount && flakyCount > 0) {
     core.summary.addRaw(`**Flaky tests detected:** ${flakyCount}\n\n`);
+  }
+
+  if (highlights && highlights.length > 0) {
+    core.summary.addRaw(renderHighlights(highlights, dashboardUrl));
   }
 
   const failedTests = collectFailedTests(parsed);
@@ -96,4 +101,77 @@ export function collectFailedTests(parsed: ParsedTestRun): ParsedTestCase[] {
   return parsed.suites.flatMap((suite) =>
     suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'),
   );
+}
+
+const MAX_HIGHLIGHTS_SHOWN = 3;
+const MAX_TEST_NAMES_SHOWN = 3;
+
+const SEVERITY_EMOJI: Record<HighlightSeverity, string> = {
+  critical: '🔴',
+  warning: '🟡',
+  info: '🔵',
+};
+
+const SEVERITY_ORDER: Record<HighlightSeverity, number> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
+
+export function renderHighlights(highlights: Highlight[], dashboardUrl?: string): string {
+  const sorted = [...highlights].sort(
+    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
+  );
+  const shown = sorted.slice(0, MAX_HIGHLIGHTS_SHOWN);
+  const lines: string[] = ['### Highlights\n\n'];
+
+  for (const h of shown) {
+    lines.push(`${SEVERITY_EMOJI[h.severity]} ${renderHighlightMessage(h)}\n\n`);
+  }
+
+  if (sorted.length > MAX_HIGHLIGHTS_SHOWN && dashboardUrl) {
+    lines.push(`**[View all highlights on dashboard →](${dashboardUrl})**\n\n`);
+  }
+
+  return lines.join('');
+}
+
+function renderHighlightMessage(h: Highlight): string {
+  const data = h.data as Record<string, unknown>;
+  switch (h.type) {
+    case 'new_failures': {
+      const tests = (data.tests as Array<{ name: string }>) ?? [];
+      const names = tests.slice(0, MAX_TEST_NAMES_SHOWN).map((t) => t.name);
+      const suffix =
+        tests.length > MAX_TEST_NAMES_SHOWN ? `, +${tests.length - MAX_TEST_NAMES_SHOWN} more` : '';
+      return `**NEW FAILURES:** ${names.join(', ')}${suffix}`;
+    }
+    case 'health_score_delta': {
+      const prev = data.previous as number | null;
+      const current = data.current as number | null;
+      const direction = data.direction as string;
+      const arrow = direction === 'down' ? '▼' : direction === 'up' ? '▲' : '';
+      return `**Health Score:** ${prev ?? '?'} → ${current ?? '?'} ${arrow}`;
+    }
+    case 'duration_delta': {
+      const currentDuration = data.currentDuration as number;
+      const deltaPercent = data.deltaPercent as number;
+      const sign = deltaPercent >= 0 ? '+' : '';
+      return `**Duration:** ${formatDuration(currentDuration)} (${sign}${deltaPercent}% vs baseline)`;
+    }
+    case 'fixed_tests': {
+      const tests = (data.tests as Array<{ name: string }>) ?? [];
+      return `**Fixed:** ${tests.length} test(s) now passing`;
+    }
+    case 'new_tests': {
+      const count = (data.count as number) ?? 0;
+      return `**${count} new test(s) added**`;
+    }
+    case 'known_flaky': {
+      const tests = (data.tests as Array<{ name: string }>) ?? [];
+      return `**${tests.length} known flaky test(s) in this run**`;
+    }
+    default:
+      return h.message;
+  }
 }
