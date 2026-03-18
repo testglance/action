@@ -1,4 +1,4 @@
-import type { ApiPayload, MetaEnvelope, ParsedTestRun } from '../types';
+import type { ApiPayload, MetaEnvelope, ParsedTestRun, Highlight } from '../types';
 
 const MAX_RETRIES = 3;
 const INITIAL_DELAY_MS = 1000;
@@ -7,7 +7,7 @@ const REQUEST_TIMEOUT_MS = 10000;
 const NON_RETRYABLE_STATUS_CODES = [400, 401, 403];
 
 interface ApiSuccessBody {
-  data?: { runId: string; healthScore: number | null };
+  data?: { runId: string; healthScore: number | null; highlights?: Highlight[] };
 }
 
 interface ApiErrorBody {
@@ -18,6 +18,7 @@ export interface SendResult {
   success: boolean;
   runId?: string;
   healthScore?: number | null;
+  highlights?: Highlight[];
   errorCode?: string;
   errorMessage?: string;
 }
@@ -89,6 +90,7 @@ export async function sendTestRun(
           success: true,
           runId: body.data?.runId,
           healthScore: body.data?.healthScore,
+          highlights: body.data?.highlights ?? [],
         };
       }
 

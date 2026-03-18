@@ -13,7 +13,14 @@ vi.mock('@actions/core', () => ({
   summary: mockSummary,
 }));
 
-import { generateSummary, formatDuration, truncate, collectFailedTests } from '../summary';
+import {
+  generateSummary,
+  formatDuration,
+  truncate,
+  collectFailedTests,
+  renderHighlights,
+} from '../summary';
+import type { Highlight } from '../../types';
 
 function makeParsed(
   overrides: Partial<ParsedTestRun['summary']> = {},
@@ -257,6 +264,283 @@ describe('generateSummary', () => {
 
     const tableCall = mockSummary.addTable.mock.calls[1];
     expect(tableCall[0][1][2]).toBe('No error message');
+  });
+});
+
+describe('renderHighlights', () => {
+  it('renders new_failures with test names and NEW FAILURES label', () => {
+    const highlights: Highlight[] = [
+      {
+        type: 'new_failures',
+        severity: 'critical',
+        message: '2 tests failed',
+        data: {
+          tests: [
+            { name: 'loginTest', suite: 'auth' },
+            { name: 'signupTest', suite: 'auth' },
+          ],
+        },
+      },
+    ];
+    const result = renderHighlights(highlights);
+    expect(result).toContain('🔴');
+    expect(result).toContain('**NEW FAILURES:**');
+    expect(result).toContain('loginTest');
+    expect(result).toContain('signupTest');
+  });
+
+  it('renders health_score_delta with arrow', () => {
+    const highlights: Highlight[] = [
+      {
+        type: 'health_score_delta',
+        severity: 'warning',
+        message: 'score dropped',
+        data: { previous: 94, current: 91, direction: 'down' },
+      },
+    ];
+    const result = renderHighlights(highlights);
+    expect(result).toContain('🟡');
+    expect(result).toContain('94 → 91 ▼');
+  });
+
+  it('renders duration_delta with percentage', () => {
+    const highlights: Highlight[] = [
+      {
+        type: 'duration_delta',
+        severity: 'warning',
+        message: 'duration up',
+        data: { currentDuration: 11.5, baselineMedian: 9.8, deltaPercent: 17 },
+      },
+    ];
+    const result = renderHighlights(highlights);
+    expect(result).toContain('🟡');
+    expect(result).toContain('11.5s');
+    expect(result).toContain('+17% vs baseline');
+  });
+
+  it('renders fixed_tests with count', () => {
+    const highlights: Highlight[] = [
+      {
+        type: 'fixed_tests',
+        severity: 'info',
+        message: '3 fixed',
+        data: {
+          tests: [
+            { name: 'a', suite: 's' },
+            { name: 'b', suite: 's' },
+            { name: 'c', suite: 's' },
+          ],
+        },
+      },
+    ];
+    const result = renderHighlights(highlights);
+    expect(result).toContain('🔵');
+    expect(result).toContain('3 test(s) now passing');
+  });
+
+  it('renders new_tests with count', () => {
+    const highlights: Highlight[] = [
+      { type: 'new_tests', severity: 'info', message: '5 new', data: { tests: [], count: 5 } },
+    ];
+    const result = renderHighlights(highlights);
+    expect(result).toContain('5 new test(s) added');
+  });
+
+  it('renders known_flaky with count', () => {
+    const highlights: Highlight[] = [
+      {
+        type: 'known_flaky',
+        severity: 'warning',
+        message: '2 flaky',
+        data: {
+          tests: [
+            { name: 'a', suite: 's', flakyRate: 0.3 },
+            { name: 'b', suite: 's', flakyRate: 0.1 },
+          ],
+        },
+      },
+    ];
+    const result = renderHighlights(highlights);
+    expect(result).toContain('2 known flaky test(s)');
+  });
+
+  it('sorts by severity: critical first, then warning, then info', () => {
+    const highlights: Highlight[] = [
+      {
+        type: 'fixed_tests',
+        severity: 'info',
+        message: '',
+        data: { tests: [{ name: 'a', suite: 's' }] },
+      },
+      {
+        type: 'new_failures',
+        severity: 'critical',
+        message: '',
+        data: { tests: [{ name: 'b', suite: 's' }] },
+      },
+      {
+        type: 'duration_delta',
+        severity: 'warning',
+        message: '',
+        data: { currentDuration: 10, baselineMedian: 8, deltaPercent: 25 },
+      },
+    ];
+    const result = renderHighlights(highlights);
+    const criticalPos = result.indexOf('🔴');
+    const warningPos = result.indexOf('🟡');
+    const infoPos = result.indexOf('🔵');
+    expect(criticalPos).toBeLessThan(warningPos);
+    expect(warningPos).toBeLessThan(infoPos);
+  });
+
+  it('caps at 3 highlights and shows overflow link', () => {
+    const highlights: Highlight[] = [
+      {
+        type: 'new_failures',
+        severity: 'critical',
+        message: '',
+        data: { tests: [{ name: 'a', suite: 's' }] },
+      },
+      {
+        type: 'duration_delta',
+        severity: 'warning',
+        message: '',
+        data: { currentDuration: 10, baselineMedian: 8, deltaPercent: 25 },
+      },
+      {
+        type: 'known_flaky',
+        severity: 'warning',
+        message: '',
+        data: { tests: [{ name: 'b', suite: 's', flakyRate: 0.2 }] },
+      },
+      {
+        type: 'fixed_tests',
+        severity: 'info',
+        message: '',
+        data: { tests: [{ name: 'c', suite: 's' }] },
+      },
+    ];
+    const result = renderHighlights(highlights, 'https://www.testglance.dev/runs/run123');
+    const lines = result
+      .split('\n')
+      .filter((l) => l.startsWith('🔴') || l.startsWith('🟡') || l.startsWith('🔵'));
+    expect(lines).toHaveLength(3);
+    expect(result).toContain('View all highlights on dashboard');
+    expect(result).toContain('https://www.testglance.dev/runs/run123');
+  });
+
+  it('does not show overflow link when exactly 3 highlights', () => {
+    const highlights: Highlight[] = [
+      {
+        type: 'new_failures',
+        severity: 'critical',
+        message: '',
+        data: { tests: [{ name: 'a', suite: 's' }] },
+      },
+      {
+        type: 'duration_delta',
+        severity: 'warning',
+        message: '',
+        data: { currentDuration: 10, baselineMedian: 8, deltaPercent: 25 },
+      },
+      {
+        type: 'fixed_tests',
+        severity: 'info',
+        message: '',
+        data: { tests: [{ name: 'c', suite: 's' }] },
+      },
+    ];
+    const result = renderHighlights(highlights, 'https://www.testglance.dev/runs/run123');
+    expect(result).not.toContain('View all highlights on dashboard');
+  });
+
+  it('does not show overflow link when no dashboardUrl', () => {
+    const highlights: Highlight[] = [
+      {
+        type: 'new_failures',
+        severity: 'critical',
+        message: '',
+        data: { tests: [{ name: 'a', suite: 's' }] },
+      },
+      {
+        type: 'duration_delta',
+        severity: 'warning',
+        message: '',
+        data: { currentDuration: 10, baselineMedian: 8, deltaPercent: 25 },
+      },
+      {
+        type: 'known_flaky',
+        severity: 'warning',
+        message: '',
+        data: { tests: [{ name: 'b', suite: 's', flakyRate: 0.2 }] },
+      },
+      {
+        type: 'fixed_tests',
+        severity: 'info',
+        message: '',
+        data: { tests: [{ name: 'c', suite: 's' }] },
+      },
+    ];
+    const result = renderHighlights(highlights);
+    expect(result).not.toContain('View all highlights on dashboard');
+  });
+
+  it('limits new_failures test names to 3 with overflow count', () => {
+    const tests = [
+      { name: 'a', suite: 's' },
+      { name: 'b', suite: 's' },
+      { name: 'c', suite: 's' },
+      { name: 'd', suite: 's' },
+      { name: 'e', suite: 's' },
+    ];
+    const highlights: Highlight[] = [
+      { type: 'new_failures', severity: 'critical', message: '', data: { tests } },
+    ];
+    const result = renderHighlights(highlights);
+    expect(result).toContain('a, b, c');
+    expect(result).toContain('+2 more');
+    expect(result).not.toContain('d');
+  });
+});
+
+describe('generateSummary with highlights', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders highlights section when highlights are provided', async () => {
+    const highlights: Highlight[] = [
+      {
+        type: 'new_failures',
+        severity: 'critical',
+        message: '1 test failed',
+        data: { tests: [{ name: 'test1', suite: 'suite1' }] },
+      },
+    ];
+    await generateSummary({ parsed: makeParsed(), apiSuccess: true, highlights });
+
+    const highlightCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) =>
+      c[0].includes('Highlights'),
+    );
+    expect(highlightCalls).toHaveLength(1);
+  });
+
+  it('does not render highlights section when highlights is empty', async () => {
+    await generateSummary({ parsed: makeParsed(), apiSuccess: true, highlights: [] });
+
+    const highlightCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) =>
+      c[0].includes('Highlights'),
+    );
+    expect(highlightCalls).toHaveLength(0);
+  });
+
+  it('does not render highlights section when highlights is undefined', async () => {
+    await generateSummary({ parsed: makeParsed(), apiSuccess: true });
+
+    const highlightCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) =>
+      c[0].includes('Highlights'),
+    );
+    expect(highlightCalls).toHaveLength(0);
   });
 });
 
