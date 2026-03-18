@@ -54,6 +54,7 @@ function makeSection(overrides: Partial<PrCommentSection> = {}): PrCommentSectio
 beforeEach(() => {
   vi.clearAllMocks();
   mockContext.payload = { pull_request: { number: 42 } };
+  mockContext.issue = { number: 42 } as typeof mockContext.issue;
   mockListComments.mockResolvedValue({ data: [] });
   mockCreateComment.mockResolvedValue({});
   mockUpdateComment.mockResolvedValue({});
@@ -101,12 +102,22 @@ describe('postPrComment', () => {
 
   it('skips when not in PR context', async () => {
     mockContext.payload = {};
+    mockContext.issue = { number: 0 } as typeof mockContext.issue;
 
     await postPrComment({ githubToken: 'ghp_test', section: makeSection() });
 
     expect(mockGetOctokit).not.toHaveBeenCalled();
     expect(mockCreateComment).not.toHaveBeenCalled();
     expect(mockWarning).not.toHaveBeenCalled();
+  });
+
+  it('falls back to issue.number for issue_comment events on PRs', async () => {
+    mockContext.payload = {};
+    mockContext.issue = { number: 77 } as typeof mockContext.issue;
+
+    await postPrComment({ githubToken: 'ghp_test', section: makeSection() });
+
+    expect(mockCreateComment).toHaveBeenCalledWith(expect.objectContaining({ issue_number: 77 }));
   });
 
   it('skips when githubToken is empty', async () => {

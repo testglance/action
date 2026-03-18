@@ -15,6 +15,20 @@ Track test suite health over time. Never breaks your CI.
 
 That's it. Two lines, zero permissions required.
 
+### With PR Comments
+
+Add `github-token` to get test summaries posted directly on your pull requests:
+
+```yaml
+- uses: testglance/action@v1
+  with:
+    report-path: test-results.xml
+    api-key: ${{ secrets.TESTGLANCE_API_KEY }}
+    github-token: ${{ github.token }}
+```
+
+Requires `pull-requests: write` permission. If omitted, the Action auto-detects the `GITHUB_TOKEN` environment variable when available.
+
 ## Inputs
 
 | Input           | Required | Default                      | Description                                                |
@@ -23,6 +37,8 @@ That's it. Two lines, zero permissions required.
 | `api-key`       | Yes      |                              | TestGlance project API key                                 |
 | `api-url`       | No       | `https://www.testglance.dev` | TestGlance API URL                                         |
 | `report-format` | No       | `auto`                       | Format: `junit`, `ctrf`, or `auto` (detect from extension) |
+| `test-job-name` | No       |                              | Override the display name for this test job                |
+| `github-token`  | No       |                              | GitHub token for PR comments (`${{ github.token }}`)       |
 
 ## Supported Formats
 
@@ -70,14 +86,34 @@ Health Score: 94/100
 View Dashboard
 ```
 
+## PR Comments
+
+When `github-token` is provided, TestGlance posts a test summary comment on pull requests:
+
+```
+## 🔬 TestGlance Test Summary
+
+### ✅ ci/test (unit tests)
+**313 tests** | 11.2s | Health: 94/100
+
+| Signal | Details |
+|--------|---------|
+| 🟡     | Health Score: 94 → 91 ↓ |
+| 🔵     | 2 new test(s) added |
+
+View Run →
+```
+
+Multiple test jobs (e.g., unit + e2e) are merged into a single comment, each in its own section. Subsequent runs update the existing comment instead of creating duplicates.
+
 ## Non-Blocking Guarantee
 
-This Action **never fails your CI pipeline**. If anything goes wrong — file not found, parse error, API timeout — the Action logs a warning and exits with code 0. Your builds are safe.
+This Action **never fails your CI pipeline**. If anything goes wrong — file not found, parse error, API timeout, PR comment failure — the Action logs a warning and exits with code 0. Your builds are safe.
 
 - No `core.setFailed()` calls anywhere in the codebase
-- No repository permissions required
-- No `GITHUB_TOKEN` usage
-- Only outbound HTTPS POST to the TestGlance API
+- No repository permissions required for core functionality
+- Optional `github-token` for PR comments only (never affects exit code)
+- Only outbound HTTPS to the TestGlance API and GitHub API
 
 ## Getting Started
 

@@ -15,7 +15,9 @@ export async function postPrComment(options: PostPrCommentOptions): Promise<void
 
   if (!githubToken) return;
 
-  const prNumber = github.context.payload.pull_request?.number as number | undefined;
+  const prNumber =
+    (github.context.payload.pull_request?.number as number | undefined) ??
+    github.context.issue?.number;
   if (!prNumber) return;
 
   try {
