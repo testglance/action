@@ -13,6 +13,7 @@ import {
   handleUnexpectedError,
 } from './utils/errors';
 import { generateSummary } from './output/summary';
+import { postPrComment } from './output/post-pr-comment';
 import type { ParsedTestRun } from './types';
 
 export async function run(): Promise<void> {
@@ -22,6 +23,7 @@ export async function run(): Promise<void> {
     const apiUrl = core.getInput('api-url') || 'https://www.testglance.dev';
     const reportFormat = core.getInput('report-format') || 'auto';
     const testJobName = core.getInput('test-job-name') || '';
+    const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
 
     if (!existsSync(reportPath)) {
       handleFileNotFound(reportPath);
@@ -100,6 +102,23 @@ export async function run(): Promise<void> {
       dashboardUrl,
       highlights: result.highlights ?? [],
     });
+
+    if (githubToken && result.success) {
+      await postPrComment({
+        githubToken,
+        section: {
+          testJobName: testJobName || process.env.GITHUB_JOB || 'tests',
+          status: parsed.summary.failed > 0 ? 'failed' : 'passed',
+          total: parsed.summary.total,
+          passed: parsed.summary.passed,
+          failed: parsed.summary.failed,
+          duration: parsed.summary.duration,
+          healthScore: result.healthScore,
+          highlights: result.highlights ?? [],
+          runUrl: dashboardUrl,
+        },
+      });
+    }
   } catch (err) {
     handleUnexpectedError(err instanceof Error ? err : new Error(String(err)));
   }

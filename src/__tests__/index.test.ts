@@ -58,6 +58,11 @@ vi.mock('../output/summary', () => ({
   generateSummary: (...args: unknown[]) => mockGenerateSummary(...args),
 }));
 
+const mockPostPrComment = vi.fn().mockResolvedValue(undefined);
+vi.mock('../output/post-pr-comment', () => ({
+  postPrComment: (...args: unknown[]) => mockPostPrComment(...args),
+}));
+
 import { run } from '../index';
 import * as errors from '../utils/errors';
 import type { ParsedTestRun } from '../types';
@@ -83,6 +88,7 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'api-url': '',
     'report-format': '',
     'test-job-name': '',
+    'github-token': '',
   };
   const inputs = { ...defaults, ...overrides };
   mockGetInput.mockImplementation((name: string) => inputs[name] ?? '');
@@ -517,6 +523,67 @@ describe('run() integration', () => {
         'ctrf',
         'playwright',
       );
+    });
+  });
+
+  describe('PR comment posting (Story 3.13)', () => {
+    it('calls postPrComment when github-token is provided and API succeeds', async () => {
+      setupInputs({ 'github-token': 'ghp_abc123' });
+
+      await run();
+
+      expect(mockPostPrComment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          githubToken: 'ghp_abc123',
+          section: expect.objectContaining({
+            status: 'failed',
+            total: 2,
+            passed: 1,
+            failed: 1,
+          }),
+        }),
+      );
+    });
+
+    it('does not call postPrComment when github-token and GITHUB_TOKEN are both missing', async () => {
+      setupInputs({ 'github-token': '' });
+      const original = process.env.GITHUB_TOKEN;
+      delete process.env.GITHUB_TOKEN;
+
+      await run();
+
+      expect(mockPostPrComment).not.toHaveBeenCalled();
+      if (original !== undefined) process.env.GITHUB_TOKEN = original;
+    });
+
+    it('falls back to GITHUB_TOKEN env var when github-token input is empty', async () => {
+      setupInputs({ 'github-token': '' });
+      const original = process.env.GITHUB_TOKEN;
+      process.env.GITHUB_TOKEN = 'ghs_env_fallback';
+
+      await run();
+
+      expect(mockPostPrComment).toHaveBeenCalledWith(
+        expect.objectContaining({ githubToken: 'ghs_env_fallback' }),
+      );
+      if (original !== undefined) {
+        process.env.GITHUB_TOKEN = original;
+      } else {
+        delete process.env.GITHUB_TOKEN;
+      }
+    });
+
+    it('does not call postPrComment when API fails', async () => {
+      setupInputs({ 'github-token': 'ghp_abc123' });
+      mockSendTestRun.mockResolvedValue({
+        success: false,
+        errorCode: 'NETWORK_ERROR',
+        errorMessage: 'fail',
+      });
+
+      await run();
+
+      expect(mockPostPrComment).not.toHaveBeenCalled();
     });
   });
 });
