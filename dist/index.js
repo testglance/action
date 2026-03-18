@@ -32804,7 +32804,8 @@ async function postPrComment(options) {
     const { githubToken, section } = options;
     if (!githubToken)
         return;
-    const prNumber = github.context.payload.pull_request?.number;
+    const prNumber = github.context.payload.pull_request?.number ??
+        github.context.issue?.number;
     if (!prNumber)
         return;
     try {
