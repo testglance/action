@@ -20,6 +20,9 @@ inputs:
     description: 'Override the display name for this test job in TestGlance'
     required: false
     default: ''
+  github-token:
+    description: 'GitHub token for PR comments. Use ${{ github.token }} or a PAT with pull-requests: write scope.'
+    required: false
 runs:
   using: 'node20'
   main: 'dist/index.js'
