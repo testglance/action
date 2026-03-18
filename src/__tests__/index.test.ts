@@ -545,12 +545,32 @@ describe('run() integration', () => {
       );
     });
 
-    it('does not call postPrComment when github-token is missing', async () => {
+    it('does not call postPrComment when github-token and GITHUB_TOKEN are both missing', async () => {
       setupInputs({ 'github-token': '' });
+      const original = process.env.GITHUB_TOKEN;
+      delete process.env.GITHUB_TOKEN;
 
       await run();
 
       expect(mockPostPrComment).not.toHaveBeenCalled();
+      if (original !== undefined) process.env.GITHUB_TOKEN = original;
+    });
+
+    it('falls back to GITHUB_TOKEN env var when github-token input is empty', async () => {
+      setupInputs({ 'github-token': '' });
+      const original = process.env.GITHUB_TOKEN;
+      process.env.GITHUB_TOKEN = 'ghs_env_fallback';
+
+      await run();
+
+      expect(mockPostPrComment).toHaveBeenCalledWith(
+        expect.objectContaining({ githubToken: 'ghs_env_fallback' }),
+      );
+      if (original !== undefined) {
+        process.env.GITHUB_TOKEN = original;
+      } else {
+        delete process.env.GITHUB_TOKEN;
+      }
     });
 
     it('does not call postPrComment when API fails', async () => {

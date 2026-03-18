@@ -23,7 +23,7 @@ export async function run(): Promise<void> {
     const apiUrl = core.getInput('api-url') || 'https://www.testglance.dev';
     const reportFormat = core.getInput('report-format') || 'auto';
     const testJobName = core.getInput('test-job-name') || '';
-    const githubToken = core.getInput('github-token');
+    const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
 
     if (!existsSync(reportPath)) {
       handleFileNotFound(reportPath);

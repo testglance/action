@@ -32659,7 +32659,7 @@ async function run() {
         const apiUrl = core.getInput('api-url') || 'https://www.testglance.dev';
         const reportFormat = core.getInput('report-format') || 'auto';
         const testJobName = core.getInput('test-job-name') || '';
-        const githubToken = core.getInput('github-token');
+        const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
         if (!(0, node_fs_1.existsSync)(reportPath)) {
             (0, errors_1.handleFileNotFound)(reportPath);
             return;
