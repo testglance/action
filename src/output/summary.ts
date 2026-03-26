@@ -129,10 +129,20 @@ export function formatDuration(seconds: number): string {
 function renderStackTrace(testName: string, stackTrace: string): string {
   const lines = stackTrace.split('\n');
   let truncated = lines.slice(0, MAX_STACK_TRACE_LINES).join('\n');
+  const safeTestName = escapeHtml(testName);
   if (lines.length > MAX_STACK_TRACE_LINES) {
     truncated += `\n... ${lines.length - MAX_STACK_TRACE_LINES} more lines truncated`;
   }
-  return `<details><summary>Stack trace: ${testName}</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>\n\n`;
+  return `<details><summary>Stack trace: ${safeTestName}</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>\n\n`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 export function truncate(str: string, maxLen: number): string {

@@ -273,6 +273,35 @@ describe('generateSummary', () => {
     expect(detailsCall).toContain('auth.test.ts:23:5');
   });
 
+  it('escapes HTML in stack trace summary test name', async () => {
+    const parsed = makeParsed({ failed: 1 }, [
+      {
+        name: 'suite1',
+        duration: 1.0,
+        tests: [
+          {
+            name: '<img src=x onerror=alert(1)> & "x" \'y\'',
+            suite: 'suite1',
+            status: 'failed',
+            duration: 0.1,
+            errorMessage: 'err',
+            stackTrace: 'Error: boom\n    at suite1.ts:1:1',
+          },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const detailsCall = rawCalls.find((c: string) => c.includes('<details>'));
+    expect(detailsCall).toBeDefined();
+    expect(detailsCall).toContain(
+      'Stack trace: &lt;img src=x onerror=alert(1)&gt; &amp; &quot;x&quot; &#39;y&#39;',
+    );
+    expect(detailsCall).not.toContain('Stack trace: <img src=x onerror=alert(1)>');
+  });
+
   it('truncates stack traces longer than 30 lines', async () => {
     const longTrace = Array.from({ length: 50 }, (_, i) => `    at line${i} (file.ts:${i}:1)`).join(
       '\n',
