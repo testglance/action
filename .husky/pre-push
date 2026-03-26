@@ -1,1 +1,7 @@
 pnpm typecheck && pnpm test
+
+pnpm build
+if [ -n "$(git diff --name-only dist/)" ]; then
+  git add dist/
+  git commit -m "chore: rebuild dist"
+fi
