@@ -16,6 +16,24 @@ import { generateSummary } from './output/summary';
 import { postPrComment } from './output/post-pr-comment';
 import type { ParsedTestRun } from './types';
 
+const DEFAULT_SLOWEST_TESTS = 10;
+
+function parseSlowestTestsCount(input: string): number {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return DEFAULT_SLOWEST_TESTS;
+  }
+
+  if (!/^\d+$/.test(trimmed)) {
+    core.warning(
+      `Invalid "slowest-tests" input "${input}". Expected a non-negative integer; defaulting to ${DEFAULT_SLOWEST_TESTS}.`,
+    );
+    return DEFAULT_SLOWEST_TESTS;
+  }
+
+  return Number.parseInt(trimmed, 10);
+}
+
 export async function run(): Promise<void> {
   try {
     const reportPath = core.getInput('report-path', { required: true });
@@ -24,6 +42,7 @@ export async function run(): Promise<void> {
     const reportFormat = core.getInput('report-format') || 'auto';
     const testJobName = core.getInput('test-job-name') || '';
     const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
+    const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
 
     if (!existsSync(reportPath)) {
       handleFileNotFound(reportPath);
@@ -101,6 +120,7 @@ export async function run(): Promise<void> {
       healthScore: result.healthScore,
       dashboardUrl,
       highlights: result.highlights ?? [],
+      slowestTests: slowestTestsCount,
     });
 
     if (githubToken && result.success) {

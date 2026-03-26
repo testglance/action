@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="stacktrace-test" tests="5" failures="2" errors="1" time="2.500">
+  <testsuite name="auth.login" tests="3" failures="1" errors="1" time="1.200">
+    <testcase name="should reject expired token" classname="auth.login" time="0.045">
+      <failure message="Expected 401 but received 200" type="AssertionError">
+AssertionError: Expected 401 but received 200
+    at Object.&lt;anonymous&gt; (auth.test.ts:23:5)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at runTest (node:internal/test_runner/test:632:9)
+      </failure>
+    </testcase>
+    <testcase name="should handle timeout" classname="auth.login" time="0.500">
+      <error message="Connection timeout" type="TimeoutError">
+TimeoutError: Connection timeout
+    at Socket.&lt;anonymous&gt; (net.ts:42:10)
+    at TCPConnectWrap.afterConnect (net.js:1141:16)
+      </error>
+    </testcase>
+    <testcase name="should login successfully" classname="auth.login" time="0.123">
+    </testcase>
+  </testsuite>
+  <testsuite name="api.users" tests="2" failures="1" time="1.300">
+    <testcase name="should validate email format" classname="api.users" time="0.034">
+      <failure message="Invalid email not rejected" type="ValidationError">
+ValidationError: Invalid email not rejected
+    at validateEmail (src/validators.ts:15:11)
+    at Object.&lt;anonymous&gt; (api.users.test.ts:88:7)
+      </failure>
+    </testcase>
+    <testcase name="should list users" classname="api.users" time="0.200">
+    </testcase>
+  </testsuite>
+</testsuites>

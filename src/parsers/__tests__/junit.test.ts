@@ -275,6 +275,43 @@ describe('parseJunitXml', () => {
     });
   });
 
+  describe('stack trace extraction (junit-with-stacktraces.xml)', () => {
+    let result: ParsedTestRun;
+
+    beforeAll(() => {
+      result = parseJunitXml(fixture('junit-with-stacktraces.xml'));
+    });
+
+    it('extracts stack trace from failure element text content', () => {
+      const authSuite = result.suites.find((s) => s.name === 'auth.login')!;
+      const failed = authSuite.tests.find((t) => t.name === 'should reject expired token')!;
+      expect(failed.stackTrace).toBeDefined();
+      expect(failed.stackTrace).toContain('AssertionError: Expected 401 but received 200');
+      expect(failed.stackTrace).toContain('auth.test.ts:23:5');
+    });
+
+    it('extracts stack trace from error element text content', () => {
+      const authSuite = result.suites.find((s) => s.name === 'auth.login')!;
+      const errored = authSuite.tests.find((t) => t.name === 'should handle timeout')!;
+      expect(errored.stackTrace).toBeDefined();
+      expect(errored.stackTrace).toContain('TimeoutError: Connection timeout');
+      expect(errored.stackTrace).toContain('net.ts:42:10');
+    });
+
+    it('does not set stackTrace on passing tests', () => {
+      const authSuite = result.suites.find((s) => s.name === 'auth.login')!;
+      const passed = authSuite.tests.find((t) => t.name === 'should login successfully')!;
+      expect(passed.stackTrace).toBeUndefined();
+    });
+
+    it('extracts stack trace from failure in another suite', () => {
+      const usersSuite = result.suites.find((s) => s.name === 'api.users')!;
+      const failed = usersSuite.tests.find((t) => t.name === 'should validate email format')!;
+      expect(failed.stackTrace).toBeDefined();
+      expect(failed.stackTrace).toContain('ValidationError: Invalid email not rejected');
+    });
+  });
+
   describe('output structure', () => {
     it('matches ParsedTestRun interface', () => {
       const result = parseJunitXml(fixture('junit-basic.xml'));

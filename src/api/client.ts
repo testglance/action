@@ -7,7 +7,13 @@ const REQUEST_TIMEOUT_MS = 10000;
 const NON_RETRYABLE_STATUS_CODES = [400, 401, 403];
 
 interface ApiSuccessBody {
-  data?: { runId: string; healthScore: number | null; highlights?: Highlight[] };
+  data?: {
+    runId: string;
+    healthScore: number | null;
+    highlights?: Highlight[];
+    projectId?: string;
+    projectCreated?: boolean;
+  };
 }
 
 interface ApiErrorBody {
@@ -19,6 +25,8 @@ export interface SendResult {
   runId?: string;
   healthScore?: number | null;
   highlights?: Highlight[];
+  projectId?: string;
+  projectCreated?: boolean;
   errorCode?: string;
   errorMessage?: string;
 }
@@ -91,6 +99,8 @@ export async function sendTestRun(
           runId: body.data?.runId,
           healthScore: body.data?.healthScore,
           highlights: body.data?.highlights ?? [],
+          projectId: body.data?.projectId,
+          projectCreated: body.data?.projectCreated,
         };
       }
 

@@ -40,6 +40,7 @@ export interface ParsedTestCase {
   duration: number;
   errorMessage?: string;
   errorType?: string;
+  stackTrace?: string;
 }
 
 export type HighlightType =

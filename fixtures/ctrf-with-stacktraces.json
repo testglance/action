@@ -1,0 +1,54 @@
+{
+  "results": {
+    "tool": {
+      "name": "vitest",
+      "version": "3.0.0"
+    },
+    "summary": {
+      "tests": 5,
+      "passed": 2,
+      "failed": 2,
+      "skipped": 1,
+      "pending": 0,
+      "other": 0,
+      "start": 1709136000000,
+      "stop": 1709136005000
+    },
+    "tests": [
+      {
+        "name": "should authenticate with valid credentials",
+        "status": "passed",
+        "duration": 123,
+        "suite": "auth.login"
+      },
+      {
+        "name": "should reject expired token",
+        "status": "failed",
+        "duration": 56,
+        "suite": "auth.login",
+        "message": "Expected 401 but received 200",
+        "trace": "AssertionError: Expected 401 but received 200\n    at Object.<anonymous> (src/auth.test.ts:42:5)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)"
+      },
+      {
+        "name": "should enforce rate limiting",
+        "status": "failed",
+        "duration": 1200,
+        "suite": "api.ratelimit",
+        "message": "Rate limit not enforced after 100 requests",
+        "trace": "Error: Rate limit not enforced after 100 requests\n    at checkRateLimit (src/ratelimit.test.ts:78:9)\n    at runTest (node:internal/test_runner/test:632:9)"
+      },
+      {
+        "name": "should list users",
+        "status": "passed",
+        "duration": 89,
+        "suite": "api.users"
+      },
+      {
+        "name": "should skip disabled feature",
+        "status": "skipped",
+        "duration": 0,
+        "suite": "auth.login"
+      }
+    ]
+  }
+}

@@ -20,6 +20,10 @@ inputs:
     description: 'Override the display name for this test job in TestGlance'
     required: false
     default: ''
+  slowest-tests:
+    description: 'Number of slowest tests to show in the CI summary (0 to disable)'
+    required: false
+    default: '10'
   github-token:
     description: 'GitHub token for PR comments. Use ${{ github.token }} or a PAT with pull-requests: write scope.'
     required: false

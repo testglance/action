@@ -181,21 +181,156 @@ describe('generateSummary', () => {
     expect(errorCell.endsWith('...')).toBe(true);
   });
 
-  it('shows "... and N more" when more than 10 failed tests', async () => {
-    const tests = Array.from({ length: 15 }, (_, i) => ({
+  it('shows "... and N more" when more than 25 failed tests', async () => {
+    const tests = Array.from({ length: 30 }, (_, i) => ({
       name: `test-${i}`,
       suite: 'suite1',
       status: 'failed' as const,
       duration: 0.1,
       errorMessage: `error ${i}`,
     }));
-    const parsed = makeParsed({ failed: 15 }, [{ name: 'suite1', duration: 1.0, tests }]);
+    const parsed = makeParsed({ failed: 30 }, [{ name: 'suite1', duration: 1.0, tests }]);
 
     await generateSummary({ parsed, apiSuccess: true });
 
-    expect(mockSummary.addRaw).toHaveBeenCalledWith('... and 5 more failed tests\n\n');
+    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('and 5 more'));
+  });
+
+  it('sorts failed tests by suite name', async () => {
+    const parsed = makeParsed({ failed: 3 }, [
+      {
+        name: 'z-suite',
+        duration: 1.0,
+        tests: [
+          {
+            name: 'test-z',
+            suite: 'z-suite',
+            status: 'failed',
+            duration: 0.1,
+            errorMessage: 'err',
+          },
+        ],
+      },
+      {
+        name: 'a-suite',
+        duration: 1.0,
+        tests: [
+          {
+            name: 'test-a',
+            suite: 'a-suite',
+            status: 'failed',
+            duration: 0.1,
+            errorMessage: 'err',
+          },
+        ],
+      },
+      {
+        name: 'm-suite',
+        duration: 1.0,
+        tests: [
+          {
+            name: 'test-m',
+            suite: 'm-suite',
+            status: 'failed',
+            duration: 0.1,
+            errorMessage: 'err',
+          },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
     const tableCall = mockSummary.addTable.mock.calls[1];
-    expect(tableCall[0].length).toBe(11); // 1 header + 10 data rows
+    const suiteOrder = tableCall[0].slice(1).map((row: string[]) => row[0]);
+    expect(suiteOrder).toEqual(['a-suite', 'm-suite', 'z-suite']);
+  });
+
+  it('renders stack traces in details/summary collapse', async () => {
+    const parsed = makeParsed({ failed: 1 }, [
+      {
+        name: 'auth.test',
+        duration: 1.0,
+        tests: [
+          {
+            name: 'should reject expired token',
+            suite: 'auth.test',
+            status: 'failed',
+            duration: 0.5,
+            errorMessage: 'Expected 401',
+            stackTrace: 'Error: Expected 401\n    at Object.<anonymous> (auth.test.ts:23:5)',
+          },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const detailsCall = rawCalls.find((c: string) => c.includes('<details>'));
+    expect(detailsCall).toBeDefined();
+    expect(detailsCall).toContain('should reject expired token');
+    expect(detailsCall).toContain('auth.test.ts:23:5');
+  });
+
+  it('escapes HTML in stack trace summary test name', async () => {
+    const parsed = makeParsed({ failed: 1 }, [
+      {
+        name: 'suite1',
+        duration: 1.0,
+        tests: [
+          {
+            name: '<img src=x onerror=alert(1)> & "x" \'y\'',
+            suite: 'suite1',
+            status: 'failed',
+            duration: 0.1,
+            errorMessage: 'err',
+            stackTrace: 'Error: boom\n    at suite1.ts:1:1',
+          },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const detailsCall = rawCalls.find((c: string) => c.includes('<details>'));
+    expect(detailsCall).toBeDefined();
+    expect(detailsCall).toContain(
+      'Stack trace: &lt;img src=x onerror=alert(1)&gt; &amp; &quot;x&quot; &#39;y&#39;',
+    );
+    expect(detailsCall).not.toContain('Stack trace: <img src=x onerror=alert(1)>');
+  });
+
+  it('truncates stack traces longer than 30 lines', async () => {
+    const longTrace = Array.from({ length: 50 }, (_, i) => `    at line${i} (file.ts:${i}:1)`).join(
+      '\n',
+    );
+    const parsed = makeParsed({ failed: 1 }, [
+      {
+        name: 'suite1',
+        duration: 1.0,
+        tests: [
+          {
+            name: 'test1',
+            suite: 'suite1',
+            status: 'failed',
+            duration: 0.1,
+            errorMessage: 'err',
+            stackTrace: longTrace,
+          },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const detailsCall = rawCalls.find((c: string) => c.includes('<details>'));
+    expect(detailsCall).toBeDefined();
+    const traceLines = detailsCall!.split('\n').filter((l: string) => l.includes('at line'));
+    expect(traceLines.length).toBe(30);
+    expect(detailsCall).toContain('... 20 more lines truncated');
   });
 
   it('omits failed test section when no tests failed', async () => {
@@ -503,6 +638,121 @@ describe('renderHighlights', () => {
   });
 });
 
+describe('generateSummary slowest tests', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders slowest tests section sorted by duration descending', async () => {
+    const parsed = makeParsed({ total: 4, passed: 4, failed: 0 }, [
+      {
+        name: 'suite1',
+        duration: 5.0,
+        tests: [
+          { name: 'fast-test', suite: 'suite1', status: 'passed', duration: 0.1 },
+          { name: 'slow-test', suite: 'suite1', status: 'passed', duration: 3.5 },
+          { name: 'medium-test', suite: 'suite1', status: 'passed', duration: 1.2 },
+          { name: 'zero-test', suite: 'suite1', status: 'passed', duration: 0 },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true, slowestTests: 3 });
+
+    const headingCalls = mockSummary.addHeading.mock.calls;
+    expect(headingCalls).toContainEqual(['Slowest Tests', 3]);
+
+    const tableCall = mockSummary.addTable.mock.calls.find(
+      (c: unknown[][]) => c[0][0]?.[0]?.data === 'Test',
+    );
+    expect(tableCall).toBeDefined();
+    const rows = tableCall![0].slice(1);
+    expect(rows).toHaveLength(3);
+    expect(rows[0][0]).toBe('slow-test');
+    expect(rows[1][0]).toBe('medium-test');
+    expect(rows[2][0]).toBe('fast-test');
+  });
+
+  it('skips slowest tests section when slowestTests is 0', async () => {
+    const parsed = makeParsed({ total: 2, passed: 2, failed: 0 }, [
+      {
+        name: 'suite1',
+        duration: 2.0,
+        tests: [
+          { name: 'test1', suite: 'suite1', status: 'passed', duration: 1.0 },
+          { name: 'test2', suite: 'suite1', status: 'passed', duration: 1.0 },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true, slowestTests: 0 });
+
+    const headingCalls = mockSummary.addHeading.mock.calls;
+    const slowestHeading = headingCalls.filter((c: unknown[]) => c[0] === 'Slowest Tests');
+    expect(slowestHeading).toHaveLength(0);
+  });
+
+  it('skips slowest tests section when slowestTests is undefined', async () => {
+    const parsed = makeParsed({ total: 2, passed: 2, failed: 0 }, [
+      {
+        name: 'suite1',
+        duration: 2.0,
+        tests: [
+          { name: 'test1', suite: 'suite1', status: 'passed', duration: 1.0 },
+          { name: 'test2', suite: 'suite1', status: 'passed', duration: 1.0 },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
+    const headingCalls = mockSummary.addHeading.mock.calls;
+    const slowestHeading = headingCalls.filter((c: unknown[]) => c[0] === 'Slowest Tests');
+    expect(slowestHeading).toHaveLength(0);
+  });
+
+  it('only includes tests with duration > 0', async () => {
+    const parsed = makeParsed({ total: 3, passed: 3, failed: 0 }, [
+      {
+        name: 'suite1',
+        duration: 2.0,
+        tests: [
+          { name: 'has-time', suite: 'suite1', status: 'passed', duration: 1.5 },
+          { name: 'no-time', suite: 'suite1', status: 'passed', duration: 0 },
+          { name: 'also-time', suite: 'suite1', status: 'passed', duration: 0.5 },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true, slowestTests: 10 });
+
+    const tableCall = mockSummary.addTable.mock.calls.find(
+      (c: unknown[][]) => c[0][0]?.[0]?.data === 'Test',
+    );
+    expect(tableCall).toBeDefined();
+    const rows = tableCall![0].slice(1);
+    expect(rows).toHaveLength(2);
+  });
+
+  it('includes formatted duration in table', async () => {
+    const parsed = makeParsed({ total: 1, passed: 1, failed: 0 }, [
+      {
+        name: 'suite1',
+        duration: 2.0,
+        tests: [{ name: 'slow-test', suite: 'suite1', status: 'passed', duration: 65.3 }],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true, slowestTests: 5 });
+
+    const tableCall = mockSummary.addTable.mock.calls.find(
+      (c: unknown[][]) => c[0][0]?.[0]?.data === 'Test',
+    );
+    expect(tableCall).toBeDefined();
+    expect(tableCall![0][1][2]).toBe('1m 5.3s');
+  });
+});
+
 describe('generateSummary with highlights', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -541,6 +791,36 @@ describe('generateSummary with highlights', () => {
       c[0].includes('Highlights'),
     );
     expect(highlightCalls).toHaveLength(0);
+  });
+});
+
+describe('generateSummary fallback on error', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('falls back gracefully when stack trace rendering throws', async () => {
+    const parsed = makeParsed({ failed: 1 }, [
+      {
+        name: 'suite1',
+        duration: 1.0,
+        tests: [
+          {
+            name: 'test1',
+            suite: 'suite1',
+            status: 'failed',
+            duration: 0.1,
+            errorMessage: 'err',
+            stackTrace: null as unknown as string,
+          },
+        ],
+      },
+    ]);
+
+    await expect(
+      generateSummary({ parsed, apiSuccess: true, slowestTests: 5 }),
+    ).resolves.not.toThrow();
+    expect(mockSummary.write).toHaveBeenCalledTimes(1);
   });
 });
 

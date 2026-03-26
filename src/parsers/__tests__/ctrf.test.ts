@@ -370,6 +370,41 @@ describe('parseCtrfJson', () => {
     });
   });
 
+  describe('stack trace extraction (ctrf-with-stacktraces.json)', () => {
+    let result: ParsedTestRun;
+
+    beforeAll(() => {
+      result = parseCtrfJson(fixture('ctrf-with-stacktraces.json'));
+    });
+
+    it('extracts full trace as stackTrace on failed tests', () => {
+      const authSuite = result.suites.find((s) => s.name === 'auth.login')!;
+      const failed = authSuite.tests.find((t) => t.name === 'should reject expired token')!;
+      expect(failed.stackTrace).toBeDefined();
+      expect(failed.stackTrace).toContain('AssertionError: Expected 401 but received 200');
+      expect(failed.stackTrace).toContain('src/auth.test.ts:42:5');
+    });
+
+    it('extracts stackTrace from failed test in different suite', () => {
+      const rateSuite = result.suites.find((s) => s.name === 'api.ratelimit')!;
+      const failed = rateSuite.tests.find((t) => t.name === 'should enforce rate limiting')!;
+      expect(failed.stackTrace).toBeDefined();
+      expect(failed.stackTrace).toContain('Rate limit not enforced');
+    });
+
+    it('does not set stackTrace on passing tests', () => {
+      const usersSuite = result.suites.find((s) => s.name === 'api.users')!;
+      const passed = usersSuite.tests.find((t) => t.name === 'should list users')!;
+      expect(passed.stackTrace).toBeUndefined();
+    });
+
+    it('does not set stackTrace on skipped tests', () => {
+      const authSuite = result.suites.find((s) => s.name === 'auth.login')!;
+      const skipped = authSuite.tests.find((t) => t.name === 'should skip disabled feature')!;
+      expect(skipped.stackTrace).toBeUndefined();
+    });
+  });
+
   describe('output contract', () => {
     it('matches ParsedTestRun interface', () => {
       const result = parseCtrfJson(fixture('ctrf-basic.json'));

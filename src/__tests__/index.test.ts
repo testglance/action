@@ -89,6 +89,7 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'report-format': '',
     'test-job-name': '',
     'github-token': '',
+    'slowest-tests': '',
   };
   const inputs = { ...defaults, ...overrides };
   mockGetInput.mockImplementation((name: string) => inputs[name] ?? '');
@@ -355,6 +356,7 @@ describe('run() integration', () => {
         healthScore: 85,
         dashboardUrl: 'https://www.testglance.dev/runs/run-1',
         highlights: [],
+        slowestTests: 10,
       });
     });
 
@@ -374,6 +376,7 @@ describe('run() integration', () => {
         healthScore: undefined,
         dashboardUrl: undefined,
         highlights: [],
+        slowestTests: 10,
       });
     });
 
@@ -432,6 +435,40 @@ describe('run() integration', () => {
       await run();
 
       expect(mockGenerateSummary).toHaveBeenCalledWith(expect.objectContaining({ highlights: [] }));
+    });
+  });
+
+  describe('slowest-tests input validation (Story 6.1)', () => {
+    it('passes through 0 to disable slowest tests section', async () => {
+      setupInputs({ 'slowest-tests': '0' });
+      await run();
+
+      expect(mockGenerateSummary).toHaveBeenCalledWith(
+        expect.objectContaining({ slowestTests: 0 }),
+      );
+      expect(mockWarning).not.toHaveBeenCalled();
+    });
+
+    it('falls back to 10 and warns when slowest-tests is not numeric', async () => {
+      setupInputs({ 'slowest-tests': 'abc' });
+      await run();
+
+      expect(mockGenerateSummary).toHaveBeenCalledWith(
+        expect.objectContaining({ slowestTests: 10 }),
+      );
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid "slowest-tests" input "abc"'),
+      );
+    });
+
+    it('falls back to 10 and warns when slowest-tests is negative', async () => {
+      setupInputs({ 'slowest-tests': '-3' });
+      await run();
+
+      expect(mockGenerateSummary).toHaveBeenCalledWith(
+        expect.objectContaining({ slowestTests: 10 }),
+      );
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('Invalid "slowest-tests"'));
     });
   });
 
