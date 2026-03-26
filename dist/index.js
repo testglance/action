@@ -32654,6 +32654,18 @@ const detect_framework_1 = __nccwpck_require__(6039);
 const errors_1 = __nccwpck_require__(7673);
 const summary_1 = __nccwpck_require__(5942);
 const post_pr_comment_1 = __nccwpck_require__(4685);
+const DEFAULT_SLOWEST_TESTS = 10;
+function parseSlowestTestsCount(input) {
+    const trimmed = input.trim();
+    if (!trimmed) {
+        return DEFAULT_SLOWEST_TESTS;
+    }
+    if (!/^\d+$/.test(trimmed)) {
+        core.warning(`Invalid "slowest-tests" input "${input}". Expected a non-negative integer; defaulting to ${DEFAULT_SLOWEST_TESTS}.`);
+        return DEFAULT_SLOWEST_TESTS;
+    }
+    return Number.parseInt(trimmed, 10);
+}
 async function run() {
     try {
         const reportPath = core.getInput('report-path', { required: true });
@@ -32662,9 +32674,7 @@ async function run() {
         const reportFormat = core.getInput('report-format') || 'auto';
         const testJobName = core.getInput('test-job-name') || '';
         const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
-        const slowestTestsInput = core.getInput('slowest-tests') || '10';
-        const slowestTests = parseInt(slowestTestsInput, 10);
-        const slowestTestsCount = Number.isNaN(slowestTests) ? 10 : slowestTests;
+        const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
         if (!(0, node_fs_1.existsSync)(reportPath)) {
             (0, errors_1.handleFileNotFound)(reportPath);
             return;
@@ -33141,10 +33151,19 @@ function formatDuration(seconds) {
 function renderStackTrace(testName, stackTrace) {
     const lines = stackTrace.split('\n');
     let truncated = lines.slice(0, MAX_STACK_TRACE_LINES).join('\n');
+    const safeTestName = escapeHtml(testName);
     if (lines.length > MAX_STACK_TRACE_LINES) {
         truncated += `\n... ${lines.length - MAX_STACK_TRACE_LINES} more lines truncated`;
     }
-    return `<details><summary>Stack trace: ${testName}</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>\n\n`;
+    return `<details><summary>Stack trace: ${safeTestName}</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>\n\n`;
+}
+function escapeHtml(value) {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 function truncate(str, maxLen) {
     if (str.length <= maxLen)
