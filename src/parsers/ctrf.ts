@@ -92,7 +92,9 @@ export function parseCtrfJson(content: string): ParsedTestRun {
       status,
       duration: durationSeconds,
       ...(hasError && test.message ? { errorMessage: test.message } : {}),
-      ...(hasError && test.trace ? { errorType: test.trace.split('\n')[0] } : {}),
+      ...(hasError && test.trace
+        ? { errorType: test.trace.split('\n')[0], stackTrace: test.trace }
+        : {}),
     };
 
     const existing = suiteMap.get(suiteName);

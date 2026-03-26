@@ -355,6 +355,7 @@ describe('run() integration', () => {
         healthScore: 85,
         dashboardUrl: 'https://www.testglance.dev/runs/run-1',
         highlights: [],
+        slowestTests: 10,
       });
     });
 
@@ -374,6 +375,7 @@ describe('run() integration', () => {
         healthScore: undefined,
         dashboardUrl: undefined,
         highlights: [],
+        slowestTests: 10,
       });
     });
 

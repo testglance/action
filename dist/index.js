@@ -32562,6 +32562,8 @@ async function sendTestRun(apiUrl, apiKey, parsedRun, metaFields) {
                     runId: body.data?.runId,
                     healthScore: body.data?.healthScore,
                     highlights: body.data?.highlights ?? [],
+                    projectId: body.data?.projectId,
+                    projectCreated: body.data?.projectCreated,
                 };
             }
             const errorBody = (await response.json().catch(() => ({
@@ -32660,6 +32662,9 @@ async function run() {
         const reportFormat = core.getInput('report-format') || 'auto';
         const testJobName = core.getInput('test-job-name') || '';
         const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
+        const slowestTestsInput = core.getInput('slowest-tests') || '10';
+        const slowestTests = parseInt(slowestTestsInput, 10);
+        const slowestTestsCount = Number.isNaN(slowestTests) ? 10 : slowestTests;
         if (!(0, node_fs_1.existsSync)(reportPath)) {
             (0, errors_1.handleFileNotFound)(reportPath);
             return;
@@ -32729,6 +32734,7 @@ async function run() {
             healthScore: result.healthScore,
             dashboardUrl,
             highlights: result.highlights ?? [],
+            slowestTests: slowestTestsCount,
         });
         if (githubToken && result.success) {
             await (0, post_pr_comment_1.postPrComment)({
@@ -33035,10 +33041,11 @@ exports.truncate = truncate;
 exports.collectFailedTests = collectFailedTests;
 exports.renderHighlights = renderHighlights;
 const core = __importStar(__nccwpck_require__(6966));
-const MAX_FAILED_TESTS_SHOWN = 10;
+const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
+const MAX_STACK_TRACE_LINES = 30;
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights } = options;
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests } = options;
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
     core.summary.addHeading('TestGlance Results', 2);
@@ -33067,26 +33074,53 @@ async function generateSummary(options) {
     if (highlights && highlights.length > 0) {
         core.summary.addRaw(renderHighlights(highlights, dashboardUrl));
     }
-    const failedTests = collectFailedTests(parsed);
-    if (failedTests.length > 0) {
-        core.summary.addHeading('Failed Tests', 3);
-        const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
-        const rows = shown.map((t) => [
-            t.suite,
-            t.name,
-            truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
-        ]);
-        core.summary.addTable([
-            [
-                { data: 'Suite', header: true },
-                { data: 'Test', header: true },
-                { data: 'Error', header: true },
-            ],
-            ...rows,
-        ]);
-        if (failedTests.length > MAX_FAILED_TESTS_SHOWN) {
-            core.summary.addRaw(`... and ${failedTests.length - MAX_FAILED_TESTS_SHOWN} more failed tests\n\n`);
+    try {
+        const failedTests = collectFailedTests(parsed).sort((a, b) => a.suite.localeCompare(b.suite));
+        if (failedTests.length > 0) {
+            core.summary.addHeading('Failed Tests', 3);
+            const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
+            const rows = shown.map((t) => [
+                t.suite,
+                t.name,
+                truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
+            ]);
+            core.summary.addTable([
+                [
+                    { data: 'Suite', header: true },
+                    { data: 'Test', header: true },
+                    { data: 'Error', header: true },
+                ],
+                ...rows,
+            ]);
+            for (const t of shown) {
+                if (t.stackTrace) {
+                    core.summary.addRaw(renderStackTrace(t.name, t.stackTrace));
+                }
+            }
+            if (failedTests.length > MAX_FAILED_TESTS_SHOWN) {
+                core.summary.addRaw(`... and ${failedTests.length - MAX_FAILED_TESTS_SHOWN} more failed tests\n\n`);
+            }
         }
+        if (slowestTests && slowestTests > 0) {
+            const allTests = parsed.suites.flatMap((s) => s.tests);
+            const withDuration = allTests.filter((t) => t.duration > 0);
+            const sorted = [...withDuration].sort((a, b) => b.duration - a.duration);
+            const top = sorted.slice(0, slowestTests);
+            if (top.length > 0) {
+                core.summary.addHeading('Slowest Tests', 3);
+                core.summary.addTable([
+                    [
+                        { data: 'Test', header: true },
+                        { data: 'Suite', header: true },
+                        { data: 'Duration', header: true },
+                    ],
+                    ...top.map((t) => [t.name, t.suite, formatDuration(t.duration)]),
+                ]);
+            }
+        }
+    }
+    catch (err) {
+        core.warning(`Enhanced summary generation failed, using basic summary: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (!apiSuccess) {
         core.summary.addRaw('> **Note:** API submission failed — dashboard data not updated.\n\n');
@@ -33103,6 +33137,14 @@ function formatDuration(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}m ${secs.toFixed(1)}s`;
+}
+function renderStackTrace(testName, stackTrace) {
+    const lines = stackTrace.split('\n');
+    let truncated = lines.slice(0, MAX_STACK_TRACE_LINES).join('\n');
+    if (lines.length > MAX_STACK_TRACE_LINES) {
+        truncated += `\n... ${lines.length - MAX_STACK_TRACE_LINES} more lines truncated`;
+    }
+    return `<details><summary>Stack trace: ${testName}</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>\n\n`;
 }
 function truncate(str, maxLen) {
     if (str.length <= maxLen)
@@ -33243,7 +33285,7 @@ function parseCtrfJson(content) {
             status,
             duration: durationSeconds,
             ...(hasError && test.message ? { errorMessage: test.message } : {}),
-            ...(hasError && test.trace ? { errorType: test.trace.split('\n')[0] } : {}),
+            ...(hasError && test.trace ? { errorType: test.trace.split('\n')[0], stackTrace: test.trace } : {}),
         };
         const existing = suiteMap.get(suiteName);
         if (existing) {
@@ -33306,18 +33348,22 @@ const xmlParser = new fast_xml_parser_1.XMLParser({
 function resolveStatus(testcase) {
     if (testcase['error']) {
         const err = testcase['error'];
+        const textContent = err['#text'];
         return {
             status: 'errored',
-            errorMessage: err['@_message'] ?? err['#text'],
+            errorMessage: err['@_message'] ?? textContent,
             errorType: err['@_type'],
+            ...(textContent ? { stackTrace: textContent } : {}),
         };
     }
     if (testcase['failure']) {
         const fail = testcase['failure'];
+        const textContent = fail['#text'];
         return {
             status: 'failed',
-            errorMessage: fail['@_message'] ?? fail['#text'],
+            errorMessage: fail['@_message'] ?? textContent,
             errorType: fail['@_type'],
+            ...(textContent ? { stackTrace: textContent } : {}),
         };
     }
     if (testcase['skipped'] !== undefined) {
@@ -33334,7 +33380,7 @@ function resolveStatus(testcase) {
 }
 function extractTestCases(testcases, suiteName) {
     return testcases.map((tc) => {
-        const { status, errorMessage, errorType } = resolveStatus(tc);
+        const { status, errorMessage, errorType, stackTrace } = resolveStatus(tc);
         return {
             name: tc['@_name'] ?? 'unknown',
             suite: suiteName,
@@ -33342,6 +33388,7 @@ function extractTestCases(testcases, suiteName) {
             duration: parseFloat(tc['@_time']) || 0,
             ...(errorMessage ? { errorMessage } : {}),
             ...(errorType ? { errorType } : {}),
+            ...(stackTrace ? { stackTrace } : {}),
         };
     });
 }

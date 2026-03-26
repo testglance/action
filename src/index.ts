@@ -24,6 +24,9 @@ export async function run(): Promise<void> {
     const reportFormat = core.getInput('report-format') || 'auto';
     const testJobName = core.getInput('test-job-name') || '';
     const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
+    const slowestTestsInput = core.getInput('slowest-tests') || '10';
+    const slowestTests = parseInt(slowestTestsInput, 10);
+    const slowestTestsCount = Number.isNaN(slowestTests) ? 10 : slowestTests;
 
     if (!existsSync(reportPath)) {
       handleFileNotFound(reportPath);
@@ -101,6 +104,7 @@ export async function run(): Promise<void> {
       healthScore: result.healthScore,
       dashboardUrl,
       highlights: result.highlights ?? [],
+      slowestTests: slowestTestsCount,
     });
 
     if (githubToken && result.success) {

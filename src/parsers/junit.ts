@@ -14,21 +14,25 @@ const xmlParser = new XMLParser({
 
 function resolveStatus(
   testcase: Record<string, unknown>,
-): Pick<ParsedTestCase, 'status' | 'errorMessage' | 'errorType'> {
+): Pick<ParsedTestCase, 'status' | 'errorMessage' | 'errorType' | 'stackTrace'> {
   if (testcase['error']) {
     const err = testcase['error'] as Record<string, unknown>;
+    const textContent = err['#text'] as string | undefined;
     return {
       status: 'errored',
-      errorMessage: (err['@_message'] as string) ?? (err['#text'] as string),
+      errorMessage: (err['@_message'] as string) ?? textContent,
       errorType: err['@_type'] as string | undefined,
+      ...(textContent ? { stackTrace: textContent } : {}),
     };
   }
   if (testcase['failure']) {
     const fail = testcase['failure'] as Record<string, unknown>;
+    const textContent = fail['#text'] as string | undefined;
     return {
       status: 'failed',
-      errorMessage: (fail['@_message'] as string) ?? (fail['#text'] as string),
+      errorMessage: (fail['@_message'] as string) ?? textContent,
       errorType: fail['@_type'] as string | undefined,
+      ...(textContent ? { stackTrace: textContent } : {}),
     };
   }
   if (testcase['skipped'] !== undefined) {
@@ -50,7 +54,7 @@ function extractTestCases(
   suiteName: string,
 ): ParsedTestCase[] {
   return testcases.map((tc) => {
-    const { status, errorMessage, errorType } = resolveStatus(tc);
+    const { status, errorMessage, errorType, stackTrace } = resolveStatus(tc);
     return {
       name: (tc['@_name'] as string) ?? 'unknown',
       suite: suiteName,
@@ -58,6 +62,7 @@ function extractTestCases(
       duration: parseFloat(tc['@_time'] as string) || 0,
       ...(errorMessage ? { errorMessage } : {}),
       ...(errorType ? { errorType } : {}),
+      ...(stackTrace ? { stackTrace } : {}),
     };
   });
 }
