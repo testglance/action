@@ -33285,7 +33285,9 @@ function parseCtrfJson(content) {
             status,
             duration: durationSeconds,
             ...(hasError && test.message ? { errorMessage: test.message } : {}),
-            ...(hasError && test.trace ? { errorType: test.trace.split('\n')[0], stackTrace: test.trace } : {}),
+            ...(hasError && test.trace
+                ? { errorType: test.trace.split('\n')[0], stackTrace: test.trace }
+                : {}),
         };
         const existing = suiteMap.get(suiteName);
         if (existing) {
