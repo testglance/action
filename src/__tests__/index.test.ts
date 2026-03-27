@@ -88,6 +88,7 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'api-url': '',
     'report-format': '',
     'test-job-name': '',
+    'send-results': '',
     'github-token': '',
     'slowest-tests': '',
   };
@@ -330,6 +331,49 @@ describe('run() integration', () => {
         expect.any(Object),
         expect.any(Object),
       );
+    });
+  });
+
+  describe('send-results flag', () => {
+    it('skips API call when send-results is false', async () => {
+      setupInputs({ 'send-results': 'false' });
+      await run();
+
+      expect(mockSendTestRun).not.toHaveBeenCalled();
+    });
+
+    it('still generates summary when send-results is false', async () => {
+      setupInputs({ 'send-results': 'false' });
+      await run();
+
+      expect(mockGenerateSummary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parsed: VALID_PARSED_RUN,
+          apiSuccess: false,
+          runId: undefined,
+          healthScore: undefined,
+          dashboardUrl: undefined,
+          highlights: [],
+        }),
+      );
+    });
+
+    it('does not post PR comment when send-results is false', async () => {
+      setupInputs({ 'send-results': 'false', 'github-token': 'ghp_abc123' });
+      await run();
+
+      expect(mockPostPrComment).not.toHaveBeenCalled();
+    });
+
+    it('sends to API by default (empty string)', async () => {
+      await run();
+      expect(mockSendTestRun).toHaveBeenCalled();
+    });
+
+    it('sends to API when send-results is true', async () => {
+      setupInputs({ 'send-results': 'true' });
+      await run();
+      expect(mockSendTestRun).toHaveBeenCalled();
     });
   });
 

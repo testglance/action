@@ -1,0 +1,121 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: E2E — Action Integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── JUnit XML: auto-detect format from .xml extension ──
+      - name: 'JUnit: auto-detect'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/junit-basic.xml
+
+      # ── JUnit XML: explicit format ──
+      - name: 'JUnit: explicit format'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/junit-basic.xml
+          report-format: junit
+
+      # ── CTRF JSON: auto-detect format from .json extension ──
+      - name: 'CTRF: auto-detect'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/ctrf-basic.json
+
+      # ── CTRF JSON: explicit format ──
+      - name: 'CTRF: explicit format'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/ctrf-basic.json
+          report-format: ctrf
+
+      # ── Multi-suite JUnit ──
+      - name: 'JUnit: multi-suite'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/junit-multi-suite.xml
+
+      # ── Reports with stack traces ──
+      - name: 'JUnit: with stack traces'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/junit-with-stacktraces.xml
+
+      - name: 'CTRF: with stack traces'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/ctrf-with-stacktraces.json
+
+      # ── Custom inputs ──
+      - name: 'Custom: test-job-name + slowest-tests disabled'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/junit-basic.xml
+          test-job-name: my-custom-job
+          slowest-tests: '0'
+
+      # ── Edge cases: must warn but NOT fail ──
+      - name: 'Edge: malformed XML (should warn, exit 0)'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/junit-malformed.xml
+
+      - name: 'Edge: malformed JSON (should warn, exit 0)'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/ctrf-malformed.json
+
+      - name: 'Edge: empty test suite (should warn, exit 0)'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/junit-empty.xml
+
+      - name: 'Edge: no matching file (should warn, exit 0)'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/does-not-exist.xml
+
+      - name: 'Edge: invalid CTRF schema (should warn, exit 0)'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/ctrf-invalid-schema.json
