@@ -1,5 +1,11 @@
 import * as core from '@actions/core';
-import type { ParsedTestRun, ParsedTestCase, Highlight, HighlightSeverity } from '../types';
+import type {
+  ParsedTestRun,
+  ParsedSuite,
+  ParsedTestCase,
+  Highlight,
+  HighlightSeverity,
+} from '../types';
 
 export interface SummaryOptions {
   parsed: ParsedTestRun;
@@ -53,25 +59,28 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   }
 
   try {
+    if (parsed.suites.length > 1) {
+      renderSuiteBreakdown(parsed.suites);
+    }
+
     const failedTests = collectFailedTests(parsed).sort((a, b) => a.suite.localeCompare(b.suite));
     if (failedTests.length > 0) {
       core.summary.addHeading('Failed Tests', 3);
       const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
-      const rows = shown.map((t) => [
-        t.suite,
-        t.name,
-        truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
-      ]);
-      core.summary.addTable([
-        [
-          { data: 'Suite', header: true },
-          { data: 'Test', header: true },
-          { data: 'Error', header: true },
-        ],
-        ...rows,
-      ]);
 
       for (const t of shown) {
+        core.summary.addTable([
+          [
+            { data: 'Suite', header: true },
+            { data: 'Test', header: true },
+            { data: 'Error', header: true },
+          ],
+          [
+            t.suite,
+            t.name,
+            truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
+          ],
+        ]);
         if (t.stackTrace) {
           core.summary.addRaw(renderStackTrace(t.name, t.stackTrace));
         }
@@ -86,7 +95,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
     if (slowestTests && slowestTests > 0) {
       const allTests = parsed.suites.flatMap((s) => s.tests);
-      const withDuration = allTests.filter((t) => t.duration > 0);
+      const withDuration = allTests.filter((t) => t.duration >= 0.2);
       const sorted = [...withDuration].sort((a, b) => b.duration - a.duration);
       const top = sorted.slice(0, slowestTests);
       if (top.length > 0) {
@@ -153,6 +162,38 @@ export function truncate(str: string, maxLen: number): string {
 export function collectFailedTests(parsed: ParsedTestRun): ParsedTestCase[] {
   return parsed.suites.flatMap((suite) =>
     suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'),
+  );
+}
+
+export function renderSuiteBreakdown(suites: ParsedSuite[]): void {
+  const rows = suites
+    .map((s) => {
+      const total = s.tests.length;
+      const passed = s.tests.filter((t) => t.status === 'passed').length;
+      const failed = s.tests.filter((t) => t.status === 'failed' || t.status === 'errored').length;
+      const skipped = s.tests.filter((t) => t.status === 'skipped').length;
+      const passRate = total > 0 ? (passed / total) * 100 : -1;
+      return { name: s.name, total, passed, failed, skipped, passRate, duration: s.duration };
+    })
+    .sort((a, b) => {
+      if (a.passRate < 0) return 1;
+      if (b.passRate < 0) return -1;
+      return a.passRate - b.passRate;
+    });
+
+  const tableRows = rows
+    .map(
+      (r) =>
+        `<tr><td>${escapeHtml(r.name)}</td><td>${r.total}</td><td>${r.passed}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${r.total > 0 ? `${r.passRate.toFixed(1)}%` : 'N/A'}</td><td>${formatDuration(r.duration)}</td></tr>`,
+    )
+    .join('\n');
+
+  core.summary.addRaw(
+    `<details><summary><strong>Suite Breakdown</strong> (${suites.length} suites)</summary>\n\n` +
+      '<table>\n' +
+      '<tr><th>Suite</th><th>Total</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Pass Rate</th><th>Duration</th></tr>\n' +
+      tableRows +
+      '\n</table>\n\n</details>\n\n',
   );
 }
 

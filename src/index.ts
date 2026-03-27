@@ -1,20 +1,17 @@
 import * as core from '@actions/core';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { parseJunitXml } from './parsers/junit';
 import { parseCtrfJson } from './parsers/ctrf';
 import { sendTestRun } from './api/client';
 import { detectFormat } from './utils/detect-format';
 import { detectFramework } from './utils/detect-framework';
-import {
-  handleFileNotFound,
-  handleParseError,
-  handleApiUnreachable,
-  handleApiError,
-  handleUnexpectedError,
-} from './utils/errors';
+import { discoverReportFiles } from './utils/discover-files';
+import { mergeTestRuns } from './utils/merge-results';
+import { handleApiUnreachable, handleApiError, handleUnexpectedError } from './utils/errors';
 import { generateSummary } from './output/summary';
 import { postPrComment } from './output/post-pr-comment';
 import type { ParsedTestRun } from './types';
+import type { FileParseResult } from './utils/merge-results';
 
 const DEFAULT_SLOWEST_TESTS = 10;
 
@@ -34,6 +31,23 @@ function parseSlowestTestsCount(input: string): number {
   return Number.parseInt(trimmed, 10);
 }
 
+function parseFile(filePath: string, reportFormat: string): ParsedTestRun | null {
+  const content = readFileSync(filePath, 'utf-8');
+  const format = reportFormat === 'auto' ? detectFormat(filePath) : reportFormat;
+
+  if (format === 'junit') {
+    return parseJunitXml(content);
+  } else if (format === 'ctrf') {
+    return parseCtrfJson(content);
+  } else {
+    try {
+      return parseJunitXml(content);
+    } catch {
+      return parseCtrfJson(content);
+    }
+  }
+}
+
 export async function run(): Promise<void> {
   try {
     const reportPath = core.getInput('report-path', { required: true });
@@ -45,51 +59,43 @@ export async function run(): Promise<void> {
     const sendResults = core.getInput('send-results') !== 'false';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
 
-    if (!existsSync(reportPath)) {
-      handleFileNotFound(reportPath);
+    const files = await discoverReportFiles(reportPath);
+
+    if (files.length === 0) {
+      core.warning(`No report files found matching: ${reportPath}`);
       return;
     }
 
-    const content = readFileSync(reportPath, 'utf-8');
+    const successful: FileParseResult[] = [];
 
-    let parsed: ParsedTestRun | null = null;
-    const format = reportFormat === 'auto' ? detectFormat(reportPath) : reportFormat;
-
-    if (format === 'junit') {
+    for (const filePath of files) {
       try {
-        parsed = parseJunitXml(content);
-      } catch (err) {
-        handleParseError('JUnit XML', err as Error);
-        return;
-      }
-    } else if (format === 'ctrf') {
-      try {
-        parsed = parseCtrfJson(content);
-      } catch (err) {
-        handleParseError('CTRF JSON', err as Error);
-        return;
-      }
-    } else {
-      try {
-        parsed = parseJunitXml(content);
-      } catch {
-        try {
-          parsed = parseCtrfJson(content);
-        } catch (err) {
-          handleParseError('auto-detected', err as Error);
-          return;
+        const parsed = parseFile(filePath, reportFormat);
+        if (parsed) {
+          successful.push({ filePath, parsed });
         }
+      } catch (err) {
+        core.warning(
+          `Failed to parse ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
-    if (!parsed) return;
+    if (successful.length === 0) {
+      core.warning('All report files failed to parse');
+      return;
+    }
+
+    const parsed = mergeTestRuns(successful);
 
     core.info(
-      `Parsed ${parsed.summary.total} tests: ${parsed.summary.passed} passed, ${parsed.summary.failed} failed, ${parsed.summary.skipped} skipped, ${parsed.summary.errored} errored`,
+      `Parsed ${parsed.summary.total} tests from ${successful.length} file(s): ${parsed.summary.passed} passed, ${parsed.summary.failed} failed, ${parsed.summary.skipped} skipped, ${parsed.summary.errored} errored`,
     );
 
+    const firstFile = successful[0].filePath;
+    const format = reportFormat === 'auto' ? detectFormat(firstFile) : reportFormat;
     const framework = detectFramework(
-      reportPath,
+      firstFile,
       format === 'junit' || format === 'ctrf' ? format : null,
       parsed.toolName,
     );
