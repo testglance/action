@@ -32674,6 +32674,7 @@ async function run() {
         const reportFormat = core.getInput('report-format') || 'auto';
         const testJobName = core.getInput('test-job-name') || '';
         const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
+        const sendResults = core.getInput('send-results') !== 'false';
         const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
         if (!(0, node_fs_1.existsSync)(reportPath)) {
             (0, errors_1.handleFileNotFound)(reportPath);
@@ -32718,35 +32719,38 @@ async function run() {
             return;
         core.info(`Parsed ${parsed.summary.total} tests: ${parsed.summary.passed} passed, ${parsed.summary.failed} failed, ${parsed.summary.skipped} skipped, ${parsed.summary.errored} errored`);
         const framework = (0, detect_framework_1.detectFramework)(reportPath, format === 'junit' || format === 'ctrf' ? format : null, parsed.toolName);
-        const result = await (0, client_1.sendTestRun)(apiUrl, apiKey, parsed, {
-            framework,
-            testJobName: testJobName || undefined,
-        });
-        if (result.success) {
-            core.info(`TestGlance: Test run submitted successfully (${result.runId})`);
-            if (result.healthScore !== null && result.healthScore !== undefined) {
-                core.info(`TestGlance: Health score: ${result.healthScore}`);
+        let result;
+        if (sendResults) {
+            result = await (0, client_1.sendTestRun)(apiUrl, apiKey, parsed, {
+                framework,
+                testJobName: testJobName || undefined,
+            });
+            if (result.success) {
+                core.info(`TestGlance: Test run submitted successfully (${result.runId})`);
+                if (result.healthScore !== null && result.healthScore !== undefined) {
+                    core.info(`TestGlance: Health score: ${result.healthScore}`);
+                }
+            }
+            else if (result.errorCode === 'NETWORK_ERROR') {
+                (0, errors_1.handleApiUnreachable)();
+            }
+            else {
+                (0, errors_1.handleApiError)(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
             }
         }
-        else if (result.errorCode === 'NETWORK_ERROR') {
-            (0, errors_1.handleApiUnreachable)();
-        }
-        else {
-            (0, errors_1.handleApiError)(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
-        }
-        const dashboardUrl = result.success
+        const dashboardUrl = result?.success
             ? `https://www.testglance.dev/runs/${result.runId}`
             : undefined;
         await (0, summary_1.generateSummary)({
             parsed,
-            apiSuccess: result.success,
-            runId: result.runId,
-            healthScore: result.healthScore,
+            apiSuccess: result?.success ?? false,
+            runId: result?.runId,
+            healthScore: result?.healthScore,
             dashboardUrl,
-            highlights: result.highlights ?? [],
+            highlights: result?.highlights ?? [],
             slowestTests: slowestTestsCount,
         });
-        if (githubToken && result.success) {
+        if (githubToken && result?.success) {
             await (0, post_pr_comment_1.postPrComment)({
                 githubToken,
                 section: {

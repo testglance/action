@@ -24,6 +24,10 @@ inputs:
     description: 'Number of slowest tests to show in the CI summary (0 to disable)'
     required: false
     default: '10'
+  send-results:
+    description: 'Send parsed results to TestGlance API (set to false for dry-run testing)'
+    required: false
+    default: 'true'
   github-token:
     description: 'GitHub token for PR comments. Use github.token or a PAT with pull-requests: write scope.'
     required: false

@@ -42,6 +42,7 @@ export async function run(): Promise<void> {
     const reportFormat = core.getInput('report-format') || 'auto';
     const testJobName = core.getInput('test-job-name') || '';
     const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
+    const sendResults = core.getInput('send-results') !== 'false';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
 
     if (!existsSync(reportPath)) {
@@ -93,37 +94,41 @@ export async function run(): Promise<void> {
       parsed.toolName,
     );
 
-    const result = await sendTestRun(apiUrl, apiKey, parsed, {
-      framework,
-      testJobName: testJobName || undefined,
-    });
+    let result: Awaited<ReturnType<typeof sendTestRun>> | undefined;
 
-    if (result.success) {
-      core.info(`TestGlance: Test run submitted successfully (${result.runId})`);
-      if (result.healthScore !== null && result.healthScore !== undefined) {
-        core.info(`TestGlance: Health score: ${result.healthScore}`);
+    if (sendResults) {
+      result = await sendTestRun(apiUrl, apiKey, parsed, {
+        framework,
+        testJobName: testJobName || undefined,
+      });
+
+      if (result.success) {
+        core.info(`TestGlance: Test run submitted successfully (${result.runId})`);
+        if (result.healthScore !== null && result.healthScore !== undefined) {
+          core.info(`TestGlance: Health score: ${result.healthScore}`);
+        }
+      } else if (result.errorCode === 'NETWORK_ERROR') {
+        handleApiUnreachable();
+      } else {
+        handleApiError(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
       }
-    } else if (result.errorCode === 'NETWORK_ERROR') {
-      handleApiUnreachable();
-    } else {
-      handleApiError(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
     }
 
-    const dashboardUrl = result.success
+    const dashboardUrl = result?.success
       ? `https://www.testglance.dev/runs/${result.runId}`
       : undefined;
 
     await generateSummary({
       parsed,
-      apiSuccess: result.success,
-      runId: result.runId,
-      healthScore: result.healthScore,
+      apiSuccess: result?.success ?? false,
+      runId: result?.runId,
+      healthScore: result?.healthScore,
       dashboardUrl,
-      highlights: result.highlights ?? [],
+      highlights: result?.highlights ?? [],
       slowestTests: slowestTestsCount,
     });
 
-    if (githubToken && result.success) {
+    if (githubToken && result?.success) {
       await postPrComment({
         githubToken,
         section: {
