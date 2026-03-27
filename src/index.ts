@@ -6,7 +6,7 @@ import { sendTestRun } from './api/client';
 import { detectFormat } from './utils/detect-format';
 import { detectFramework } from './utils/detect-framework';
 import { discoverReportFiles } from './utils/discover-files';
-import { autoDetectReportFiles, AUTO_DETECT_PATTERNS } from './utils/auto-detect';
+import { autoDetectReportFiles } from './utils/auto-detect';
 import { mergeTestRuns } from './utils/merge-results';
 import { handleApiUnreachable, handleApiError, handleUnexpectedError } from './utils/errors';
 import { generateSummary } from './output/summary';
