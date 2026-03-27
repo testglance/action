@@ -1,0 +1,34 @@
+# TestGlance — Full-Featured Usage
+#
+# All features enabled: PR comments, Check Runs with inline annotations,
+# auto-detection, custom slowest tests count, and SaaS dashboard reporting.
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  pull-requests: write
+  checks: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: npm ci
+      - run: npm test -- --reporter=junit --outputFile=test-results.xml
+
+      - uses: testglance/action@v1
+        if: always()
+        with:
+          api-key: ${{ secrets.TESTGLANCE_API_KEY }}
+          github-token: ${{ github.token }}
+          create-check: true
+          check-name: Unit Tests
+          slowest-tests: '15'

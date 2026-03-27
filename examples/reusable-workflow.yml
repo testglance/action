@@ -1,0 +1,98 @@
+# TestGlance Reusable Workflow
+#
+# Copy this file into your organization's shared workflow repo at:
+#   .github/workflows/testglance.yml
+#
+# Then consume it from any repo:
+#
+#   # .github/workflows/test.yml
+#   jobs:
+#     test:
+#       runs-on: ubuntu-latest
+#       steps:
+#         - uses: actions/checkout@v4
+#         - run: npm test
+#
+#     report:
+#       needs: test
+#       uses: your-org/.github/.github/workflows/testglance.yml@main
+#       secrets:
+#         api-key: ${{ secrets.TESTGLANCE_API_KEY }}
+#         github-token: ${{ secrets.GITHUB_TOKEN }}
+
+name: TestGlance
+
+on:
+  workflow_call:
+    inputs:
+      # Path to test report file(s). Supports globs. Leave empty for auto-detection.
+      report-path:
+        type: string
+        required: false
+        default: ''
+      # Report format: junit, ctrf, or auto (detect from file extension)
+      report-format:
+        type: string
+        required: false
+        default: 'auto'
+      # Name of the secret containing the API key in the calling repo
+      api-key-secret-name:
+        type: string
+        required: false
+        default: 'TESTGLANCE_API_KEY'
+      # Send parsed results to TestGlance API (false for local-only CI summary)
+      send-results:
+        type: string
+        required: false
+        default: 'true'
+      # Number of slowest tests to show in CI summary (0 to disable)
+      slowest-tests:
+        type: string
+        required: false
+        default: '10'
+      # Override the display name for this test job
+      test-job-name:
+        type: string
+        required: false
+        default: ''
+      # Create a GitHub Check Run with inline annotations on failed tests
+      create-check:
+        type: string
+        required: false
+        default: 'false'
+      # Name of the Check Run (only used when create-check is true)
+      check-name:
+        type: string
+        required: false
+        default: 'Test Results'
+    secrets:
+      # TestGlance project API key
+      api-key:
+        required: false
+      # GitHub token for PR comments and Check Runs
+      github-token:
+        required: false
+
+jobs:
+  testglance:
+    name: TestGlance Report
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .
+
+      - uses: testglance/action@v1
+        with:
+          report-path: ${{ inputs.report-path }}
+          api-key: ${{ secrets.api-key }}
+          report-format: ${{ inputs.report-format }}
+          send-results: ${{ inputs.send-results }}
+          slowest-tests: ${{ inputs.slowest-tests }}
+          test-job-name: ${{ inputs.test-job-name }}
+          github-token: ${{ secrets.github-token }}
+          create-check: ${{ inputs.create-check }}
+          check-name: ${{ inputs.check-name }}
