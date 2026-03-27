@@ -6,6 +6,7 @@ import { sendTestRun } from './api/client';
 import { detectFormat } from './utils/detect-format';
 import { detectFramework } from './utils/detect-framework';
 import { discoverReportFiles } from './utils/discover-files';
+import { autoDetectReportFiles } from './utils/auto-detect';
 import { mergeTestRuns } from './utils/merge-results';
 import { handleApiUnreachable, handleApiError, handleUnexpectedError } from './utils/errors';
 import { generateSummary } from './output/summary';
@@ -50,7 +51,7 @@ function parseFile(filePath: string, reportFormat: string): ParsedTestRun | null
 
 export async function run(): Promise<void> {
   try {
-    const reportPath = core.getInput('report-path', { required: true });
+    const reportPath = core.getInput('report-path');
     const apiKey = core.getInput('api-key', { required: true });
     const apiUrl = core.getInput('api-url') || 'https://www.testglance.dev';
     const reportFormat = core.getInput('report-format') || 'auto';
@@ -59,11 +60,27 @@ export async function run(): Promise<void> {
     const sendResults = core.getInput('send-results') !== 'false';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
 
-    const files = await discoverReportFiles(reportPath);
+    let files: string[];
 
-    if (files.length === 0) {
-      core.warning(`No report files found matching: ${reportPath}`);
-      return;
+    if (reportPath) {
+      files = await discoverReportFiles(reportPath);
+
+      if (files.length === 0) {
+        core.warning(`No report files found matching: ${reportPath}`);
+        return;
+      }
+    } else {
+      core.info('No report-path provided, entering auto-detect mode');
+      const result = await autoDetectReportFiles();
+      files = result.files;
+
+      if (files.length === 0) {
+        const patterns = result.scannedPatterns.map((p) => `  - ${p}`).join('\n');
+        core.warning(
+          `No test report files found. Scanned these patterns:\n${patterns}\nTip: Specify the 'report-path' input with the path to your test report file(s).`,
+        );
+        return;
+      }
     }
 
     const successful: FileParseResult[] = [];

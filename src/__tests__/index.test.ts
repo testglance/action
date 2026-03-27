@@ -53,6 +53,20 @@ vi.mock('../utils/merge-results', () => ({
   mergeTestRuns: (...args: unknown[]) => mockMergeTestRuns(...args),
 }));
 
+const mockAutoDetectReportFiles = vi.fn();
+vi.mock('../utils/auto-detect', () => ({
+  autoDetectReportFiles: (...args: unknown[]) => mockAutoDetectReportFiles(...args),
+  AUTO_DETECT_PATTERNS: [
+    '**/test-results/**/*.xml',
+    '**/junit.xml',
+    '**/test-report.xml',
+    '**/surefire-reports/*.xml',
+    '**/test-results/**/*.json',
+    '**/ctrf-report.json',
+    '**/test-report.json',
+  ],
+}));
+
 vi.mock('../utils/errors', () => ({
   handleFileNotFound: vi.fn(),
   handleParseError: vi.fn(),
@@ -748,6 +762,88 @@ describe('run() integration', () => {
       expect(mockMergeTestRuns).toHaveBeenCalledWith([
         { filePath: '/single.xml', parsed: VALID_PARSED_RUN },
       ]);
+    });
+  });
+
+  describe('auto-detection mode (Story 6.3)', () => {
+    it('enters auto-detect mode when report-path is empty', async () => {
+      setupInputs({ 'report-path': '' });
+      mockAutoDetectReportFiles.mockResolvedValue({
+        files: ['/project/junit.xml'],
+        scannedPatterns: ['**/junit.xml'],
+      });
+
+      await run();
+
+      expect(mockAutoDetectReportFiles).toHaveBeenCalled();
+      expect(mockDiscoverReportFiles).not.toHaveBeenCalled();
+      expect(mockMergeTestRuns).toHaveBeenCalled();
+    });
+
+    it('logs info message when entering auto-detect mode', async () => {
+      setupInputs({ 'report-path': '' });
+      mockAutoDetectReportFiles.mockResolvedValue({
+        files: ['/project/junit.xml'],
+        scannedPatterns: ['**/junit.xml'],
+      });
+
+      await run();
+
+      expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('auto-detect'));
+    });
+
+    it('processes auto-detected files through normal pipeline', async () => {
+      setupInputs({ 'report-path': '' });
+      mockAutoDetectReportFiles.mockResolvedValue({
+        files: ['/project/a.xml', '/project/b.json'],
+        scannedPatterns: [],
+      });
+      mockReadFileSync.mockReturnValue('content');
+      mockDetectFormat.mockImplementation((path: string) =>
+        path.endsWith('.xml') ? 'junit' : 'ctrf',
+      );
+
+      await run();
+
+      expect(mockMergeTestRuns).toHaveBeenCalledWith([
+        { filePath: '/project/a.xml', parsed: VALID_PARSED_RUN },
+        { filePath: '/project/b.json', parsed: VALID_PARSED_RUN },
+      ]);
+    });
+
+    it('warns and returns gracefully when auto-detect finds zero files', async () => {
+      setupInputs({ 'report-path': '' });
+      mockAutoDetectReportFiles.mockResolvedValue({
+        files: [],
+        scannedPatterns: [
+          '**/test-results/**/*.xml',
+          '**/junit.xml',
+          '**/test-report.xml',
+          '**/surefire-reports/*.xml',
+          '**/test-results/**/*.json',
+          '**/ctrf-report.json',
+          '**/test-report.json',
+        ],
+      });
+
+      await run();
+
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('No test report files found'),
+      );
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('report-path'));
+      expect(mockSendTestRun).not.toHaveBeenCalled();
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    });
+
+    it('skips auto-detect when report-path IS provided (AC #4)', async () => {
+      setupInputs({ 'report-path': '/explicit/path.xml' });
+      mockDiscoverReportFiles.mockResolvedValue(['/explicit/path.xml']);
+
+      await run();
+
+      expect(mockAutoDetectReportFiles).not.toHaveBeenCalled();
+      expect(mockDiscoverReportFiles).toHaveBeenCalledWith('/explicit/path.xml');
     });
   });
 });

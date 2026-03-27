@@ -39897,6 +39897,7 @@ const client_1 = __nccwpck_require__(7246);
 const detect_format_1 = __nccwpck_require__(4469);
 const detect_framework_1 = __nccwpck_require__(6039);
 const discover_files_1 = __nccwpck_require__(407);
+const auto_detect_1 = __nccwpck_require__(1865);
 const merge_results_1 = __nccwpck_require__(931);
 const errors_1 = __nccwpck_require__(7673);
 const summary_1 = __nccwpck_require__(5942);
@@ -39933,7 +39934,7 @@ function parseFile(filePath, reportFormat) {
 }
 async function run() {
     try {
-        const reportPath = core.getInput('report-path', { required: true });
+        const reportPath = core.getInput('report-path');
         const apiKey = core.getInput('api-key', { required: true });
         const apiUrl = core.getInput('api-url') || 'https://www.testglance.dev';
         const reportFormat = core.getInput('report-format') || 'auto';
@@ -39941,10 +39942,23 @@ async function run() {
         const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
         const sendResults = core.getInput('send-results') !== 'false';
         const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
-        const files = await (0, discover_files_1.discoverReportFiles)(reportPath);
-        if (files.length === 0) {
-            core.warning(`No report files found matching: ${reportPath}`);
-            return;
+        let files;
+        if (reportPath) {
+            files = await (0, discover_files_1.discoverReportFiles)(reportPath);
+            if (files.length === 0) {
+                core.warning(`No report files found matching: ${reportPath}`);
+                return;
+            }
+        }
+        else {
+            core.info('No report-path provided, entering auto-detect mode');
+            const result = await (0, auto_detect_1.autoDetectReportFiles)();
+            files = result.files;
+            if (files.length === 0) {
+                const patterns = result.scannedPatterns.map((p) => `  - ${p}`).join('\n');
+                core.warning(`No test report files found. Scanned these patterns:\n${patterns}\nTip: Specify the 'report-path' input with the path to your test report file(s).`);
+                return;
+            }
         }
         const successful = [];
         for (const filePath of files) {
@@ -40759,6 +40773,41 @@ function parseJunitXml(content) {
         duration: rootDuration ?? suiteDurationSum,
     };
     return { summary, suites };
+}
+
+
+/***/ }),
+
+/***/ 1865:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.AUTO_DETECT_PATTERNS = void 0;
+exports.autoDetectReportFiles = autoDetectReportFiles;
+const discover_files_1 = __nccwpck_require__(407);
+exports.AUTO_DETECT_PATTERNS = [
+    '**/test-results/**/*.xml',
+    '**/junit.xml',
+    '**/test-report.xml',
+    '**/surefire-reports/*.xml',
+    '**/test-results/**/*.json',
+    '**/ctrf-report.json',
+    '**/test-report.json',
+];
+async function autoDetectReportFiles() {
+    const seen = new Set();
+    for (const pattern of exports.AUTO_DETECT_PATTERNS) {
+        const found = await (0, discover_files_1.discoverReportFiles)(pattern);
+        for (const file of found) {
+            seen.add(file);
+        }
+    }
+    return {
+        files: [...seen].sort(),
+        scannedPatterns: [...exports.AUTO_DETECT_PATTERNS],
+    };
 }
 
 
