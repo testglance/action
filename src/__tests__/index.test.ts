@@ -12,11 +12,9 @@ vi.mock('@actions/core', () => ({
   setFailed: (...args: unknown[]) => mockSetFailed(...args),
 }));
 
-const mockExistsSync = vi.fn();
 const mockReadFileSync = vi.fn();
 
 vi.mock('node:fs', () => ({
-  existsSync: (...args: unknown[]) => mockExistsSync(...args),
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
 }));
 
@@ -43,6 +41,16 @@ vi.mock('../utils/detect-format', () => ({
 const mockDetectFramework = vi.fn();
 vi.mock('../utils/detect-framework', () => ({
   detectFramework: (...args: unknown[]) => mockDetectFramework(...args),
+}));
+
+const mockDiscoverReportFiles = vi.fn();
+vi.mock('../utils/discover-files', () => ({
+  discoverReportFiles: (...args: unknown[]) => mockDiscoverReportFiles(...args),
+}));
+
+const mockMergeTestRuns = vi.fn();
+vi.mock('../utils/merge-results', () => ({
+  mergeTestRuns: (...args: unknown[]) => mockMergeTestRuns(...args),
 }));
 
 vi.mock('../utils/errors', () => ({
@@ -98,21 +106,22 @@ function setupInputs(overrides: Record<string, string> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockExistsSync.mockReturnValue(true);
+  mockDiscoverReportFiles.mockResolvedValue(['/path/to/report.xml']);
   mockReadFileSync.mockReturnValue('<xml>content</xml>');
   mockDetectFormat.mockReturnValue('junit');
   mockParseJunitXml.mockReturnValue(VALID_PARSED_RUN);
   mockParseCtrfJson.mockReturnValue(VALID_PARSED_RUN);
+  mockMergeTestRuns.mockReturnValue(VALID_PARSED_RUN);
   mockSendTestRun.mockResolvedValue({ success: true, runId: 'run-1', healthScore: 85 });
   setupInputs();
 });
 
 describe('run() integration', () => {
   describe('happy path — JUnit XML + API 200', () => {
-    it('parses file, sends to API, logs success', async () => {
+    it('discovers file, parses, sends to API, logs success', async () => {
       await run();
 
-      expect(mockExistsSync).toHaveBeenCalledWith('/path/to/report.xml');
+      expect(mockDiscoverReportFiles).toHaveBeenCalledWith('/path/to/report.xml');
       expect(mockReadFileSync).toHaveBeenCalledWith('/path/to/report.xml', 'utf-8');
       expect(mockParseJunitXml).toHaveBeenCalled();
       expect(mockSendTestRun).toHaveBeenCalledWith(
@@ -129,6 +138,7 @@ describe('run() integration', () => {
   describe('happy path — CTRF JSON + API 200', () => {
     it('parses CTRF file and sends to API', async () => {
       setupInputs({ 'report-path': '/path/to/report.json' });
+      mockDiscoverReportFiles.mockResolvedValue(['/path/to/report.json']);
       mockDetectFormat.mockReturnValue('ctrf');
 
       await run();
@@ -139,41 +149,45 @@ describe('run() integration', () => {
     });
   });
 
-  describe('file not found (AC5)', () => {
-    it('calls handleFileNotFound, never calls setFailed', async () => {
-      mockExistsSync.mockReturnValue(false);
+  describe('no files found (AC4 — glob matches nothing)', () => {
+    it('logs warning and returns gracefully, never calls setFailed', async () => {
+      mockDiscoverReportFiles.mockResolvedValue([]);
 
       await run();
 
-      expect(errors.handleFileNotFound).toHaveBeenCalledWith('/path/to/report.xml');
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('No report files found matching'),
+      );
       expect(mockSendTestRun).not.toHaveBeenCalled();
       expect(mockSetFailed).not.toHaveBeenCalled();
     });
   });
 
-  describe('parse error (AC6)', () => {
-    it('calls handleParseError for JUnit, never calls setFailed', async () => {
-      mockParseJunitXml.mockImplementation(() => {
-        throw new Error('Invalid XML');
-      });
+  describe('parse error', () => {
+    it('warns per-file and continues with remaining files', async () => {
+      mockDiscoverReportFiles.mockResolvedValue(['/a.xml', '/b.xml']);
+      mockReadFileSync.mockReturnValue('<xml/>');
+      mockParseJunitXml
+        .mockImplementationOnce(() => {
+          throw new Error('Invalid XML');
+        })
+        .mockReturnValueOnce(VALID_PARSED_RUN);
 
       await run();
 
-      expect(errors.handleParseError).toHaveBeenCalledWith('JUnit XML', expect.any(Error));
-      expect(mockSendTestRun).not.toHaveBeenCalled();
-      expect(mockSetFailed).not.toHaveBeenCalled();
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('Failed to parse /a.xml'));
+      expect(mockSendTestRun).toHaveBeenCalled();
     });
 
-    it('calls handleParseError for CTRF, never calls setFailed', async () => {
-      setupInputs({ 'report-path': '/path/to/report.json' });
-      mockDetectFormat.mockReturnValue('ctrf');
-      mockParseCtrfJson.mockImplementation(() => {
-        throw new Error('Invalid JSON');
+    it('warns and returns when ALL files fail to parse', async () => {
+      mockParseJunitXml.mockImplementation(() => {
+        throw new Error('bad');
       });
 
       await run();
 
-      expect(errors.handleParseError).toHaveBeenCalledWith('CTRF JSON', expect.any(Error));
+      expect(mockWarning).toHaveBeenCalledWith('All report files failed to parse');
+      expect(mockSendTestRun).not.toHaveBeenCalled();
       expect(mockSetFailed).not.toHaveBeenCalled();
     });
   });
@@ -210,9 +224,7 @@ describe('run() integration', () => {
 
   describe('unexpected exception (AC7)', () => {
     it('calls handleUnexpectedError, never calls setFailed', async () => {
-      mockExistsSync.mockImplementation(() => {
-        throw new Error('Disk error');
-      });
+      mockDiscoverReportFiles.mockRejectedValue(new Error('Disk error'));
 
       await run();
 
@@ -224,6 +236,7 @@ describe('run() integration', () => {
   describe('format auto-detection (AC8)', () => {
     it('detects .xml as JUnit', async () => {
       setupInputs({ 'report-path': '/path/to/report.xml' });
+      mockDiscoverReportFiles.mockResolvedValue(['/path/to/report.xml']);
       mockDetectFormat.mockReturnValue('junit');
 
       await run();
@@ -234,6 +247,7 @@ describe('run() integration', () => {
 
     it('detects .json as CTRF', async () => {
       setupInputs({ 'report-path': '/path/to/report.json' });
+      mockDiscoverReportFiles.mockResolvedValue(['/path/to/report.json']);
       mockDetectFormat.mockReturnValue('ctrf');
 
       await run();
@@ -244,6 +258,7 @@ describe('run() integration', () => {
 
     it('tries both parsers when auto-detect returns null', async () => {
       setupInputs({ 'report-path': '/path/to/report.dat' });
+      mockDiscoverReportFiles.mockResolvedValue(['/path/to/report.dat']);
       mockDetectFormat.mockReturnValue(null);
       mockParseJunitXml.mockImplementation(() => {
         throw new Error('not xml');
@@ -259,6 +274,7 @@ describe('run() integration', () => {
   describe('explicit format override (AC9)', () => {
     it('uses JUnit parser when report-format=junit on a .json file', async () => {
       setupInputs({ 'report-path': '/path/to/report.json', 'report-format': 'junit' });
+      mockDiscoverReportFiles.mockResolvedValue(['/path/to/report.json']);
 
       await run();
 
@@ -268,6 +284,7 @@ describe('run() integration', () => {
 
     it('uses CTRF parser when report-format=ctrf on a .xml file', async () => {
       setupInputs({ 'report-path': '/path/to/report.xml', 'report-format': 'ctrf' });
+      mockDiscoverReportFiles.mockResolvedValue(['/path/to/report.xml']);
 
       await run();
 
@@ -282,8 +299,8 @@ describe('run() integration', () => {
       expect(mockSetFailed).not.toHaveBeenCalled();
     });
 
-    it('is not called on file not found', async () => {
-      mockExistsSync.mockReturnValue(false);
+    it('is not called when no files found', async () => {
+      mockDiscoverReportFiles.mockResolvedValue([]);
       await run();
       expect(mockSetFailed).not.toHaveBeenCalled();
     });
@@ -303,9 +320,7 @@ describe('run() integration', () => {
     });
 
     it('is not called on unexpected exception', async () => {
-      mockExistsSync.mockImplementation(() => {
-        throw new Error('boom');
-      });
+      mockDiscoverReportFiles.mockRejectedValue(new Error('boom'));
       await run();
       expect(mockSetFailed).not.toHaveBeenCalled();
     });
@@ -424,13 +439,13 @@ describe('run() integration', () => {
       });
     });
 
-    it('does not call generateSummary when file not found', async () => {
-      mockExistsSync.mockReturnValue(false);
+    it('does not call generateSummary when no files found', async () => {
+      mockDiscoverReportFiles.mockResolvedValue([]);
       await run();
       expect(mockGenerateSummary).not.toHaveBeenCalled();
     });
 
-    it('does not call generateSummary when parse fails', async () => {
+    it('does not call generateSummary when all files fail to parse', async () => {
       mockParseJunitXml.mockImplementation(() => {
         throw new Error('bad xml');
       });
@@ -541,19 +556,22 @@ describe('run() integration', () => {
       );
     });
 
-    it('calls detectFramework with report path and format for CTRF', async () => {
+    it('calls detectFramework with first file path and format for CTRF', async () => {
       setupInputs({ 'report-path': '/path/to/report.json' });
+      mockDiscoverReportFiles.mockResolvedValue(['/path/to/report.json']);
       mockDetectFormat.mockReturnValue('ctrf');
       const parsedWithTool = { ...VALID_PARSED_RUN, toolName: 'vitest' };
       mockParseCtrfJson.mockReturnValue(parsedWithTool);
+      mockMergeTestRuns.mockReturnValue(parsedWithTool);
 
       await run();
 
       expect(mockDetectFramework).toHaveBeenCalledWith('/path/to/report.json', 'ctrf', 'vitest');
     });
 
-    it('calls detectFramework with report path and format for JUnit', async () => {
+    it('calls detectFramework with first file path and format for JUnit', async () => {
       setupInputs({ 'report-path': '/path/to/vitest-report/results.xml' });
+      mockDiscoverReportFiles.mockResolvedValue(['/path/to/vitest-report/results.xml']);
       mockDetectFormat.mockReturnValue('junit');
 
       await run();
@@ -593,9 +611,11 @@ describe('run() integration', () => {
 
     it('passes CTRF toolName through to detectFramework', async () => {
       setupInputs({ 'report-path': '/path/to/report.json' });
+      mockDiscoverReportFiles.mockResolvedValue(['/path/to/report.json']);
       mockDetectFormat.mockReturnValue('ctrf');
       const parsedWithTool = { ...VALID_PARSED_RUN, toolName: 'playwright' };
       mockParseCtrfJson.mockReturnValue(parsedWithTool);
+      mockMergeTestRuns.mockReturnValue(parsedWithTool);
 
       await run();
 
@@ -665,6 +685,69 @@ describe('run() integration', () => {
       await run();
 
       expect(mockPostPrComment).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('multi-file pipeline (Story 6.2)', () => {
+    it('discovers multiple files and calls mergeTestRuns', async () => {
+      mockDiscoverReportFiles.mockResolvedValue(['/a.xml', '/b.xml']);
+      mockReadFileSync.mockReturnValue('<xml/>');
+      mockDetectFormat.mockReturnValue('junit');
+
+      await run();
+
+      expect(mockMergeTestRuns).toHaveBeenCalledWith([
+        { filePath: '/a.xml', parsed: VALID_PARSED_RUN },
+        { filePath: '/b.xml', parsed: VALID_PARSED_RUN },
+      ]);
+    });
+
+    it('skips files that fail to parse and continues', async () => {
+      mockDiscoverReportFiles.mockResolvedValue(['/bad.xml', '/good.xml']);
+      mockReadFileSync.mockReturnValue('<xml/>');
+      mockParseJunitXml
+        .mockImplementationOnce(() => {
+          throw new Error('bad');
+        })
+        .mockReturnValueOnce(VALID_PARSED_RUN);
+
+      await run();
+
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('Failed to parse /bad.xml'));
+      expect(mockMergeTestRuns).toHaveBeenCalledWith([
+        { filePath: '/good.xml', parsed: VALID_PARSED_RUN },
+      ]);
+    });
+
+    it('logs file count in info message', async () => {
+      mockDiscoverReportFiles.mockResolvedValue(['/a.xml', '/b.xml']);
+
+      await run();
+
+      expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('from 2 file(s)'));
+    });
+
+    it('handles mixed formats — JUnit + CTRF', async () => {
+      mockDiscoverReportFiles.mockResolvedValue(['/a.xml', '/b.json']);
+      mockReadFileSync.mockReturnValue('content');
+      mockDetectFormat.mockImplementation((path: string) =>
+        path.endsWith('.xml') ? 'junit' : 'ctrf',
+      );
+
+      await run();
+
+      expect(mockParseJunitXml).toHaveBeenCalledTimes(1);
+      expect(mockParseCtrfJson).toHaveBeenCalledTimes(1);
+    });
+
+    it('single-file backward compatibility — no merge needed', async () => {
+      mockDiscoverReportFiles.mockResolvedValue(['/single.xml']);
+
+      await run();
+
+      expect(mockMergeTestRuns).toHaveBeenCalledWith([
+        { filePath: '/single.xml', parsed: VALID_PARSED_RUN },
+      ]);
     });
   });
 });

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="api.users" tests="4" failures="1" errors="0" skipped="0" time="0.890">
+  <testcase name="should list users" classname="api.users" time="0.120">
+  </testcase>
+  <testcase name="should create user" classname="api.users" time="0.340">
+  </testcase>
+  <testcase name="should delete user" classname="api.users" time="0.210">
+    <failure message="Expected 204 but got 403" type="AssertionError">
+      AssertionError: Expected 204 but got 403
+        at Object.&lt;anonymous&gt; (users.test.ts:28:5)
+    </failure>
+  </testcase>
+  <testcase name="should update user email" classname="api.users" time="0.220">
+  </testcase>
+</testsuite>

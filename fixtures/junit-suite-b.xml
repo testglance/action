@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="api.projects" tests="3" failures="0" errors="0" skipped="0" time="0.450">
+  <testcase name="should list projects" classname="api.projects" time="0.100">
+  </testcase>
+  <testcase name="should create project" classname="api.projects" time="0.200">
+  </testcase>
+  <testcase name="should archive project" classname="api.projects" time="0.150">
+  </testcase>
+</testsuite>

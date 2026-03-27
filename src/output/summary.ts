@@ -1,5 +1,11 @@
 import * as core from '@actions/core';
-import type { ParsedTestRun, ParsedTestCase, Highlight, HighlightSeverity } from '../types';
+import type {
+  ParsedTestRun,
+  ParsedSuite,
+  ParsedTestCase,
+  Highlight,
+  HighlightSeverity,
+} from '../types';
 
 export interface SummaryOptions {
   parsed: ParsedTestRun;
@@ -53,6 +59,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   }
 
   try {
+    if (parsed.suites.length > 1) {
+      renderSuiteBreakdown(parsed.suites);
+    }
+
     const failedTests = collectFailedTests(parsed).sort((a, b) => a.suite.localeCompare(b.suite));
     if (failedTests.length > 0) {
       core.summary.addHeading('Failed Tests', 3);
@@ -154,6 +164,45 @@ export function collectFailedTests(parsed: ParsedTestRun): ParsedTestCase[] {
   return parsed.suites.flatMap((suite) =>
     suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'),
   );
+}
+
+export function renderSuiteBreakdown(suites: ParsedSuite[]): void {
+  const rows = suites
+    .map((s) => {
+      const total = s.tests.length;
+      const passed = s.tests.filter((t) => t.status === 'passed').length;
+      const failed = s.tests.filter((t) => t.status === 'failed' || t.status === 'errored').length;
+      const skipped = s.tests.filter((t) => t.status === 'skipped').length;
+      const passRate = total > 0 ? (passed / total) * 100 : -1;
+      return { name: s.name, total, passed, failed, skipped, passRate, duration: s.duration };
+    })
+    .sort((a, b) => {
+      if (a.passRate < 0) return 1;
+      if (b.passRate < 0) return -1;
+      return a.passRate - b.passRate;
+    });
+
+  core.summary.addHeading('Suite Breakdown', 3);
+  core.summary.addTable([
+    [
+      { data: 'Suite', header: true },
+      { data: 'Total', header: true },
+      { data: 'Passed', header: true },
+      { data: 'Failed', header: true },
+      { data: 'Skipped', header: true },
+      { data: 'Pass Rate', header: true },
+      { data: 'Duration', header: true },
+    ],
+    ...rows.map((r) => [
+      r.name,
+      String(r.total),
+      String(r.passed),
+      String(r.failed),
+      String(r.skipped),
+      r.total > 0 ? `${r.passRate.toFixed(1)}%` : 'N/A',
+      formatDuration(r.duration),
+    ]),
+  ]);
 }
 
 const MAX_HIGHLIGHTS_SHOWN = 3;

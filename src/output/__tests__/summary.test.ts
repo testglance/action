@@ -19,6 +19,7 @@ import {
   truncate,
   collectFailedTests,
   renderHighlights,
+  renderSuiteBreakdown,
 } from '../summary';
 import type { Highlight } from '../../types';
 
@@ -241,8 +242,11 @@ describe('generateSummary', () => {
 
     await generateSummary({ parsed, apiSuccess: true });
 
-    const tableCall = mockSummary.addTable.mock.calls[1];
-    const suiteOrder = tableCall[0].slice(1).map((row: string[]) => row[0]);
+    const tableCall = mockSummary.addTable.mock.calls.find(
+      (c: unknown[][]) => c[0][0]?.[0]?.data === 'Suite' && c[0][0]?.[1]?.data === 'Test',
+    );
+    expect(tableCall).toBeDefined();
+    const suiteOrder = tableCall![0].slice(1).map((row: string[]) => row[0]);
     expect(suiteOrder).toEqual(['a-suite', 'm-suite', 'z-suite']);
   });
 
@@ -821,6 +825,149 @@ describe('generateSummary fallback on error', () => {
       generateSummary({ parsed, apiSuccess: true, slowestTests: 5 }),
     ).resolves.not.toThrow();
     expect(mockSummary.write).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('renderSuiteBreakdown', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders heading and table with suite stats sorted by pass rate ascending', () => {
+    renderSuiteBreakdown([
+      {
+        name: 'auth.test.ts',
+        duration: 1.2,
+        tests: [
+          { name: 't1', suite: 'auth.test.ts', status: 'passed', duration: 0.4 },
+          { name: 't2', suite: 'auth.test.ts', status: 'failed', duration: 0.8 },
+        ],
+      },
+      {
+        name: 'api.test.ts',
+        duration: 0.8,
+        tests: [
+          { name: 't3', suite: 'api.test.ts', status: 'passed', duration: 0.3 },
+          { name: 't4', suite: 'api.test.ts', status: 'passed', duration: 0.5 },
+        ],
+      },
+    ]);
+
+    expect(mockSummary.addHeading).toHaveBeenCalledWith('Suite Breakdown', 3);
+    const tableCall = mockSummary.addTable.mock.calls[0];
+    const rows = tableCall[0].slice(1);
+    expect(rows[0][0]).toBe('auth.test.ts');
+    expect(rows[0][5]).toBe('50.0%');
+    expect(rows[1][0]).toBe('api.test.ts');
+    expect(rows[1][5]).toBe('100.0%');
+  });
+
+  it('places zero-test suites at the bottom', () => {
+    renderSuiteBreakdown([
+      {
+        name: 'empty-suite',
+        duration: 0,
+        tests: [],
+      },
+      {
+        name: 'real-suite',
+        duration: 1.0,
+        tests: [{ name: 't1', suite: 'real-suite', status: 'passed', duration: 1.0 }],
+      },
+    ]);
+
+    const tableCall = mockSummary.addTable.mock.calls[0];
+    const rows = tableCall[0].slice(1);
+    expect(rows[0][0]).toBe('real-suite');
+    expect(rows[1][0]).toBe('empty-suite');
+    expect(rows[1][5]).toBe('N/A');
+  });
+
+  it('counts all status types correctly', () => {
+    renderSuiteBreakdown([
+      {
+        name: 'mixed',
+        duration: 2.0,
+        tests: [
+          { name: 't1', suite: 'mixed', status: 'passed', duration: 0.5 },
+          { name: 't2', suite: 'mixed', status: 'failed', duration: 0.5 },
+          { name: 't3', suite: 'mixed', status: 'skipped', duration: 0 },
+          { name: 't4', suite: 'mixed', status: 'errored', duration: 1.0 },
+        ],
+      },
+    ]);
+
+    const tableCall = mockSummary.addTable.mock.calls[0];
+    const row = tableCall[0][1];
+    expect(row[1]).toBe('4');
+    expect(row[2]).toBe('1');
+    expect(row[3]).toBe('2');
+    expect(row[4]).toBe('1');
+    expect(row[5]).toBe('25.0%');
+  });
+
+  it('includes formatted duration', () => {
+    renderSuiteBreakdown([
+      {
+        name: 'slow-suite',
+        duration: 75.3,
+        tests: [{ name: 't1', suite: 'slow-suite', status: 'passed', duration: 75.3 }],
+      },
+    ]);
+
+    const tableCall = mockSummary.addTable.mock.calls[0];
+    expect(tableCall[0][1][6]).toBe('1m 15.3s');
+  });
+});
+
+describe('generateSummary suite breakdown integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders suite breakdown when multiple suites exist', async () => {
+    const parsed = makeParsed({ total: 4, passed: 4, failed: 0 }, [
+      {
+        name: 'suite-a',
+        duration: 1.0,
+        tests: [
+          { name: 't1', suite: 'suite-a', status: 'passed', duration: 0.5 },
+          { name: 't2', suite: 'suite-a', status: 'passed', duration: 0.5 },
+        ],
+      },
+      {
+        name: 'suite-b',
+        duration: 1.0,
+        tests: [
+          { name: 't3', suite: 'suite-b', status: 'passed', duration: 0.5 },
+          { name: 't4', suite: 'suite-b', status: 'passed', duration: 0.5 },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
+    expect(mockSummary.addHeading).toHaveBeenCalledWith('Suite Breakdown', 3);
+  });
+
+  it('skips suite breakdown for single-suite reports', async () => {
+    const parsed = makeParsed({ total: 2, passed: 2, failed: 0 }, [
+      {
+        name: 'only-suite',
+        duration: 1.0,
+        tests: [
+          { name: 't1', suite: 'only-suite', status: 'passed', duration: 0.5 },
+          { name: 't2', suite: 'only-suite', status: 'passed', duration: 0.5 },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
+    const headingCalls = mockSummary.addHeading.mock.calls.filter(
+      (c: unknown[]) => c[0] === 'Suite Breakdown',
+    );
+    expect(headingCalls).toHaveLength(0);
   });
 });
 
