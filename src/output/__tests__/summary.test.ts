@@ -242,11 +242,11 @@ describe('generateSummary', () => {
 
     await generateSummary({ parsed, apiSuccess: true });
 
-    const tableCall = mockSummary.addTable.mock.calls.find(
+    const failedTableCalls = mockSummary.addTable.mock.calls.filter(
       (c: unknown[][]) => c[0][0]?.[0]?.data === 'Suite' && c[0][0]?.[1]?.data === 'Test',
     );
-    expect(tableCall).toBeDefined();
-    const suiteOrder = tableCall![0].slice(1).map((row: string[]) => row[0]);
+    expect(failedTableCalls).toHaveLength(3);
+    const suiteOrder = failedTableCalls.map((c: unknown[][]) => c[0][1][0]);
     expect(suiteOrder).toEqual(['a-suite', 'm-suite', 'z-suite']);
   });
 

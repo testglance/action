@@ -67,21 +67,20 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
     if (failedTests.length > 0) {
       core.summary.addHeading('Failed Tests', 3);
       const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
-      const rows = shown.map((t) => [
-        t.suite,
-        t.name,
-        truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
-      ]);
-      core.summary.addTable([
-        [
-          { data: 'Suite', header: true },
-          { data: 'Test', header: true },
-          { data: 'Error', header: true },
-        ],
-        ...rows,
-      ]);
 
       for (const t of shown) {
+        core.summary.addTable([
+          [
+            { data: 'Suite', header: true },
+            { data: 'Test', header: true },
+            { data: 'Error', header: true },
+          ],
+          [
+            t.suite,
+            t.name,
+            truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
+          ],
+        ]);
         if (t.stackTrace) {
           core.summary.addRaw(renderStackTrace(t.name, t.stackTrace));
         }
