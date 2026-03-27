@@ -40365,7 +40365,7 @@ async function generateSummary(options) {
         }
         if (slowestTests && slowestTests > 0) {
             const allTests = parsed.suites.flatMap((s) => s.tests);
-            const withDuration = allTests.filter((t) => t.duration > 0);
+            const withDuration = allTests.filter((t) => t.duration >= 0.2);
             const sorted = [...withDuration].sort((a, b) => b.duration - a.duration);
             const top = sorted.slice(0, slowestTests);
             if (top.length > 0) {
@@ -40442,27 +40442,14 @@ function renderSuiteBreakdown(suites) {
             return -1;
         return a.passRate - b.passRate;
     });
-    core.summary.addHeading('Suite Breakdown', 3);
-    core.summary.addTable([
-        [
-            { data: 'Suite', header: true },
-            { data: 'Total', header: true },
-            { data: 'Passed', header: true },
-            { data: 'Failed', header: true },
-            { data: 'Skipped', header: true },
-            { data: 'Pass Rate', header: true },
-            { data: 'Duration', header: true },
-        ],
-        ...rows.map((r) => [
-            r.name,
-            String(r.total),
-            String(r.passed),
-            String(r.failed),
-            String(r.skipped),
-            r.total > 0 ? `${r.passRate.toFixed(1)}%` : 'N/A',
-            formatDuration(r.duration),
-        ]),
-    ]);
+    const tableRows = rows
+        .map((r) => `<tr><td>${escapeHtml(r.name)}</td><td>${r.total}</td><td>${r.passed}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${r.total > 0 ? `${r.passRate.toFixed(1)}%` : 'N/A'}</td><td>${formatDuration(r.duration)}</td></tr>`)
+        .join('\n');
+    core.summary.addRaw(`<details><summary><strong>Suite Breakdown</strong> (${suites.length} suites)</summary>\n\n` +
+        '<table>\n' +
+        '<tr><th>Suite</th><th>Total</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Pass Rate</th><th>Duration</th></tr>\n' +
+        tableRows +
+        '\n</table>\n\n</details>\n\n');
 }
 const MAX_HIGHLIGHTS_SHOWN = 3;
 const MAX_TEST_NAMES_SHOWN = 3;
