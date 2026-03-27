@@ -39939,6 +39939,7 @@ async function run() {
         const reportFormat = core.getInput('report-format') || 'auto';
         const testJobName = core.getInput('test-job-name') || '';
         const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
+        const sendResults = core.getInput('send-results') !== 'false';
         const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
         const files = await (0, discover_files_1.discoverReportFiles)(reportPath);
         if (files.length === 0) {
@@ -39966,35 +39967,38 @@ async function run() {
         const firstFile = successful[0].filePath;
         const format = reportFormat === 'auto' ? (0, detect_format_1.detectFormat)(firstFile) : reportFormat;
         const framework = (0, detect_framework_1.detectFramework)(firstFile, format === 'junit' || format === 'ctrf' ? format : null, parsed.toolName);
-        const result = await (0, client_1.sendTestRun)(apiUrl, apiKey, parsed, {
-            framework,
-            testJobName: testJobName || undefined,
-        });
-        if (result.success) {
-            core.info(`TestGlance: Test run submitted successfully (${result.runId})`);
-            if (result.healthScore !== null && result.healthScore !== undefined) {
-                core.info(`TestGlance: Health score: ${result.healthScore}`);
+        let result;
+        if (sendResults) {
+            result = await (0, client_1.sendTestRun)(apiUrl, apiKey, parsed, {
+                framework,
+                testJobName: testJobName || undefined,
+            });
+            if (result.success) {
+                core.info(`TestGlance: Test run submitted successfully (${result.runId})`);
+                if (result.healthScore !== null && result.healthScore !== undefined) {
+                    core.info(`TestGlance: Health score: ${result.healthScore}`);
+                }
+            }
+            else if (result.errorCode === 'NETWORK_ERROR') {
+                (0, errors_1.handleApiUnreachable)();
+            }
+            else {
+                (0, errors_1.handleApiError)(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
             }
         }
-        else if (result.errorCode === 'NETWORK_ERROR') {
-            (0, errors_1.handleApiUnreachable)();
-        }
-        else {
-            (0, errors_1.handleApiError)(result.errorCode ?? 'UNKNOWN', result.errorMessage ?? 'Unknown error');
-        }
-        const dashboardUrl = result.success
+        const dashboardUrl = result?.success
             ? `https://www.testglance.dev/runs/${result.runId}`
             : undefined;
         await (0, summary_1.generateSummary)({
             parsed,
-            apiSuccess: result.success,
-            runId: result.runId,
-            healthScore: result.healthScore,
+            apiSuccess: result?.success ?? false,
+            runId: result?.runId,
+            healthScore: result?.healthScore,
             dashboardUrl,
-            highlights: result.highlights ?? [],
+            highlights: result?.highlights ?? [],
             slowestTests: slowestTestsCount,
         });
-        if (githubToken && result.success) {
+        if (githubToken && result?.success) {
             await (0, post_pr_comment_1.postPrComment)({
                 githubToken,
                 section: {
@@ -40341,20 +40345,19 @@ async function generateSummary(options) {
         if (failedTests.length > 0) {
             core.summary.addHeading('Failed Tests', 3);
             const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
-            const rows = shown.map((t) => [
-                t.suite,
-                t.name,
-                truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
-            ]);
-            core.summary.addTable([
-                [
-                    { data: 'Suite', header: true },
-                    { data: 'Test', header: true },
-                    { data: 'Error', header: true },
-                ],
-                ...rows,
-            ]);
             for (const t of shown) {
+                core.summary.addTable([
+                    [
+                        { data: 'Suite', header: true },
+                        { data: 'Test', header: true },
+                        { data: 'Error', header: true },
+                    ],
+                    [
+                        t.suite,
+                        t.name,
+                        truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
+                    ],
+                ]);
                 if (t.stackTrace) {
                     core.summary.addRaw(renderStackTrace(t.name, t.stackTrace));
                 }
