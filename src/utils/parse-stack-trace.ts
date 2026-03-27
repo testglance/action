@@ -1,10 +1,4 @@
-const DEPENDENCY_DIRS = [
-  'node_modules/',
-  'site-packages/',
-  '.gradle/',
-  'vendor/',
-  '_vendor/',
-];
+const DEPENDENCY_DIRS = ['node_modules/', 'site-packages/', '.gradle/', 'vendor/', '_vendor/'];
 
 function isDependencyPath(filePath: string): boolean {
   return DEPENDENCY_DIRS.some((dir) => filePath.includes(dir));

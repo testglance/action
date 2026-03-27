@@ -18,9 +18,7 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
     const octokit = github.getOctokit(githubToken);
     const { owner, repo } = github.context.repo;
 
-    const pr = github.context.payload.pull_request as
-      | { head?: { sha?: string } }
-      | undefined;
+    const pr = github.context.payload.pull_request as { head?: { sha?: string } } | undefined;
     const headSha = pr?.head?.sha ?? github.context.sha;
 
     const { summary } = parsed;

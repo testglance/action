@@ -226,9 +226,7 @@ describe('createCheckRun', () => {
       parsed: makeParsed(),
     });
 
-    expect(mockWarning).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to create Check Run'),
-    );
+    expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('Failed to create Check Run'));
   });
 
   it('never calls core.setFailed', async () => {
