@@ -228,7 +228,15 @@ See the [`examples/`](examples/) directory for more usage patterns.
 
 ## Framework Guides
 
-Setup guides for specific test frameworks are coming soon. Check back for guides on Jest, Vitest, Playwright, pytest, Go, JUnit 5, and more.
+- [Jest](docs/guides/jest.md)
+- [Vitest](docs/guides/vitest.md)
+- [pytest](docs/guides/pytest.md)
+- [JUnit 5 (Maven & Gradle)](docs/guides/junit.md)
+- [Go](docs/guides/go.md)
+- [.NET (xUnit / NUnit / MSTest)](docs/guides/dotnet.md)
+- [RSpec](docs/guides/rspec.md)
+- [PHPUnit](docs/guides/phpunit.md)
+- [Playwright](docs/guides/playwright.md)
 
 ## Non-Blocking Guarantee
 
