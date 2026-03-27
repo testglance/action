@@ -1,5 +1,5 @@
 name: 'TestGlance'
-description: 'Track test suite health over time. Parse JUnit XML or CTRF JSON and send to TestGlance.'
+description: 'Zero-config test reporting for GitHub Actions. Parse JUnit XML & CTRF JSON, get CI summaries with failed tests, slowest tests, suite breakdowns, Check Runs with inline annotations, and PR comments.'
 author: 'TestGlance'
 inputs:
   report-path:

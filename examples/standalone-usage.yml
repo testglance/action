@@ -1,0 +1,32 @@
+# TestGlance — Standalone Usage (No SaaS)
+#
+# Use TestGlance purely for local CI summaries without sending data
+# to the TestGlance platform. Great for trying out the action or
+# for teams that only need CI-level reporting.
+#
+# Note: api-key is a required input, so pass any non-empty string
+# (e.g., "unused") when send-results is false.
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: npm ci
+      - run: npm test -- --reporter=junit --outputFile=test-results.xml
+
+      - uses: testglance/action@v1
+        if: always()
+        with:
+          api-key: unused
+          send-results: false
+          report-path: test-results.xml
