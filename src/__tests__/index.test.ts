@@ -85,6 +85,11 @@ vi.mock('../output/post-pr-comment', () => ({
   postPrComment: (...args: unknown[]) => mockPostPrComment(...args),
 }));
 
+const mockCreateCheckRun = vi.fn().mockResolvedValue(undefined);
+vi.mock('../output/check-run', () => ({
+  createCheckRun: (...args: unknown[]) => mockCreateCheckRun(...args),
+}));
+
 import { run } from '../index';
 import * as errors from '../utils/errors';
 import type { ParsedTestRun } from '../types';
@@ -112,6 +117,8 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'test-job-name': '',
     'send-results': '',
     'github-token': '',
+    'create-check': '',
+    'check-name': '',
     'slowest-tests': '',
   };
   const inputs = { ...defaults, ...overrides };
@@ -844,6 +851,88 @@ describe('run() integration', () => {
 
       expect(mockAutoDetectReportFiles).not.toHaveBeenCalled();
       expect(mockDiscoverReportFiles).toHaveBeenCalledWith('/explicit/path.xml');
+    });
+  });
+
+  describe('Check Run creation (Story 6.4)', () => {
+    it('calls createCheckRun when create-check is true and github-token is provided', async () => {
+      setupInputs({ 'create-check': 'true', 'github-token': 'ghp_abc123' });
+
+      await run();
+
+      expect(mockCreateCheckRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          githubToken: 'ghp_abc123',
+          checkName: 'Test Results',
+          parsed: VALID_PARSED_RUN,
+        }),
+      );
+    });
+
+    it('uses custom check-name when provided', async () => {
+      setupInputs({
+        'create-check': 'true',
+        'check-name': 'Unit Tests',
+        'github-token': 'ghp_abc123',
+      });
+
+      await run();
+
+      expect(mockCreateCheckRun).toHaveBeenCalledWith(
+        expect.objectContaining({ checkName: 'Unit Tests' }),
+      );
+    });
+
+    it('does not call createCheckRun when create-check is false', async () => {
+      setupInputs({ 'create-check': 'false', 'github-token': 'ghp_abc123' });
+
+      await run();
+
+      expect(mockCreateCheckRun).not.toHaveBeenCalled();
+    });
+
+    it('does not call createCheckRun when create-check is empty (default)', async () => {
+      setupInputs({ 'create-check': '', 'github-token': 'ghp_abc123' });
+
+      await run();
+
+      expect(mockCreateCheckRun).not.toHaveBeenCalled();
+    });
+
+    it('warns and skips when create-check is true but github-token is missing', async () => {
+      setupInputs({ 'create-check': 'true', 'github-token': '' });
+      const original = process.env.GITHUB_TOKEN;
+      delete process.env.GITHUB_TOKEN;
+
+      await run();
+
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('create-check requires github-token'),
+      );
+      expect(mockCreateCheckRun).not.toHaveBeenCalled();
+      if (original !== undefined) process.env.GITHUB_TOKEN = original;
+    });
+
+    it('continues normally when createCheckRun throws', async () => {
+      setupInputs({ 'create-check': 'true', 'github-token': 'ghp_abc123' });
+      mockCreateCheckRun.mockRejectedValue(new Error('Check run failed'));
+
+      await run();
+
+      expect(mockGenerateSummary).toHaveBeenCalled();
+    });
+
+    it('works independently of send-results flag', async () => {
+      setupInputs({
+        'create-check': 'true',
+        'github-token': 'ghp_abc123',
+        'send-results': 'false',
+      });
+
+      await run();
+
+      expect(mockCreateCheckRun).toHaveBeenCalled();
+      expect(mockSendTestRun).not.toHaveBeenCalled();
     });
   });
 });

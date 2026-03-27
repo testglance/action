@@ -32,6 +32,14 @@ inputs:
   github-token:
     description: 'GitHub token for PR comments. Use github.token or a PAT with pull-requests: write scope.'
     required: false
+  create-check:
+    description: 'Create a GitHub Check Run with test results and inline annotations (requires checks: write permission)'
+    required: false
+    default: 'false'
+  check-name:
+    description: 'Name of the GitHub Check Run'
+    required: false
+    default: 'Test Results'
 runs:
   using: 'node20'
   main: 'dist/index.js'
