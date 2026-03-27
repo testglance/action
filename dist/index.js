@@ -39902,6 +39902,7 @@ const merge_results_1 = __nccwpck_require__(931);
 const errors_1 = __nccwpck_require__(7673);
 const summary_1 = __nccwpck_require__(5942);
 const post_pr_comment_1 = __nccwpck_require__(4685);
+const check_run_1 = __nccwpck_require__(8290);
 const DEFAULT_SLOWEST_TESTS = 10;
 function parseSlowestTestsCount(input) {
     const trimmed = input.trim();
@@ -39941,6 +39942,8 @@ async function run() {
         const testJobName = core.getInput('test-job-name') || '';
         const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
         const sendResults = core.getInput('send-results') !== 'false';
+        const createCheck = core.getInput('create-check') === 'true';
+        const checkName = core.getInput('check-name') || 'Test Results';
         const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
         let files;
         if (reportPath) {
@@ -40012,6 +40015,14 @@ async function run() {
             highlights: result?.highlights ?? [],
             slowestTests: slowestTestsCount,
         });
+        if (createCheck) {
+            if (githubToken) {
+                await (0, check_run_1.createCheckRun)({ githubToken, checkName, parsed });
+            }
+            else {
+                core.warning('create-check requires github-token — skipping Check Run creation');
+            }
+        }
         if (githubToken && result?.success) {
             await (0, post_pr_comment_1.postPrComment)({
                 githubToken,
@@ -40034,6 +40045,119 @@ async function run() {
     }
 }
 run();
+
+
+/***/ }),
+
+/***/ 8290:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.createCheckRun = createCheckRun;
+const core = __importStar(__nccwpck_require__(6966));
+const github = __importStar(__nccwpck_require__(4903));
+const parse_stack_trace_1 = __nccwpck_require__(8998);
+const MAX_ANNOTATIONS = 50;
+async function createCheckRun(options) {
+    const { githubToken, checkName, parsed } = options;
+    try {
+        const octokit = github.getOctokit(githubToken);
+        const { owner, repo } = github.context.repo;
+        const pr = github.context.payload.pull_request;
+        const headSha = pr?.head?.sha ?? github.context.sha;
+        const { summary } = parsed;
+        const conclusion = summary.failed > 0 ? 'failure' : 'success';
+        const titleParts = [];
+        if (summary.passed > 0)
+            titleParts.push(`${summary.passed} passed`);
+        if (summary.failed > 0)
+            titleParts.push(`${summary.failed} failed`);
+        if (summary.skipped > 0)
+            titleParts.push(`${summary.skipped} skipped`);
+        const title = `Tests: ${titleParts.join(', ')}`;
+        const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
+        const summaryText = `**Pass rate:** ${passRate}%\n**Duration:** ${summary.duration.toFixed(1)}s\n**Total:** ${summary.total} tests`;
+        const annotations = [];
+        for (const suite of parsed.suites) {
+            for (const test of suite.tests) {
+                if (test.status !== 'failed')
+                    continue;
+                if (annotations.length >= MAX_ANNOTATIONS)
+                    break;
+                const location = test.stackTrace ? (0, parse_stack_trace_1.parseFileLocation)(test.stackTrace) : null;
+                if (!location)
+                    continue;
+                annotations.push({
+                    path: location.path,
+                    start_line: location.line,
+                    end_line: location.line,
+                    annotation_level: 'failure',
+                    message: test.errorMessage ?? 'Test failed',
+                    title: test.name,
+                });
+            }
+            if (annotations.length >= MAX_ANNOTATIONS)
+                break;
+        }
+        await octokit.rest.checks.create({
+            owner,
+            repo,
+            name: checkName,
+            head_sha: headSha,
+            status: 'completed',
+            conclusion,
+            output: {
+                title,
+                summary: summaryText,
+                annotations,
+            },
+        });
+    }
+    catch (err) {
+        const status = err.status;
+        if (status === 403) {
+            core.warning('Unable to create Check Run — checks: write permission is required. For forked PRs, use the workflow_run event pattern.');
+        }
+        else {
+            core.warning(`Failed to create Check Run: ${err.message}`);
+        }
+    }
+}
 
 
 /***/ }),
@@ -41044,6 +41168,87 @@ function mergeTestRuns(runs) {
         suites: allSuites,
         toolName,
     };
+}
+
+
+/***/ }),
+
+/***/ 8998:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseFileLocation = parseFileLocation;
+const DEPENDENCY_DIRS = ['node_modules/', 'site-packages/', '.gradle/', 'vendor/', '_vendor/'];
+function isDependencyPath(filePath) {
+    return DEPENDENCY_DIRS.some((dir) => filePath.includes(dir));
+}
+function normalizePath(filePath) {
+    let p = filePath;
+    if (p.startsWith('./'))
+        p = p.slice(2);
+    if (p.startsWith('/'))
+        p = p.slice(1);
+    return p;
+}
+const PATTERNS = [
+    // JS/TS: at Something (path:line:col) or at path:line:col
+    (line) => {
+        const match = line.match(/at\s+(?:.+?\s+\()?([^()]+?):(\d+):\d+\)?/);
+        if (!match)
+            return null;
+        return { path: match[1], line: Number.parseInt(match[2], 10) };
+    },
+    // Python: File "path", line N
+    (line) => {
+        const match = line.match(/File\s+"([^"]+)",\s+line\s+(\d+)/);
+        if (!match)
+            return null;
+        return { path: match[1], line: Number.parseInt(match[2], 10) };
+    },
+    // Java: at package.Class(File.java:N)
+    (line) => {
+        const match = line.match(/at\s+[\w.$]+\(([A-Za-z][\w]*\.java):(\d+)\)/);
+        if (!match)
+            return null;
+        return { path: match[1], line: Number.parseInt(match[2], 10) };
+    },
+    // Go: path/file.go:N
+    (line) => {
+        const match = line.match(/([\w./-]+\.go):(\d+)/);
+        if (!match)
+            return null;
+        return { path: match[1], line: Number.parseInt(match[2], 10) };
+    },
+    // Ruby: path/file.rb:N:in
+    (line) => {
+        const match = line.match(/([\w./-]+\.rb):(\d+)/);
+        if (!match)
+            return null;
+        return { path: match[1], line: Number.parseInt(match[2], 10) };
+    },
+    // .NET: in /path/File.cs:line N
+    (line) => {
+        const match = line.match(/in\s+([\w./-]+\.cs):line\s+(\d+)/);
+        if (!match)
+            return null;
+        return { path: match[1], line: Number.parseInt(match[2], 10) };
+    },
+];
+function parseFileLocation(stackTrace) {
+    if (!stackTrace)
+        return null;
+    const lines = stackTrace.split('\n');
+    for (const line of lines) {
+        for (const extract of PATTERNS) {
+            const result = extract(line);
+            if (result && !isDependencyPath(result.path)) {
+                return { path: normalizePath(result.path), line: result.line };
+            }
+        }
+    }
+    return null;
 }
 
 

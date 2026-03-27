@@ -11,6 +11,7 @@ import { mergeTestRuns } from './utils/merge-results';
 import { handleApiUnreachable, handleApiError, handleUnexpectedError } from './utils/errors';
 import { generateSummary } from './output/summary';
 import { postPrComment } from './output/post-pr-comment';
+import { createCheckRun } from './output/check-run';
 import type { ParsedTestRun } from './types';
 import type { FileParseResult } from './utils/merge-results';
 
@@ -58,6 +59,8 @@ export async function run(): Promise<void> {
     const testJobName = core.getInput('test-job-name') || '';
     const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
     const sendResults = core.getInput('send-results') !== 'false';
+    const createCheck = core.getInput('create-check') === 'true';
+    const checkName = core.getInput('check-name') || 'Test Results';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
 
     let files: string[];
@@ -150,6 +153,14 @@ export async function run(): Promise<void> {
       highlights: result?.highlights ?? [],
       slowestTests: slowestTestsCount,
     });
+
+    if (createCheck) {
+      if (githubToken) {
+        await createCheckRun({ githubToken, checkName, parsed });
+      } else {
+        core.warning('create-check requires github-token — skipping Check Run creation');
+      }
+    }
 
     if (githubToken && result?.success) {
       await postPrComment({
