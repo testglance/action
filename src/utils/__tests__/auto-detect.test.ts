@@ -81,9 +81,7 @@ describe('autoDetectReportFiles', () => {
   });
 
   it('returns scanned patterns alongside found files', async () => {
-    mockDiscoverReportFiles
-      .mockResolvedValueOnce(['/project/junit.xml'])
-      .mockResolvedValue([]);
+    mockDiscoverReportFiles.mockResolvedValueOnce(['/project/junit.xml']).mockResolvedValue([]);
 
     const result = await autoDetectReportFiles();
 

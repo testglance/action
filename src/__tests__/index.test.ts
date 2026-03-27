@@ -789,9 +789,7 @@ describe('run() integration', () => {
 
       await run();
 
-      expect(mockInfo).toHaveBeenCalledWith(
-        expect.stringContaining('auto-detect'),
-      );
+      expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('auto-detect'));
     });
 
     it('processes auto-detected files through normal pipeline', async () => {
@@ -833,9 +831,7 @@ describe('run() integration', () => {
       expect(mockWarning).toHaveBeenCalledWith(
         expect.stringContaining('No test report files found'),
       );
-      expect(mockWarning).toHaveBeenCalledWith(
-        expect.stringContaining('report-path'),
-      );
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('report-path'));
       expect(mockSendTestRun).not.toHaveBeenCalled();
       expect(mockSetFailed).not.toHaveBeenCalled();
     });
