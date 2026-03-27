@@ -3,8 +3,9 @@ description: 'Track test suite health over time. Parse JUnit XML or CTRF JSON an
 author: 'TestGlance'
 inputs:
   report-path:
-    description: 'Path to test report file(s). Supports glob patterns (e.g., **/test-results/*.xml)'
-    required: true
+    description: 'Path to test report file(s). Supports glob patterns (e.g., **/test-results/*.xml). When omitted, auto-detects common test report locations.'
+    required: false
+    default: ''
   api-key:
     description: 'TestGlance project API key'
     required: true
