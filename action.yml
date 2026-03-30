@@ -40,6 +40,14 @@ inputs:
     description: 'Name of the GitHub Check Run'
     required: false
     default: 'Test Results'
+  history:
+    description: 'Enable run history tracking via Actions Cache'
+    required: false
+    default: 'true'
+  history-limit:
+    description: 'Maximum number of runs to keep in history'
+    required: false
+    default: '20'
 runs:
   using: 'node20'
   main: 'dist/index.js'
