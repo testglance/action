@@ -4,18 +4,23 @@ const mockGetInput = vi.fn();
 const mockInfo = vi.fn();
 const mockWarning = vi.fn();
 const mockSetFailed = vi.fn();
+const mockDebug = vi.fn();
 
 vi.mock('@actions/core', () => ({
   getInput: (...args: unknown[]) => mockGetInput(...args),
   info: (...args: unknown[]) => mockInfo(...args),
   warning: (...args: unknown[]) => mockWarning(...args),
   setFailed: (...args: unknown[]) => mockSetFailed(...args),
+  debug: (...args: unknown[]) => mockDebug(...args),
 }));
 
 const mockReadFileSync = vi.fn();
 
 vi.mock('node:fs', () => ({
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
+  mkdtempSync: vi.fn(() => '/tmp/testglance-mock'),
+  writeFileSync: vi.fn(),
+  existsSync: vi.fn(() => false),
 }));
 
 const mockParseJunitXml = vi.fn();
@@ -90,6 +95,12 @@ vi.mock('../output/check-run', () => ({
   createCheckRun: (...args: unknown[]) => mockCreateCheckRun(...args),
 }));
 
+vi.mock('@actions/cache', () => ({
+  restoreCache: vi.fn().mockResolvedValue(undefined),
+  saveCache: vi.fn().mockResolvedValue(0),
+  ReserveCacheError: class ReserveCacheError extends Error {},
+}));
+
 import { run } from '../index';
 import * as errors from '../utils/errors';
 import type { ParsedTestRun } from '../types';
@@ -120,6 +131,8 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'create-check': '',
     'check-name': '',
     'slowest-tests': '',
+    history: 'false',
+    'history-limit': '20',
   };
   const inputs = { ...defaults, ...overrides };
   mockGetInput.mockImplementation((name: string) => inputs[name] ?? '');
@@ -933,6 +946,56 @@ describe('run() integration', () => {
 
       expect(mockCreateCheckRun).toHaveBeenCalled();
       expect(mockSendTestRun).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('history tracking (Story 7.1)', () => {
+    it('history is loaded and saved when history input is true', async () => {
+      setupInputs({ history: 'true' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const result = await run();
+
+      expect(result.history).not.toBeNull();
+      expect(result.history!.entries).toHaveLength(1);
+      expect(result.history!.entries[0].summary.total).toBe(2);
+      expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('First run on this branch'));
+    });
+
+    it('history is skipped when history input is false', async () => {
+      setupInputs({ history: 'false' });
+
+      const result = await run();
+
+      expect(result.history).toBeNull();
+      expect(mockInfo).not.toHaveBeenCalledWith(
+        expect.stringContaining('First run on this branch'),
+      );
+    });
+
+    it('history errors do not fail the action but emit a warning', async () => {
+      setupInputs({ history: 'true' });
+      const { restoreCache } = await import('@actions/cache');
+      (restoreCache as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('cache unavailable'),
+      );
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      await run();
+
+      expect(mockSetFailed).not.toHaveBeenCalled();
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('cache unavailable'));
+    });
+
+    it('returns history: null when no files found', async () => {
+      setupInputs({ history: 'true' });
+      mockDiscoverReportFiles.mockResolvedValue([]);
+
+      const result = await run();
+
+      expect(result.history).toBeNull();
     });
   });
 });

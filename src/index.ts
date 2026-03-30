@@ -1,4 +1,5 @@
 import * as core from '@actions/core';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { parseJunitXml } from './parsers/junit';
 import { parseCtrfJson } from './parsers/ctrf';
@@ -12,8 +13,11 @@ import { handleApiUnreachable, handleApiError, handleUnexpectedError } from './u
 import { generateSummary } from './output/summary';
 import { postPrComment } from './output/post-pr-comment';
 import { createCheckRun } from './output/check-run';
+import { ActionsCacheStorage } from './history/actions-cache-storage';
+import { HistoryManager } from './history/manager';
 import type { ParsedTestRun } from './types';
 import type { FileParseResult } from './utils/merge-results';
+import type { HistoryFile } from './history/types';
 
 const DEFAULT_SLOWEST_TESTS = 10;
 
@@ -50,7 +54,11 @@ function parseFile(filePath: string, reportFormat: string): ParsedTestRun | null
   }
 }
 
-export async function run(): Promise<void> {
+export interface RunResult {
+  history: HistoryFile | null;
+}
+
+export async function run(): Promise<RunResult> {
   try {
     const reportPath = core.getInput('report-path');
     const apiKey = core.getInput('api-key', { required: true });
@@ -62,6 +70,15 @@ export async function run(): Promise<void> {
     const createCheck = core.getInput('create-check') === 'true';
     const checkName = core.getInput('check-name') || 'Test Results';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
+    const historyEnabled = core.getInput('history') !== 'false';
+    const historyLimitRaw = core.getInput('history-limit') || '20';
+    const historyLimitParsed = parseInt(historyLimitRaw, 10);
+    if (isNaN(historyLimitParsed) || historyLimitRaw !== String(historyLimitParsed)) {
+      core.warning(
+        `Invalid "history-limit" input "${historyLimitRaw}". Expected a positive integer; defaulting to 20.`,
+      );
+    }
+    const historyLimit = Math.max(1, historyLimitParsed || 20);
 
     let files: string[];
 
@@ -70,7 +87,7 @@ export async function run(): Promise<void> {
 
       if (files.length === 0) {
         core.warning(`No report files found matching: ${reportPath}`);
-        return;
+        return { history: null };
       }
     } else {
       core.info('No report-path provided, entering auto-detect mode');
@@ -82,7 +99,7 @@ export async function run(): Promise<void> {
         core.warning(
           `No test report files found. Scanned these patterns:\n${patterns}\nTip: Specify the 'report-path' input with the path to your test report file(s).`,
         );
-        return;
+        return { history: null };
       }
     }
 
@@ -103,7 +120,7 @@ export async function run(): Promise<void> {
 
     if (successful.length === 0) {
       core.warning('All report files failed to parse');
-      return;
+      return { history: null };
     }
 
     const parsed = mergeTestRuns(successful);
@@ -111,6 +128,46 @@ export async function run(): Promise<void> {
     core.info(
       `Parsed ${parsed.summary.total} tests from ${successful.length} file(s): ${parsed.summary.passed} passed, ${parsed.summary.failed} failed, ${parsed.summary.skipped} skipped, ${parsed.summary.errored} errored`,
     );
+
+    let loadedHistory: HistoryFile | null = null;
+
+    if (historyEnabled) {
+      try {
+        const branch = (
+          process.env.GITHUB_HEAD_REF ||
+          process.env.GITHUB_REF_NAME ||
+          'unknown'
+        ).replace(/^refs\/heads\//, '');
+        const reportPathHash = createHash('sha256')
+          .update(reportPath || 'auto')
+          .digest('hex')
+          .slice(0, 8);
+        const commitSha = process.env.GITHUB_SHA || 'unknown';
+        const runId = process.env.GITHUB_RUN_ID;
+
+        const storage = new ActionsCacheStorage(branch, reportPathHash, runId);
+        const manager = new HistoryManager(storage, historyLimit);
+
+        await manager.loadHistory();
+
+        if (manager.isFirstRun()) {
+          core.info('First run on this branch — history tracking started');
+        }
+
+        manager.appendRun(parsed, {
+          timestamp: new Date().toISOString(),
+          commitSha,
+          branch,
+        });
+
+        await manager.saveHistory();
+        loadedHistory = manager.getHistory();
+      } catch (err) {
+        core.warning(
+          `History tracking failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     const firstFile = successful[0].filePath;
     const format = reportFormat === 'auto' ? detectFormat(firstFile) : reportFormat;
@@ -178,8 +235,11 @@ export async function run(): Promise<void> {
         },
       });
     }
+
+    return { history: loadedHistory };
   } catch (err) {
     handleUnexpectedError(err instanceof Error ? err : new Error(String(err)));
+    return { history: null };
   }
 }
 
