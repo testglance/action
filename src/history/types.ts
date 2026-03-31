@@ -30,3 +30,23 @@ export interface HistoryStorage {
   save(history: HistoryFile): Promise<void>;
   clear(): Promise<void>;
 }
+
+export interface DeltaTestInfo {
+  name: string;
+  suite: string;
+}
+
+export interface DeltaComparison {
+  testsAdded: DeltaTestInfo[];
+  testsRemoved: DeltaTestInfo[];
+  newlyFailing: DeltaTestInfo[];
+  newlyPassing: DeltaTestInfo[];
+  passRatePrev: number;
+  passRateCurr: number;
+  passRateDelta: number;
+  durationPrev: number;
+  durationCurr: number;
+  durationDelta: number;
+  durationDeltaPercent: number;
+  hasChanges: boolean;
+}

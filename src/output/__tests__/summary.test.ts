@@ -20,8 +20,10 @@ import {
   collectFailedTests,
   renderHighlights,
   renderSuiteBreakdown,
+  renderDeltaSection,
 } from '../summary';
 import type { Highlight } from '../../types';
+import type { DeltaComparison } from '../../history/types';
 
 function makeParsed(
   overrides: Partial<ParsedTestRun['summary']> = {},
@@ -1080,5 +1082,126 @@ describe('collectFailedTests', () => {
     ]);
 
     expect(collectFailedTests(parsed)).toHaveLength(0);
+  });
+});
+
+function makeDelta(overrides: Partial<DeltaComparison> = {}): DeltaComparison {
+  return {
+    testsAdded: [],
+    testsRemoved: [],
+    newlyFailing: [],
+    newlyPassing: [],
+    passRatePrev: 94.0,
+    passRateCurr: 97.0,
+    passRateDelta: 3.0,
+    durationPrev: 12.4,
+    durationCurr: 13.1,
+    durationDelta: 0.7,
+    durationDeltaPercent: 5.6,
+    hasChanges: true,
+    ...overrides,
+  };
+}
+
+describe('renderDeltaSection', () => {
+  it('renders delta section when delta has changes', () => {
+    const delta = makeDelta({
+      testsAdded: [{ name: 'test_new', suite: 'auth' }],
+      newlyFailing: [{ name: 'test_login', suite: 'auth' }],
+      newlyPassing: [{ name: 'test_signup', suite: 'onboarding' }],
+      testsRemoved: [{ name: 'test_old', suite: 'legacy' }],
+    });
+
+    const result = renderDeltaSection(delta);
+    expect(result).toContain('Changes Since Last Run');
+    expect(result).toContain('94.0% → 97.0% (+3.0%)');
+    expect(result).toContain('🆕 Added');
+    expect(result).toContain('test_new');
+    expect(result).toContain('❌ New Failure');
+    expect(result).toContain('test_login');
+    expect(result).toContain('✅ Now Passing');
+    expect(result).toContain('test_signup');
+    expect(result).toContain('🗑️ Removed');
+    expect(result).toContain('test_old');
+  });
+
+  it('shows "No changes" with checkmark when hasChanges is false', () => {
+    const delta = makeDelta({
+      hasChanges: false,
+      passRateDelta: 0,
+      passRatePrev: 97.0,
+      passRateCurr: 97.0,
+      durationPrev: 13.1,
+      durationCurr: 13.1,
+      durationDelta: 0,
+      durationDeltaPercent: 0,
+    });
+
+    const result = renderDeltaSection(delta);
+    expect(result).toContain('✅ No changes since last run');
+    expect(result).toContain('97.0%');
+    expect(result).toContain('13.1s');
+  });
+
+  it('delta section is omitted when delta is null (tested via generateSummary)', async () => {
+    vi.clearAllMocks();
+    await generateSummary({ parsed: makeParsed(), apiSuccess: true, delta: null });
+
+    const allAddRawCalls = mockSummary.addRaw.mock.calls.map((c: unknown[]) => c[0]);
+    const hasDelta = allAddRawCalls.some((s: string) => s.includes('Changes Since Last Run'));
+    expect(hasDelta).toBe(false);
+  });
+
+  it('tables are capped at 10 entries with overflow indicator', () => {
+    const manyTests = Array.from({ length: 15 }, (_, i) => ({
+      name: `test_${i}`,
+      suite: 'bulk',
+    }));
+
+    const delta = makeDelta({ testsAdded: manyTests });
+    const result = renderDeltaSection(delta);
+
+    expect(result).toContain('test_0');
+    expect(result).toContain('test_9');
+    expect(result).not.toContain('test_10');
+    expect(result).toContain('and 5 more...');
+  });
+
+  it('pass rate and duration deltas render with correct formatting and signs', () => {
+    const delta = makeDelta({
+      passRatePrev: 80.0,
+      passRateCurr: 75.5,
+      passRateDelta: -4.5,
+      durationPrev: 20.0,
+      durationCurr: 18.0,
+      durationDelta: -2.0,
+      durationDeltaPercent: -10.0,
+      testsAdded: [{ name: 'x', suite: 'y' }],
+    });
+
+    const result = renderDeltaSection(delta);
+    expect(result).toContain('80.0% → 75.5% (-4.5%)');
+    expect(result).toContain('20.0s → 18.0s (-2.0s, -10.0%)');
+  });
+
+  it('wraps in collapsible details when total tests exceed 10', () => {
+    const manyTests = Array.from({ length: 12 }, (_, i) => ({
+      name: `added_${i}`,
+      suite: 'suite',
+    }));
+    const delta = makeDelta({ testsAdded: manyTests });
+    const result = renderDeltaSection(delta);
+    expect(result).toContain('<details>');
+    expect(result).toContain('Changed tests');
+  });
+
+  it('does not use collapsible when total tests are 10 or fewer', () => {
+    const delta = makeDelta({
+      testsAdded: [{ name: 'a', suite: 'b' }],
+      newlyFailing: [{ name: 'c', suite: 'd' }],
+    });
+    const result = renderDeltaSection(delta);
+    expect(result).not.toContain('<details>');
+    expect(result).toContain('<table>');
   });
 });

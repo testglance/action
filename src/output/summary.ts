@@ -6,6 +6,7 @@ import type {
   Highlight,
   HighlightSeverity,
 } from '../types';
+import type { DeltaComparison } from '../history/types';
 
 export interface SummaryOptions {
   parsed: ParsedTestRun;
@@ -16,6 +17,7 @@ export interface SummaryOptions {
   flakyCount?: number;
   highlights?: Highlight[];
   slowestTests?: number;
+  delta?: DeltaComparison | null;
 }
 
 const MAX_FAILED_TESTS_SHOWN = 25;
@@ -23,8 +25,16 @@ const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
 
 export async function generateSummary(options: SummaryOptions): Promise<void> {
-  const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests } =
-    options;
+  const {
+    parsed,
+    apiSuccess,
+    healthScore,
+    dashboardUrl,
+    flakyCount,
+    highlights,
+    slowestTests,
+    delta,
+  } = options;
   const { summary } = parsed;
   const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
 
@@ -56,6 +66,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
   if (highlights && highlights.length > 0) {
     core.summary.addRaw(renderHighlights(highlights, dashboardUrl));
+  }
+
+  if (delta) {
+    core.summary.addRaw(renderDeltaSection(delta));
   }
 
   try {
@@ -225,6 +239,86 @@ export function renderHighlights(highlights: Highlight[], dashboardUrl?: string)
 
   if (sorted.length > MAX_HIGHLIGHTS_SHOWN && dashboardUrl) {
     lines.push(`**[View all highlights on dashboard →](${dashboardUrl})**\n\n`);
+  }
+
+  return lines.join('');
+}
+
+const MAX_DELTA_TESTS_SHOWN = 10;
+
+const DELTA_STATUS_EMOJI: Record<string, string> = {
+  added: '🆕 Added',
+  removed: '🗑️ Removed',
+  newlyFailing: '❌ New Failure',
+  newlyPassing: '✅ Now Passing',
+};
+
+export function renderDeltaSection(delta: DeltaComparison): string {
+  const lines: string[] = ['### Changes Since Last Run\n\n'];
+
+  const sign = (n: number) => (n >= 0 ? '+' : '-');
+
+  if (!delta.hasChanges) {
+    lines.push('✅ No changes since last run\n\n');
+    lines.push(
+      `**Pass rate:** ${delta.passRateCurr.toFixed(1)}% | **Duration:** ${formatDuration(delta.durationCurr)}\n\n`,
+    );
+    return lines.join('');
+  }
+
+  lines.push(
+    `**Pass rate:** ${delta.passRatePrev.toFixed(1)}% → ${delta.passRateCurr.toFixed(1)}% (${sign(delta.passRateDelta)}${Math.abs(delta.passRateDelta).toFixed(1)}%)\n\n`,
+  );
+
+  const durSign = sign(delta.durationDelta);
+  lines.push(
+    `**Duration:** ${formatDuration(delta.durationPrev)} → ${formatDuration(delta.durationCurr)} (${durSign}${formatDuration(Math.abs(delta.durationDelta))}, ${durSign}${Math.abs(delta.durationDeltaPercent).toFixed(1)}%)\n\n`,
+  );
+
+  const categories: { key: string; tests: DeltaComparison[keyof DeltaComparison] }[] = [
+    { key: 'added', tests: delta.testsAdded },
+    { key: 'newlyFailing', tests: delta.newlyFailing },
+    { key: 'newlyPassing', tests: delta.newlyPassing },
+    { key: 'removed', tests: delta.testsRemoved },
+  ];
+
+  const nonEmpty = categories.filter(
+    (c) => Array.isArray(c.tests) && (c.tests as unknown[]).length > 0,
+  );
+
+  if (nonEmpty.length > 0) {
+    const allRows: string[] = [];
+
+    for (const cat of nonEmpty) {
+      const tests = cat.tests as DeltaComparison['testsAdded'];
+      const shown = tests.slice(0, MAX_DELTA_TESTS_SHOWN);
+      for (const t of shown) {
+        allRows.push(
+          `<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.suite)}</td></tr>`,
+        );
+      }
+      if (tests.length > MAX_DELTA_TESTS_SHOWN) {
+        allRows.push(
+          `<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td colspan="2"><em>and ${tests.length - MAX_DELTA_TESTS_SHOWN} more...</em></td></tr>`,
+        );
+      }
+    }
+
+    const totalTests = nonEmpty.reduce((sum, c) => sum + (c.tests as unknown[]).length, 0);
+    const needsCollapse = totalTests > MAX_DELTA_TESTS_SHOWN;
+
+    const table =
+      '<table>\n<tr><th>Status</th><th>Test</th><th>Suite</th></tr>\n' +
+      allRows.join('\n') +
+      '\n</table>\n\n';
+
+    if (needsCollapse) {
+      lines.push(
+        `<details><summary><strong>Changed tests</strong> (${totalTests} tests)</summary>\n\n${table}</details>\n\n`,
+      );
+    } else {
+      lines.push(table);
+    }
   }
 
   return lines.join('');

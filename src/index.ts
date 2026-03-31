@@ -17,7 +17,8 @@ import { ActionsCacheStorage } from './history/actions-cache-storage';
 import { HistoryManager } from './history/manager';
 import type { ParsedTestRun } from './types';
 import type { FileParseResult } from './utils/merge-results';
-import type { HistoryFile } from './history/types';
+import type { HistoryFile, DeltaComparison } from './history/types';
+import { computeDelta } from './history/comparison';
 
 const DEFAULT_SLOWEST_TESTS = 10;
 
@@ -130,6 +131,7 @@ export async function run(): Promise<RunResult> {
     );
 
     let loadedHistory: HistoryFile | null = null;
+    let delta: DeltaComparison | null = null;
 
     if (historyEnabled) {
       try {
@@ -162,6 +164,17 @@ export async function run(): Promise<RunResult> {
 
         await manager.saveHistory();
         loadedHistory = manager.getHistory();
+
+        if (loadedHistory && loadedHistory.entries.length >= 2) {
+          try {
+            const entries = loadedHistory.entries;
+            delta = computeDelta(entries[entries.length - 2], entries[entries.length - 1]);
+          } catch (err) {
+            core.debug(
+              `Delta comparison failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
       } catch (err) {
         core.warning(
           `History tracking failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -209,6 +222,7 @@ export async function run(): Promise<RunResult> {
       dashboardUrl,
       highlights: result?.highlights ?? [],
       slowestTests: slowestTestsCount,
+      delta,
     });
 
     if (createCheck) {
