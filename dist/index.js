@@ -54735,12 +54735,10 @@ function computeDelta(previous, current) {
                 testsAdded.push({ name: curr.name, suite: curr.suite });
             }
             else {
-                if (prev.status === 'passed' &&
-                    (curr.status === 'failed' || curr.status === 'errored')) {
+                if (prev.status === 'passed' && (curr.status === 'failed' || curr.status === 'errored')) {
                     newlyFailing.push({ name: curr.name, suite: curr.suite });
                 }
-                if ((prev.status === 'failed' || prev.status === 'errored') &&
-                    curr.status === 'passed') {
+                if ((prev.status === 'failed' || prev.status === 'errored') && curr.status === 'passed') {
                     newlyPassing.push({ name: curr.name, suite: curr.suite });
                 }
             }
@@ -54760,9 +54758,7 @@ function computeDelta(previous, current) {
     const durationPrev = previous.summary.duration;
     const durationCurr = current.summary.duration;
     const durationDelta = durationCurr - durationPrev;
-    const durationDeltaPercent = durationPrev > 0
-        ? (durationDelta / durationPrev) * 100
-        : 0;
+    const durationDeltaPercent = durationPrev > 0 ? (durationDelta / durationPrev) * 100 : 0;
     const hasChanges = testsAdded.length > 0 ||
         testsRemoved.length > 0 ||
         newlyFailing.length > 0 ||
@@ -55582,7 +55578,7 @@ const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta } = options;
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, } = options;
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
     core.summary.addHeading('TestGlance Results', 2);
