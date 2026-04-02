@@ -153,6 +153,23 @@ describe('computeDelta', () => {
     expect(delta.newlyPassing).toEqual([]);
   });
 
+  it('sets hasChanges=true when only aggregate metrics changed', () => {
+    const previous = makeEntry({
+      summary: { total: 100, passed: 95, failed: 5, skipped: 0, errored: 0, duration: 12.0 },
+    });
+    const current = makeEntry({
+      summary: { total: 100, passed: 95, failed: 5, skipped: 0, errored: 0, duration: 10.0 },
+    });
+
+    const delta = computeDelta(previous, current);
+    expect(delta.testsAdded).toEqual([]);
+    expect(delta.testsRemoved).toEqual([]);
+    expect(delta.newlyFailing).toEqual([]);
+    expect(delta.newlyPassing).toEqual([]);
+    expect(delta.durationDelta).toBe(-2);
+    expect(delta.hasChanges).toBe(true);
+  });
+
   it('handles empty test arrays gracefully (oldest entries with trimmed tests)', () => {
     const previous = makeEntry({
       tests: [],
@@ -180,7 +197,7 @@ describe('computeDelta', () => {
     });
 
     const delta = computeDelta(previous, current);
-    expect(delta.hasChanges).toBe(false);
+    expect(delta.hasChanges).toBe(true);
     expect(delta.passRatePrev).toBe(80);
     expect(delta.passRateCurr).toBeCloseTo(66.667, 1);
     expect(delta.passRateDelta).toBeCloseTo(-13.333, 1);
@@ -207,5 +224,26 @@ describe('computeDelta', () => {
     expect(delta.newlyFailing).toEqual([{ name: 'login', suite: 'api' }]);
     expect(delta.testsAdded).toEqual([]);
     expect(delta.testsRemoved).toEqual([]);
+  });
+
+  it('handles duplicate test names within same suite without collapsing entries', () => {
+    const previous = makeEntry({
+      tests: [
+        { name: 'same', suite: 'auth', status: 'passed', duration: 1.0 },
+        { name: 'same', suite: 'auth', status: 'passed', duration: 1.0 },
+      ],
+      summary: { total: 2, passed: 2, failed: 0, skipped: 0, errored: 0, duration: 2.0 },
+    });
+    const current = makeEntry({
+      tests: [{ name: 'same', suite: 'auth', status: 'passed', duration: 1.0 }],
+      summary: { total: 1, passed: 1, failed: 0, skipped: 0, errored: 0, duration: 1.0 },
+    });
+
+    const delta = computeDelta(previous, current);
+    expect(delta.testsRemoved).toEqual([{ name: 'same', suite: 'auth' }]);
+    expect(delta.testsAdded).toEqual([]);
+    expect(delta.newlyFailing).toEqual([]);
+    expect(delta.newlyPassing).toEqual([]);
+    expect(delta.hasChanges).toBe(true);
   });
 });

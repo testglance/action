@@ -9,15 +9,51 @@ function computePassRate(entry: HistoryEntry): number {
   return total > 0 ? (passed / total) * 100 : 0;
 }
 
+type TestStatus = HistoryEntry['tests'][number]['status'];
+type StatusCounts = Record<TestStatus, number>;
+
+function zeroCounts(): StatusCounts {
+  return {
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    errored: 0,
+  };
+}
+
+function countStatuses(tests: HistoryEntry['tests']): StatusCounts {
+  const counts = zeroCounts();
+  for (const t of tests) {
+    counts[t.status] += 1;
+  }
+  return counts;
+}
+
+function sumCounts(counts: StatusCounts): number {
+  return counts.passed + counts.failed + counts.skipped + counts.errored;
+}
+
+function pushRepeated(target: DeltaTestInfo[], entry: DeltaTestInfo, count: number): void {
+  for (let i = 0; i < count; i++) {
+    target.push(entry);
+  }
+}
+
 export function computeDelta(previous: HistoryEntry, current: HistoryEntry): DeltaComparison {
-  const prevMap = new Map<string, HistoryEntry['tests'][number]>();
+  const prevMap = new Map<string, HistoryEntry['tests']>();
   for (const t of previous.tests) {
-    prevMap.set(buildTestKey(t.suite, t.name), t);
+    const key = buildTestKey(t.suite, t.name);
+    const existing = prevMap.get(key) ?? [];
+    existing.push(t);
+    prevMap.set(key, existing);
   }
 
-  const currMap = new Map<string, HistoryEntry['tests'][number]>();
+  const currMap = new Map<string, HistoryEntry['tests']>();
   for (const t of current.tests) {
-    currMap.set(buildTestKey(t.suite, t.name), t);
+    const key = buildTestKey(t.suite, t.name);
+    const existing = currMap.get(key) ?? [];
+    existing.push(t);
+    currMap.set(key, existing);
   }
 
   const testsAdded: DeltaTestInfo[] = [];
@@ -27,24 +63,43 @@ export function computeDelta(previous: HistoryEntry, current: HistoryEntry): Del
 
   // Only compute test-level diffs when both entries have test data
   if (previous.tests.length > 0 && current.tests.length > 0) {
-    for (const [key, curr] of currMap) {
-      const prev = prevMap.get(key);
-      if (!prev) {
-        testsAdded.push({ name: curr.name, suite: curr.suite });
-      } else {
-        if (prev.status === 'passed' && (curr.status === 'failed' || curr.status === 'errored')) {
-          newlyFailing.push({ name: curr.name, suite: curr.suite });
-        }
-        if ((prev.status === 'failed' || prev.status === 'errored') && curr.status === 'passed') {
-          newlyPassing.push({ name: curr.name, suite: curr.suite });
-        }
-      }
-    }
+    const allKeys = new Set<string>([...prevMap.keys(), ...currMap.keys()]);
 
-    for (const [key, prev] of prevMap) {
-      if (!currMap.has(key)) {
-        testsRemoved.push({ name: prev.name, suite: prev.suite });
+    for (const key of allKeys) {
+      const prevTests = prevMap.get(key) ?? [];
+      const currTests = currMap.get(key) ?? [];
+
+      const [suite, name] = key.split('::');
+      const entry = { name, suite };
+
+      const prevCounts = countStatuses(prevTests);
+      const currCounts = countStatuses(currTests);
+
+      // Remove unchanged tests first, then analyze status changes among remaining.
+      const remainingPrev = zeroCounts();
+      const remainingCurr = zeroCounts();
+      for (const status of ['passed', 'failed', 'skipped', 'errored'] as const) {
+        const unchanged = Math.min(prevCounts[status], currCounts[status]);
+        remainingPrev[status] = prevCounts[status] - unchanged;
+        remainingCurr[status] = currCounts[status] - unchanged;
       }
+
+      const remainingPrevFailing = remainingPrev.failed + remainingPrev.errored;
+      const remainingCurrFailing = remainingCurr.failed + remainingCurr.errored;
+
+      const becameFailing = Math.min(remainingPrev.passed, remainingCurrFailing);
+      const becamePassing = Math.min(remainingPrevFailing, remainingCurr.passed);
+
+      pushRepeated(newlyFailing, entry, becameFailing);
+      pushRepeated(newlyPassing, entry, becamePassing);
+
+      const remainingPrevTotal = sumCounts(remainingPrev);
+      const remainingCurrTotal = sumCounts(remainingCurr);
+      const countAdded = Math.max(0, remainingCurrTotal - remainingPrevTotal);
+      const countRemoved = Math.max(0, remainingPrevTotal - remainingCurrTotal);
+
+      pushRepeated(testsAdded, entry, countAdded);
+      pushRepeated(testsRemoved, entry, countRemoved);
     }
   } else if (previous.tests.length === 0 && current.tests.length > 0) {
     // Previous was trimmed by size guard — skip test-level comparison
@@ -58,12 +113,18 @@ export function computeDelta(previous: HistoryEntry, current: HistoryEntry): Del
   const durationCurr = current.summary.duration;
   const durationDelta = durationCurr - durationPrev;
   const durationDeltaPercent = durationPrev > 0 ? (durationDelta / durationPrev) * 100 : 0;
+  const EPSILON = 1e-9;
+  const metricsChanged =
+    Math.abs(passRateDelta) > EPSILON ||
+    Math.abs(durationDelta) > EPSILON ||
+    Math.abs(durationDeltaPercent) > EPSILON;
 
   const hasChanges =
     testsAdded.length > 0 ||
     testsRemoved.length > 0 ||
     newlyFailing.length > 0 ||
-    newlyPassing.length > 0;
+    newlyPassing.length > 0 ||
+    metricsChanged;
 
   return {
     testsAdded,
