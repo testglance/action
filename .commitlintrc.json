@@ -1,3 +1,9 @@
 {
-  "extends": ["@commitlint/config-conventional"]
+  "extends": ["@commitlint/config-conventional"],
+  "parserPreset": {
+    "parserOpts": {
+      "headerPattern": "^(?:[^a-zA-Z]*\\s)?(?<type>\\w+)(?:\\((?<scope>[^)]+)\\))?!?:\\s(?<subject>.+)$",
+      "headerCorrespondence": ["type", "scope", "subject"]
+    }
+  }
 }
