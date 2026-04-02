@@ -285,8 +285,8 @@ export async function run(): Promise<RunResult> {
           highlights: result.highlights ?? [],
           runUrl: dashboardUrl,
           testsChanged,
-          baseDelta,
-          baseBranch: baseBranch || undefined,
+          baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
+          baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
         },
       });
     }

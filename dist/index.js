@@ -55333,8 +55333,8 @@ async function run() {
                     highlights: result.highlights ?? [],
                     runUrl: dashboardUrl,
                     testsChanged,
-                    baseDelta,
-                    baseBranch: baseBranch || undefined,
+                    baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
+                    baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
                 },
             });
         }
@@ -55647,18 +55647,14 @@ function renderBaseBranchSection(baseDelta, baseBranch) {
         lines.push('');
         const capped = baseDelta.newlyFailing.slice(0, 5);
         const names = capped.map((t) => `\`${t.suite}::${t.name}\``).join(', ');
-        const suffix = baseDelta.newlyFailing.length > 5
-            ? ` and ${baseDelta.newlyFailing.length - 5} more`
-            : '';
+        const suffix = baseDelta.newlyFailing.length > 5 ? ` and ${baseDelta.newlyFailing.length - 5} more` : '';
         lines.push(`🔴 **Regressions:** ${names}${suffix}`);
     }
     if (baseDelta.newlyPassing.length > 0) {
         lines.push('');
         const capped = baseDelta.newlyPassing.slice(0, 5);
         const names = capped.map((t) => `\`${t.suite}::${t.name}\``).join(', ');
-        const suffix = baseDelta.newlyPassing.length > 5
-            ? ` and ${baseDelta.newlyPassing.length - 5} more`
-            : '';
+        const suffix = baseDelta.newlyPassing.length > 5 ? ` and ${baseDelta.newlyPassing.length - 5} more` : '';
         lines.push(`🟢 **Improvements:** ${names}${suffix}`);
     }
     return lines.join('\n');

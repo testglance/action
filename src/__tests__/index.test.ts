@@ -1279,7 +1279,7 @@ describe('run() integration', () => {
       const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
       expect(prCommentCall).toBeDefined();
       expect(prCommentCall.section.baseBranch).toBeUndefined();
-      expect(prCommentCall.section.baseDelta).toBeNull();
+      expect(prCommentCall.section.baseDelta).toBeUndefined();
     });
 
     it('base branch loading error does not fail the action', async () => {
@@ -1318,7 +1318,8 @@ describe('run() integration', () => {
 
       const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
       expect(prCommentCall).toBeDefined();
-      expect(prCommentCall.section.baseDelta).toBeNull();
+      expect(prCommentCall.section.baseBranch).toBeUndefined();
+      expect(prCommentCall.section.baseDelta).toBeUndefined();
     });
   });
 });
