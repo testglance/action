@@ -1166,4 +1166,159 @@ describe('run() integration', () => {
       );
     });
   });
+
+  describe('base branch comparison (Story 7.4)', () => {
+    const BASE_ENTRY = {
+      timestamp: '2026-03-29T12:00:00.000Z',
+      commitSha: 'base123',
+      summary: { total: 2, passed: 2, failed: 0, skipped: 0, errored: 0, duration: 1.0 },
+      tests: [
+        { name: 'test1', suite: 'suite1', status: 'passed' as const, duration: 0.5 },
+        { name: 'test2', suite: 'suite1', status: 'passed' as const, duration: 0.5 },
+      ],
+    };
+
+    const BASE_HISTORY = JSON.stringify({
+      version: 1,
+      branch: 'main',
+      entries: [BASE_ENTRY],
+    });
+
+    const PR_ENTRY = {
+      timestamp: '2026-03-30T12:00:00.000Z',
+      commitSha: 'pr123',
+      summary: { total: 2, passed: 1, failed: 1, skipped: 0, errored: 0, duration: 1.0 },
+      tests: [
+        { name: 'test1', suite: 'suite1', status: 'passed' as const, duration: 0.5 },
+        { name: 'test2', suite: 'suite1', status: 'failed' as const, duration: 0.5 },
+      ],
+    };
+
+    const PR_HISTORY = JSON.stringify({
+      version: 1,
+      branch: 'feature',
+      entries: [PR_ENTRY],
+    });
+
+    async function setupBaseBranchComparison() {
+      setupInputs({ history: 'true', 'github-token': 'ghp_test' });
+      process.env.GITHUB_HEAD_REF = 'feature';
+      process.env.GITHUB_BASE_REF = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce('pr-cache-key')
+        .mockResolvedValueOnce('base-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+
+      let callCount = 0;
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) {
+          callCount++;
+          return callCount === 1 ? PR_HISTORY : BASE_HISTORY;
+        }
+        return '<xml>content</xml>';
+      });
+    }
+
+    it('baseDelta is computed and passed to PR comment on pull_request event', async () => {
+      await setupBaseBranchComparison();
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      expect(prCommentCall).toBeDefined();
+      expect(prCommentCall.section.baseBranch).toBe('main');
+      expect(prCommentCall.section.baseDelta).not.toBeNull();
+      expect(prCommentCall.section.baseDelta.passRatePrev).toBe(100);
+      expect(prCommentCall.section.baseDelta.passRateCurr).toBe(50);
+    });
+
+    it('baseDelta is null when no base branch history exists', async () => {
+      setupInputs({ history: 'true', 'github-token': 'ghp_test' });
+      process.env.GITHUB_HEAD_REF = 'feature';
+      process.env.GITHUB_BASE_REF = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce('pr-cache-key')
+        .mockResolvedValueOnce(undefined);
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return PR_HISTORY;
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      expect(prCommentCall).toBeDefined();
+      expect(prCommentCall.section.baseBranch).toBe('main');
+      expect(prCommentCall.section.baseDelta).toBeNull();
+    });
+
+    it('baseDelta is not computed when GITHUB_BASE_REF is not set', async () => {
+      setupInputs({ history: 'true', 'github-token': 'ghp_test' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+      delete process.env.GITHUB_BASE_REF;
+      delete process.env.GITHUB_HEAD_REF;
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      expect(prCommentCall).toBeDefined();
+      expect(prCommentCall.section.baseBranch).toBeUndefined();
+      expect(prCommentCall.section.baseDelta).toBeNull();
+    });
+
+    it('base branch loading error does not fail the action', async () => {
+      setupInputs({ history: 'true', 'github-token': 'ghp_test' });
+      process.env.GITHUB_HEAD_REF = 'feature';
+      process.env.GITHUB_BASE_REF = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce('pr-cache-key')
+        .mockRejectedValueOnce(new Error('base cache error'));
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return PR_HISTORY;
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      expect(mockSetFailed).not.toHaveBeenCalled();
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('base cache error'));
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      expect(prCommentCall.section.baseDelta).toBeNull();
+    });
+
+    it('baseDelta skipped when history is disabled', async () => {
+      setupInputs({ history: 'false', 'github-token': 'ghp_test' });
+      process.env.GITHUB_BASE_REF = 'main';
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      expect(prCommentCall).toBeDefined();
+      expect(prCommentCall.section.baseDelta).toBeNull();
+    });
+  });
 });
