@@ -54738,6 +54738,15 @@ function pushRepeated(target, entry, count) {
         target.push(entry);
     }
 }
+const TEST_STATUSES = ['passed', 'failed', 'skipped', 'errored'];
+function groupByStatus(tests) {
+    return {
+        passed: tests.filter((t) => t.status === 'passed'),
+        failed: tests.filter((t) => t.status === 'failed'),
+        skipped: tests.filter((t) => t.status === 'skipped'),
+        errored: tests.filter((t) => t.status === 'errored'),
+    };
+}
 function computeTestsChanged(previous, current) {
     const empty = {
         newTests: [],
@@ -54750,43 +54759,73 @@ function computeTestsChanged(previous, current) {
     }
     const prevMap = new Map();
     for (const t of previous.tests) {
-        prevMap.set(buildTestKey(t.suite, t.name), t);
+        const key = buildTestKey(t.suite, t.name);
+        const existing = prevMap.get(key) ?? [];
+        existing.push(t);
+        prevMap.set(key, existing);
     }
     const currMap = new Map();
     for (const t of current.tests) {
-        currMap.set(buildTestKey(t.suite, t.name), t);
+        const key = buildTestKey(t.suite, t.name);
+        const existing = currMap.get(key) ?? [];
+        existing.push(t);
+        currMap.set(key, existing);
     }
     const newTests = [];
     const removedTests = [];
     const statusChanged = [];
-    for (const [key, curr] of currMap) {
-        const prev = prevMap.get(key);
-        if (!prev) {
-            newTests.push({
-                name: curr.name,
-                suite: curr.suite,
-                status: curr.status,
-                duration: curr.duration,
-            });
+    const allKeys = new Set([...prevMap.keys(), ...currMap.keys()]);
+    for (const key of allKeys) {
+        const prevTests = prevMap.get(key) ?? [];
+        const currTests = currMap.get(key) ?? [];
+        const prevByStatus = groupByStatus(prevTests);
+        const currByStatus = groupByStatus(currTests);
+        // Remove unchanged statuses first.
+        for (const status of TEST_STATUSES) {
+            const unchanged = Math.min(prevByStatus[status].length, currByStatus[status].length);
+            prevByStatus[status].splice(0, unchanged);
+            currByStatus[status].splice(0, unchanged);
         }
-        else if (prev.status !== curr.status) {
-            statusChanged.push({
-                name: curr.name,
-                suite: curr.suite,
-                status: curr.status,
-                duration: curr.duration,
-                previousStatus: prev.status,
-            });
+        // Pair remaining previous/current entries as status changes.
+        for (const prevStatus of TEST_STATUSES) {
+            for (const currStatus of TEST_STATUSES) {
+                if (prevStatus === currStatus)
+                    continue;
+                const pairCount = Math.min(prevByStatus[prevStatus].length, currByStatus[currStatus].length);
+                for (let i = 0; i < pairCount; i++) {
+                    const prevTest = prevByStatus[prevStatus].shift();
+                    const currTest = currByStatus[currStatus].shift();
+                    statusChanged.push({
+                        name: currTest.name,
+                        suite: currTest.suite,
+                        status: currTest.status,
+                        duration: currTest.duration,
+                        previousStatus: prevTest.status,
+                    });
+                }
+            }
         }
-    }
-    for (const [key, prev] of prevMap) {
-        if (!currMap.has(key)) {
-            removedTests.push({
-                name: prev.name,
-                suite: prev.suite,
-                status: prev.status,
-                duration: prev.duration,
-            });
+        // Remaining current entries are new tests.
+        for (const status of TEST_STATUSES) {
+            for (const currTest of currByStatus[status]) {
+                newTests.push({
+                    name: currTest.name,
+                    suite: currTest.suite,
+                    status: currTest.status,
+                    duration: currTest.duration,
+                });
+            }
+        }
+        // Remaining previous entries are removed tests.
+        for (const status of TEST_STATUSES) {
+            for (const prevTest of prevByStatus[status]) {
+                removedTests.push({
+                    name: prevTest.name,
+                    suite: prevTest.suite,
+                    status: prevTest.status,
+                    duration: prevTest.duration,
+                });
+            }
         }
     }
     const hasChanges = newTests.length > 0 || removedTests.length > 0 || statusChanged.length > 0;
@@ -55604,7 +55643,8 @@ function renderTestsChangedCompact(report) {
         parts.push(`${report.statusChanged.length} status changes`);
     if (parts.length === 0)
         return '';
-    const newlyFailing = report.statusChanged.filter((t) => t.status === 'failed' && t.previousStatus !== 'failed');
+    const isFailing = (status) => status === 'failed' || status === 'errored';
+    const newlyFailing = report.statusChanged.filter((t) => isFailing(t.status) && !isFailing(t.previousStatus));
     let line = `📝 ${parts.join(', ')}`;
     if (newlyFailing.length > 0) {
         line = `⚠️ ${newlyFailing.length} newly failing | ${line}`;
