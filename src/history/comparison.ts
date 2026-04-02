@@ -1,4 +1,10 @@
-import type { HistoryEntry, DeltaComparison, DeltaTestInfo } from './types';
+import type {
+  HistoryEntry,
+  DeltaComparison,
+  DeltaTestInfo,
+  TestsChangedReport,
+  TestsChangedEntry,
+} from './types';
 
 function buildTestKey(suite: string, name: string): string {
   return `${suite}::${name}`;
@@ -37,6 +43,122 @@ function pushRepeated(target: DeltaTestInfo[], entry: DeltaTestInfo, count: numb
   for (let i = 0; i < count; i++) {
     target.push(entry);
   }
+}
+
+const TEST_STATUSES: readonly TestStatus[] = ['passed', 'failed', 'skipped', 'errored'] as const;
+
+function groupByStatus(
+  tests: HistoryEntry['tests'],
+): Record<TestStatus, HistoryEntry['tests'][number][]> {
+  return {
+    passed: tests.filter((t) => t.status === 'passed'),
+    failed: tests.filter((t) => t.status === 'failed'),
+    skipped: tests.filter((t) => t.status === 'skipped'),
+    errored: tests.filter((t) => t.status === 'errored'),
+  };
+}
+
+export function computeTestsChanged(
+  previous: HistoryEntry,
+  current: HistoryEntry,
+): TestsChangedReport {
+  const empty: TestsChangedReport = {
+    newTests: [],
+    removedTests: [],
+    statusChanged: [],
+    hasChanges: false,
+  };
+
+  if (previous.tests.length === 0 || current.tests.length === 0) {
+    return empty;
+  }
+
+  const prevMap = new Map<string, HistoryEntry['tests']>();
+  for (const t of previous.tests) {
+    const key = buildTestKey(t.suite, t.name);
+    const existing = prevMap.get(key) ?? [];
+    existing.push(t);
+    prevMap.set(key, existing);
+  }
+
+  const currMap = new Map<string, HistoryEntry['tests']>();
+  for (const t of current.tests) {
+    const key = buildTestKey(t.suite, t.name);
+    const existing = currMap.get(key) ?? [];
+    existing.push(t);
+    currMap.set(key, existing);
+  }
+
+  const newTests: TestsChangedEntry[] = [];
+  const removedTests: TestsChangedEntry[] = [];
+  const statusChanged: TestsChangedEntry[] = [];
+
+  const allKeys = new Set<string>([...prevMap.keys(), ...currMap.keys()]);
+
+  for (const key of allKeys) {
+    const prevTests = prevMap.get(key) ?? [];
+    const currTests = currMap.get(key) ?? [];
+
+    const prevByStatus = groupByStatus(prevTests);
+    const currByStatus = groupByStatus(currTests);
+
+    // Remove unchanged statuses first.
+    for (const status of TEST_STATUSES) {
+      const unchanged = Math.min(prevByStatus[status].length, currByStatus[status].length);
+      prevByStatus[status].splice(0, unchanged);
+      currByStatus[status].splice(0, unchanged);
+    }
+
+    // Pair remaining previous/current entries as status changes.
+    for (const prevStatus of TEST_STATUSES) {
+      for (const currStatus of TEST_STATUSES) {
+        if (prevStatus === currStatus) continue;
+        const pairCount = Math.min(
+          prevByStatus[prevStatus].length,
+          currByStatus[currStatus].length,
+        );
+        for (let i = 0; i < pairCount; i++) {
+          const prevTest = prevByStatus[prevStatus].shift()!;
+          const currTest = currByStatus[currStatus].shift()!;
+          statusChanged.push({
+            name: currTest.name,
+            suite: currTest.suite,
+            status: currTest.status,
+            duration: currTest.duration,
+            previousStatus: prevTest.status,
+          });
+        }
+      }
+    }
+
+    // Remaining current entries are new tests.
+    for (const status of TEST_STATUSES) {
+      for (const currTest of currByStatus[status]) {
+        newTests.push({
+          name: currTest.name,
+          suite: currTest.suite,
+          status: currTest.status,
+          duration: currTest.duration,
+        });
+      }
+    }
+
+    // Remaining previous entries are removed tests.
+    for (const status of TEST_STATUSES) {
+      for (const prevTest of prevByStatus[status]) {
+        removedTests.push({
+          name: prevTest.name,
+          suite: prevTest.suite,
+          status: prevTest.status,
+          duration: prevTest.duration,
+        });
+      }
+    }
+  }
+
+  const hasChanges = newTests.length > 0 || removedTests.length > 0 || statusChanged.length > 0;
+
+  return { newTests, removedTests, statusChanged, hasChanges };
 }
 
 export function computeDelta(previous: HistoryEntry, current: HistoryEntry): DeltaComparison {

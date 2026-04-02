@@ -21,9 +21,10 @@ import {
   renderHighlights,
   renderSuiteBreakdown,
   renderDeltaSection,
+  renderTestsChangedSection,
 } from '../summary';
 import type { Highlight } from '../../types';
-import type { DeltaComparison } from '../../history/types';
+import type { DeltaComparison, TestsChangedReport } from '../../history/types';
 
 function makeParsed(
   overrides: Partial<ParsedTestRun['summary']> = {},
@@ -1203,5 +1204,91 @@ describe('renderDeltaSection', () => {
     const result = renderDeltaSection(delta);
     expect(result).not.toContain('<details>');
     expect(result).toContain('<table>');
+  });
+});
+
+function makeTestsChanged(overrides: Partial<TestsChangedReport> = {}): TestsChangedReport {
+  return {
+    newTests: [],
+    removedTests: [],
+    statusChanged: [],
+    hasChanges: true,
+    ...overrides,
+  };
+}
+
+describe('renderTestsChangedSection', () => {
+  it('renders all three tables when all categories have entries', () => {
+    const report = makeTestsChanged({
+      newTests: [{ name: 'new_test', suite: 'auth', status: 'passed', duration: 0.3 }],
+      removedTests: [{ name: 'old_test', suite: 'legacy', status: 'passed', duration: 1.0 }],
+      statusChanged: [
+        {
+          name: 'flipped',
+          suite: 'core',
+          status: 'failed',
+          duration: 0.5,
+          previousStatus: 'passed',
+        },
+      ],
+    });
+    const result = renderTestsChangedSection(report);
+    expect(result).toContain('### Tests Changed');
+    expect(result).toContain('#### New Tests (1)');
+    expect(result).toContain('#### Removed Tests (1)');
+    expect(result).toContain('#### Status Changed (1)');
+    expect(result).toContain('new_test');
+    expect(result).toContain('old_test');
+    expect(result).toContain('flipped');
+  });
+
+  it('omits empty categories', () => {
+    const report = makeTestsChanged({
+      newTests: [{ name: 'new_test', suite: 'auth', status: 'passed', duration: 0.3 }],
+    });
+    const result = renderTestsChangedSection(report);
+    expect(result).toContain('#### New Tests (1)');
+    expect(result).not.toContain('#### Removed Tests');
+    expect(result).not.toContain('#### Status Changed');
+  });
+
+  it('caps at 20 entries with "and N more..." indicator', () => {
+    const manyTests = Array.from({ length: 25 }, (_, i) => ({
+      name: `test_${i}`,
+      suite: 'suite',
+      status: 'passed' as const,
+      duration: 0.1,
+    }));
+    const report = makeTestsChanged({ newTests: manyTests });
+    const result = renderTestsChangedSection(report);
+    expect(result).toContain('and 5 more...');
+    expect(result).not.toContain('test_24');
+  });
+
+  it('wraps in <details> when category exceeds 20', () => {
+    const manyTests = Array.from({ length: 25 }, (_, i) => ({
+      name: `test_${i}`,
+      suite: 'suite',
+      status: 'passed' as const,
+      duration: 0.1,
+    }));
+    const report = makeTestsChanged({ newTests: manyTests });
+    const result = renderTestsChangedSection(report);
+    expect(result).toContain('<details>');
+    expect(result).toContain('Showing 20 of 25 new tests');
+  });
+
+  it('section omitted when testsChanged is null (via generateSummary)', async () => {
+    vi.clearAllMocks();
+    await generateSummary({ parsed: makeParsed(), apiSuccess: true, testsChanged: null });
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasTestsChanged = rawCalls.some((c: string) => c.includes('Tests Changed'));
+    expect(hasTestsChanged).toBe(false);
+  });
+
+  it('section omitted when hasChanges is false', () => {
+    const report = makeTestsChanged({ hasChanges: false });
+    const result = renderTestsChangedSection(report);
+    expect(result).toBe('');
   });
 });
