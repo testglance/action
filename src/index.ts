@@ -17,8 +17,14 @@ import { ActionsCacheStorage } from './history/actions-cache-storage';
 import { HistoryManager } from './history/manager';
 import type { ParsedTestRun } from './types';
 import type { FileParseResult } from './utils/merge-results';
-import type { HistoryFile, DeltaComparison, TestsChangedReport } from './history/types';
+import type {
+  HistoryFile,
+  DeltaComparison,
+  TestsChangedReport,
+  FlakyDetectionResult,
+} from './history/types';
 import { computeDelta, computeTestsChanged } from './history/comparison';
+import { detectFlakyTests } from './history/flaky-detection';
 
 const DEFAULT_SLOWEST_TESTS = 10;
 
@@ -71,6 +77,8 @@ export async function run(): Promise<RunResult> {
     const createCheck = core.getInput('create-check') === 'true';
     const checkName = core.getInput('check-name') || 'Test Results';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
+    const flakyThresholdRaw = core.getInput('flaky-threshold') || '2';
+    const flakyThreshold = parseInt(flakyThresholdRaw, 10) || 2;
     const historyEnabled = core.getInput('history') !== 'false';
     const historyLimitRaw = core.getInput('history-limit') || '20';
     const historyLimitParsed = parseInt(historyLimitRaw, 10);
@@ -194,6 +202,18 @@ export async function run(): Promise<RunResult> {
       }
     }
 
+    let flaky: FlakyDetectionResult | null = null;
+
+    if (loadedHistory && loadedHistory.entries.length >= 5) {
+      try {
+        flaky = detectFlakyTests(loadedHistory.entries, flakyThreshold);
+      } catch (err) {
+        core.debug(`Flaky detection failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else if (historyEnabled && loadedHistory) {
+      core.debug('Need at least 5 runs for flaky detection');
+    }
+
     let baseDelta: DeltaComparison | null = null;
     const baseBranch = (process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '');
 
@@ -261,6 +281,7 @@ export async function run(): Promise<RunResult> {
       slowestTests: slowestTestsCount,
       delta,
       testsChanged,
+      flaky,
     });
 
     if (createCheck) {
@@ -285,6 +306,7 @@ export async function run(): Promise<RunResult> {
           highlights: result.highlights ?? [],
           runUrl: dashboardUrl,
           testsChanged,
+          flaky,
           baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
           baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
         },
