@@ -54700,6 +54700,132 @@ exports.ActionsCacheStorage = ActionsCacheStorage;
 
 /***/ }),
 
+/***/ 88232:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.computeDelta = computeDelta;
+function buildTestKey(suite, name) {
+    return `${suite}::${name}`;
+}
+function computePassRate(entry) {
+    const { total, passed } = entry.summary;
+    return total > 0 ? (passed / total) * 100 : 0;
+}
+function zeroCounts() {
+    return {
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        errored: 0,
+    };
+}
+function countStatuses(tests) {
+    const counts = zeroCounts();
+    for (const t of tests) {
+        counts[t.status] += 1;
+    }
+    return counts;
+}
+function sumCounts(counts) {
+    return counts.passed + counts.failed + counts.skipped + counts.errored;
+}
+function pushRepeated(target, entry, count) {
+    for (let i = 0; i < count; i++) {
+        target.push(entry);
+    }
+}
+function computeDelta(previous, current) {
+    const prevMap = new Map();
+    for (const t of previous.tests) {
+        const key = buildTestKey(t.suite, t.name);
+        const existing = prevMap.get(key) ?? [];
+        existing.push(t);
+        prevMap.set(key, existing);
+    }
+    const currMap = new Map();
+    for (const t of current.tests) {
+        const key = buildTestKey(t.suite, t.name);
+        const existing = currMap.get(key) ?? [];
+        existing.push(t);
+        currMap.set(key, existing);
+    }
+    const testsAdded = [];
+    const testsRemoved = [];
+    const newlyFailing = [];
+    const newlyPassing = [];
+    // Only compute test-level diffs when both entries have test data
+    if (previous.tests.length > 0 && current.tests.length > 0) {
+        const allKeys = new Set([...prevMap.keys(), ...currMap.keys()]);
+        for (const key of allKeys) {
+            const prevTests = prevMap.get(key) ?? [];
+            const currTests = currMap.get(key) ?? [];
+            const [suite, name] = key.split('::');
+            const entry = { name, suite };
+            const prevCounts = countStatuses(prevTests);
+            const currCounts = countStatuses(currTests);
+            // Remove unchanged tests first, then analyze status changes among remaining.
+            const remainingPrev = zeroCounts();
+            const remainingCurr = zeroCounts();
+            for (const status of ['passed', 'failed', 'skipped', 'errored']) {
+                const unchanged = Math.min(prevCounts[status], currCounts[status]);
+                remainingPrev[status] = prevCounts[status] - unchanged;
+                remainingCurr[status] = currCounts[status] - unchanged;
+            }
+            const remainingPrevFailing = remainingPrev.failed + remainingPrev.errored;
+            const remainingCurrFailing = remainingCurr.failed + remainingCurr.errored;
+            const becameFailing = Math.min(remainingPrev.passed, remainingCurrFailing);
+            const becamePassing = Math.min(remainingPrevFailing, remainingCurr.passed);
+            pushRepeated(newlyFailing, entry, becameFailing);
+            pushRepeated(newlyPassing, entry, becamePassing);
+            const remainingPrevTotal = sumCounts(remainingPrev);
+            const remainingCurrTotal = sumCounts(remainingCurr);
+            const countAdded = Math.max(0, remainingCurrTotal - remainingPrevTotal);
+            const countRemoved = Math.max(0, remainingPrevTotal - remainingCurrTotal);
+            pushRepeated(testsAdded, entry, countAdded);
+            pushRepeated(testsRemoved, entry, countRemoved);
+        }
+    }
+    else if (previous.tests.length === 0 && current.tests.length > 0) {
+        // Previous was trimmed by size guard — skip test-level comparison
+    }
+    const passRatePrev = computePassRate(previous);
+    const passRateCurr = computePassRate(current);
+    const passRateDelta = passRateCurr - passRatePrev;
+    const durationPrev = previous.summary.duration;
+    const durationCurr = current.summary.duration;
+    const durationDelta = durationCurr - durationPrev;
+    const durationDeltaPercent = durationPrev > 0 ? (durationDelta / durationPrev) * 100 : 0;
+    const EPSILON = 1e-9;
+    const metricsChanged = Math.abs(passRateDelta) > EPSILON ||
+        Math.abs(durationDelta) > EPSILON ||
+        Math.abs(durationDeltaPercent) > EPSILON;
+    const hasChanges = testsAdded.length > 0 ||
+        testsRemoved.length > 0 ||
+        newlyFailing.length > 0 ||
+        newlyPassing.length > 0 ||
+        metricsChanged;
+    return {
+        testsAdded,
+        testsRemoved,
+        newlyFailing,
+        newlyPassing,
+        passRatePrev,
+        passRateCurr,
+        passRateDelta,
+        durationPrev,
+        durationCurr,
+        durationDelta,
+        durationDeltaPercent,
+        hasChanges,
+    };
+}
+
+
+/***/ }),
+
 /***/ 75878:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -54901,6 +55027,7 @@ const post_pr_comment_1 = __nccwpck_require__(4685);
 const check_run_1 = __nccwpck_require__(8290);
 const actions_cache_storage_1 = __nccwpck_require__(58701);
 const manager_1 = __nccwpck_require__(75878);
+const comparison_1 = __nccwpck_require__(88232);
 const DEFAULT_SLOWEST_TESTS = 10;
 function parseSlowestTestsCount(input) {
     const trimmed = input.trim();
@@ -54987,6 +55114,7 @@ async function run() {
         const parsed = (0, merge_results_1.mergeTestRuns)(successful);
         core.info(`Parsed ${parsed.summary.total} tests from ${successful.length} file(s): ${parsed.summary.passed} passed, ${parsed.summary.failed} failed, ${parsed.summary.skipped} skipped, ${parsed.summary.errored} errored`);
         let loadedHistory = null;
+        let delta = null;
         if (historyEnabled) {
             try {
                 const branch = (process.env.GITHUB_HEAD_REF ||
@@ -55011,6 +55139,15 @@ async function run() {
                 });
                 await manager.saveHistory();
                 loadedHistory = manager.getHistory();
+                if (loadedHistory && loadedHistory.entries.length >= 2) {
+                    try {
+                        const entries = loadedHistory.entries;
+                        delta = (0, comparison_1.computeDelta)(entries[entries.length - 2], entries[entries.length - 1]);
+                    }
+                    catch (err) {
+                        core.debug(`Delta comparison failed: ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                }
             }
             catch (err) {
                 core.warning(`History tracking failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -55049,6 +55186,7 @@ async function run() {
             dashboardUrl,
             highlights: result?.highlights ?? [],
             slowestTests: slowestTestsCount,
+            delta,
         });
         if (createCheck) {
             if (githubToken) {
@@ -55478,12 +55616,13 @@ exports.truncate = truncate;
 exports.collectFailedTests = collectFailedTests;
 exports.renderSuiteBreakdown = renderSuiteBreakdown;
 exports.renderHighlights = renderHighlights;
+exports.renderDeltaSection = renderDeltaSection;
 const core = __importStar(__nccwpck_require__(16966));
 const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests } = options;
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, } = options;
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
     core.summary.addHeading('TestGlance Results', 2);
@@ -55511,6 +55650,9 @@ async function generateSummary(options) {
     }
     if (highlights && highlights.length > 0) {
         core.summary.addRaw(renderHighlights(highlights, dashboardUrl));
+    }
+    if (delta) {
+        core.summary.addRaw(renderDeltaSection(delta));
     }
     try {
         if (parsed.suites.length > 1) {
@@ -55650,6 +55792,57 @@ function renderHighlights(highlights, dashboardUrl) {
     }
     if (sorted.length > MAX_HIGHLIGHTS_SHOWN && dashboardUrl) {
         lines.push(`**[View all highlights on dashboard →](${dashboardUrl})**\n\n`);
+    }
+    return lines.join('');
+}
+const MAX_DELTA_TESTS_SHOWN = 10;
+const DELTA_STATUS_EMOJI = {
+    added: '🆕 Added',
+    removed: '🗑️ Removed',
+    newlyFailing: '❌ New Failure',
+    newlyPassing: '✅ Now Passing',
+};
+function renderDeltaSection(delta) {
+    const lines = ['### Changes Since Last Run\n\n'];
+    const sign = (n) => (n >= 0 ? '+' : '-');
+    if (!delta.hasChanges) {
+        lines.push('✅ No changes since last run\n\n');
+        lines.push(`**Pass rate:** ${delta.passRateCurr.toFixed(1)}% | **Duration:** ${formatDuration(delta.durationCurr)}\n\n`);
+        return lines.join('');
+    }
+    lines.push(`**Pass rate:** ${delta.passRatePrev.toFixed(1)}% → ${delta.passRateCurr.toFixed(1)}% (${sign(delta.passRateDelta)}${Math.abs(delta.passRateDelta).toFixed(1)}%)\n\n`);
+    const durSign = sign(delta.durationDelta);
+    lines.push(`**Duration:** ${formatDuration(delta.durationPrev)} → ${formatDuration(delta.durationCurr)} (${durSign}${formatDuration(Math.abs(delta.durationDelta))}, ${durSign}${Math.abs(delta.durationDeltaPercent).toFixed(1)}%)\n\n`);
+    const categories = [
+        { key: 'added', tests: delta.testsAdded },
+        { key: 'newlyFailing', tests: delta.newlyFailing },
+        { key: 'newlyPassing', tests: delta.newlyPassing },
+        { key: 'removed', tests: delta.testsRemoved },
+    ];
+    const nonEmpty = categories.filter((c) => Array.isArray(c.tests) && c.tests.length > 0);
+    if (nonEmpty.length > 0) {
+        const allRows = [];
+        for (const cat of nonEmpty) {
+            const tests = cat.tests;
+            const shown = tests.slice(0, MAX_DELTA_TESTS_SHOWN);
+            for (const t of shown) {
+                allRows.push(`<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.suite)}</td></tr>`);
+            }
+            if (tests.length > MAX_DELTA_TESTS_SHOWN) {
+                allRows.push(`<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td colspan="2"><em>and ${tests.length - MAX_DELTA_TESTS_SHOWN} more...</em></td></tr>`);
+            }
+        }
+        const totalTests = nonEmpty.reduce((sum, c) => sum + c.tests.length, 0);
+        const needsCollapse = totalTests > MAX_DELTA_TESTS_SHOWN;
+        const table = '<table>\n<tr><th>Status</th><th>Test</th><th>Suite</th></tr>\n' +
+            allRows.join('\n') +
+            '\n</table>\n\n';
+        if (needsCollapse) {
+            lines.push(`<details><summary><strong>Changed tests</strong> (${totalTests} tests)</summary>\n\n${table}</details>\n\n`);
+        }
+        else {
+            lines.push(table);
+        }
     }
     return lines.join('');
 }
