@@ -201,6 +201,16 @@ describe('PR comment tests-changed compact summary', () => {
     expect(result).toContain('⚠️ 1 newly failing');
   });
 
+  it('counts passed→errored as newly failing', () => {
+    const tc = makeTestsChanged({
+      statusChanged: [
+        { name: 'x', suite: 's', status: 'errored', duration: 0.1, previousStatus: 'passed' },
+      ],
+    });
+    const result = renderTestJobSection(makeSection({ testsChanged: tc }));
+    expect(result).toContain('⚠️ 1 newly failing');
+  });
+
   it('summary line omitted when no changes', () => {
     const tc = makeTestsChanged({ hasChanges: false });
     const result = renderTestJobSection(makeSection({ testsChanged: tc }));

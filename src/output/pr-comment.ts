@@ -133,8 +133,10 @@ function renderTestsChangedCompact(report: TestsChangedReport): string {
 
   if (parts.length === 0) return '';
 
+  const isFailing = (status: 'passed' | 'failed' | 'skipped' | 'errored' | undefined): boolean =>
+    status === 'failed' || status === 'errored';
   const newlyFailing = report.statusChanged.filter(
-    (t) => t.status === 'failed' && t.previousStatus !== 'failed',
+    (t) => isFailing(t.status) && !isFailing(t.previousStatus),
   );
 
   let line = `📝 ${parts.join(', ')}`;

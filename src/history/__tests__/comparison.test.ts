@@ -377,4 +377,35 @@ describe('computeTestsChanged', () => {
     expect(report.newTests).toEqual([]);
     expect(report.removedTests).toEqual([]);
   });
+
+  it('handles duplicate suite::name entries without collapsing to one record', () => {
+    const previous = makeEntry({
+      tests: [
+        { name: 'param', suite: 'auth', status: 'passed', duration: 1.0 },
+        { name: 'param', suite: 'auth', status: 'passed', duration: 1.1 },
+      ],
+      summary: { total: 2, passed: 2, failed: 0, skipped: 0, errored: 0, duration: 2.1 },
+    });
+    const current = makeEntry({
+      tests: [
+        { name: 'param', suite: 'auth', status: 'passed', duration: 1.0 },
+        { name: 'param', suite: 'auth', status: 'failed', duration: 1.2 },
+      ],
+      summary: { total: 2, passed: 1, failed: 1, skipped: 0, errored: 0, duration: 2.2 },
+    });
+
+    const report = computeTestsChanged(previous, current);
+    expect(report.newTests).toEqual([]);
+    expect(report.removedTests).toEqual([]);
+    expect(report.statusChanged).toEqual([
+      {
+        name: 'param',
+        suite: 'auth',
+        status: 'failed',
+        duration: 1.2,
+        previousStatus: 'passed',
+      },
+    ]);
+    expect(report.hasChanges).toBe(true);
+  });
 });
