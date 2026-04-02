@@ -1166,4 +1166,170 @@ describe('run() integration', () => {
       );
     });
   });
+
+  describe('base branch comparison (Story 7.4)', () => {
+    const BASE_ENTRY = {
+      timestamp: '2026-03-28T12:00:00.000Z',
+      commitSha: 'base123',
+      summary: { total: 2, passed: 2, failed: 0, skipped: 0, errored: 0, duration: 1.0 },
+      tests: [
+        { name: 'test1', suite: 'suite1', status: 'passed' as const, duration: 0.5 },
+        { name: 'test2', suite: 'suite1', status: 'passed' as const, duration: 0.5 },
+      ],
+    };
+
+    const BASE_HISTORY = JSON.stringify({
+      version: 1,
+      branch: 'main',
+      entries: [BASE_ENTRY],
+    });
+
+    const PR_BRANCH_ENTRY = {
+      timestamp: '2026-03-30T12:00:00.000Z',
+      commitSha: 'pr123',
+      summary: { total: 2, passed: 1, failed: 1, skipped: 0, errored: 0, duration: 1.0 },
+      tests: [
+        { name: 'test1', suite: 'suite1', status: 'passed' as const, duration: 0.5 },
+        { name: 'test2', suite: 'suite1', status: 'failed' as const, duration: 0.5 },
+      ],
+    };
+
+    const PR_BRANCH_HISTORY = JSON.stringify({
+      version: 1,
+      branch: 'feature-x',
+      entries: [PR_BRANCH_ENTRY],
+    });
+
+    async function setupBaseBranchComparison() {
+      setupInputs({ history: 'true', 'github-token': 'gh_token' });
+      process.env.GITHUB_HEAD_REF = 'feature-x';
+      process.env.GITHUB_BASE_REF = 'main';
+      process.env.GITHUB_SHA = 'pr123';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValue('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+
+      let callCount = 0;
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) {
+          callCount++;
+          // First call loads PR branch history, second call loads base branch history
+          return callCount <= 1 ? PR_BRANCH_HISTORY : BASE_HISTORY;
+        }
+        return '<xml>content</xml>';
+      });
+    }
+
+    it('baseDelta is computed and passed to PR comment when base branch history exists', async () => {
+      await setupBaseBranchComparison();
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      expect(prCommentCall).toBeDefined();
+      expect(prCommentCall.section.baseDelta).not.toBeNull();
+      expect(prCommentCall.section.baseBranch).toBe('main');
+      expect(prCommentCall.section.baseDelta.passRatePrev).toBe(100);
+      expect(prCommentCall.section.baseDelta.passRateCurr).toBe(50);
+    });
+
+    it('baseDelta is null when GITHUB_BASE_REF is not set (push event)', async () => {
+      setupInputs({ history: 'true', 'github-token': 'gh_token' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+      delete process.env.GITHUB_BASE_REF;
+      delete process.env.GITHUB_HEAD_REF;
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      if (prCommentCall) {
+        expect(prCommentCall.section.baseBranch).toBeUndefined();
+      }
+    });
+
+    it('baseDelta is null when no base branch history available', async () => {
+      setupInputs({ history: 'true', 'github-token': 'gh_token' });
+      process.env.GITHUB_HEAD_REF = 'feature-x';
+      process.env.GITHUB_BASE_REF = 'main';
+      process.env.GITHUB_SHA = 'pr123';
+
+      const cache = await import('@actions/cache');
+      let cacheCallCount = 0;
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        cacheCallCount++;
+        // First call succeeds (PR branch), second call returns null (no base branch cache)
+        if (cacheCallCount <= 1) return 'some-cache-key';
+        return null;
+      });
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return PR_BRANCH_HISTORY;
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      if (prCommentCall) {
+        expect(prCommentCall.section.baseDelta).toBeNull();
+        expect(prCommentCall.section.baseBranch).toBe('main');
+      }
+    });
+
+    it('base branch comparison error does not fail the action', async () => {
+      await setupBaseBranchComparison();
+
+      const comparison = await import('../history/comparison');
+      let computeDeltaCallCount = 0;
+      vi.spyOn(comparison, 'computeDelta').mockImplementation(() => {
+        computeDeltaCallCount++;
+        // First call is for run-to-run delta (within PR branch), second is for base branch
+        if (computeDeltaCallCount >= 2) throw new Error('base comparison boom');
+        return {
+          testsAdded: [],
+          testsRemoved: [],
+          newlyFailing: [],
+          newlyPassing: [],
+          passRatePrev: 50,
+          passRateCurr: 50,
+          passRateDelta: 0,
+          durationPrev: 1,
+          durationCurr: 1,
+          durationDelta: 0,
+          durationDeltaPercent: 0,
+          hasChanges: false,
+        };
+      });
+
+      await run();
+
+      expect(mockSetFailed).not.toHaveBeenCalled();
+      expect(mockDebug).toHaveBeenCalledWith(
+        expect.stringContaining('Base branch comparison failed'),
+      );
+    });
+
+    it('baseDelta is not passed when history is disabled', async () => {
+      setupInputs({ history: 'false', 'github-token': 'gh_token' });
+      process.env.GITHUB_BASE_REF = 'main';
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      if (prCommentCall) {
+        expect(prCommentCall.section.baseDelta).toBeUndefined();
+        expect(prCommentCall.section.baseBranch).toBeUndefined();
+      }
+    });
+  });
 });
