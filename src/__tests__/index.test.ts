@@ -451,6 +451,7 @@ describe('run() integration', () => {
         highlights: [],
         slowestTests: 10,
         delta: null,
+        testsChanged: null,
       });
     });
 
@@ -472,6 +473,7 @@ describe('run() integration', () => {
         highlights: [],
         slowestTests: 10,
         delta: null,
+        testsChanged: null,
       });
     });
 
@@ -1084,6 +1086,84 @@ describe('run() integration', () => {
       const summaryCall = mockGenerateSummary.mock.calls[0][0];
       expect(summaryCall.delta).toBeNull();
       expect(mockDebug).toHaveBeenCalledWith(expect.stringContaining('Delta comparison failed'));
+    });
+  });
+
+  describe('tests changed report (Story 7.3)', () => {
+    const PREVIOUS_ENTRY = {
+      timestamp: '2026-03-30T12:00:00.000Z',
+      commitSha: 'prev123',
+      summary: { total: 2, passed: 1, failed: 1, skipped: 0, errored: 0, duration: 1.0 },
+      tests: [
+        { name: 'test1', suite: 'suite1', status: 'passed' as const, duration: 0.5 },
+        { name: 'test2', suite: 'suite1', status: 'failed' as const, duration: 0.5 },
+      ],
+    };
+
+    const EXISTING_HISTORY = JSON.stringify({
+      version: 1,
+      branch: 'main',
+      entries: [PREVIOUS_ENTRY],
+    });
+
+    async function setupHistoryWithPreviousRun() {
+      setupInputs({ history: 'true' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return EXISTING_HISTORY;
+        return '<xml>content</xml>';
+      });
+    }
+
+    it('testsChanged computed and passed to summary when history has 2+ entries', async () => {
+      await setupHistoryWithPreviousRun();
+
+      const result = await run();
+
+      expect(result.history).not.toBeNull();
+      expect(result.history!.entries).toHaveLength(2);
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.testsChanged).not.toBeNull();
+      expect(summaryCall.testsChanged.hasChanges).toBeDefined();
+    });
+
+    it('testsChanged is null when history has only 1 entry', async () => {
+      setupInputs({ history: 'true' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.testsChanged).toBeNull();
+    });
+
+    it('testsChanged computation error does not fail the action', async () => {
+      await setupHistoryWithPreviousRun();
+
+      const comparison = await import('../history/comparison');
+      vi.spyOn(comparison, 'computeTestsChanged').mockImplementationOnce(() => {
+        throw new Error('tests changed boom');
+      });
+
+      await run();
+
+      expect(mockSetFailed).not.toHaveBeenCalled();
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.testsChanged).toBeNull();
+      expect(mockDebug).toHaveBeenCalledWith(
+        expect.stringContaining('Tests changed computation failed'),
+      );
     });
   });
 });

@@ -31,6 +31,21 @@ export interface HistoryStorage {
   clear(): Promise<void>;
 }
 
+export interface TestsChangedEntry {
+  name: string;
+  suite: string;
+  status: 'passed' | 'failed' | 'skipped' | 'errored';
+  duration: number;
+  previousStatus?: 'passed' | 'failed' | 'skipped' | 'errored';
+}
+
+export interface TestsChangedReport {
+  newTests: TestsChangedEntry[];
+  removedTests: TestsChangedEntry[];
+  statusChanged: TestsChangedEntry[];
+  hasChanges: boolean;
+}
+
 export interface DeltaTestInfo {
   name: string;
   suite: string;

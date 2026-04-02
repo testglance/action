@@ -54706,6 +54706,7 @@ exports.ActionsCacheStorage = ActionsCacheStorage;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.computeTestsChanged = computeTestsChanged;
 exports.computeDelta = computeDelta;
 function buildTestKey(suite, name) {
     return `${suite}::${name}`;
@@ -54736,6 +54737,99 @@ function pushRepeated(target, entry, count) {
     for (let i = 0; i < count; i++) {
         target.push(entry);
     }
+}
+const TEST_STATUSES = ['passed', 'failed', 'skipped', 'errored'];
+function groupByStatus(tests) {
+    return {
+        passed: tests.filter((t) => t.status === 'passed'),
+        failed: tests.filter((t) => t.status === 'failed'),
+        skipped: tests.filter((t) => t.status === 'skipped'),
+        errored: tests.filter((t) => t.status === 'errored'),
+    };
+}
+function computeTestsChanged(previous, current) {
+    const empty = {
+        newTests: [],
+        removedTests: [],
+        statusChanged: [],
+        hasChanges: false,
+    };
+    if (previous.tests.length === 0 || current.tests.length === 0) {
+        return empty;
+    }
+    const prevMap = new Map();
+    for (const t of previous.tests) {
+        const key = buildTestKey(t.suite, t.name);
+        const existing = prevMap.get(key) ?? [];
+        existing.push(t);
+        prevMap.set(key, existing);
+    }
+    const currMap = new Map();
+    for (const t of current.tests) {
+        const key = buildTestKey(t.suite, t.name);
+        const existing = currMap.get(key) ?? [];
+        existing.push(t);
+        currMap.set(key, existing);
+    }
+    const newTests = [];
+    const removedTests = [];
+    const statusChanged = [];
+    const allKeys = new Set([...prevMap.keys(), ...currMap.keys()]);
+    for (const key of allKeys) {
+        const prevTests = prevMap.get(key) ?? [];
+        const currTests = currMap.get(key) ?? [];
+        const prevByStatus = groupByStatus(prevTests);
+        const currByStatus = groupByStatus(currTests);
+        // Remove unchanged statuses first.
+        for (const status of TEST_STATUSES) {
+            const unchanged = Math.min(prevByStatus[status].length, currByStatus[status].length);
+            prevByStatus[status].splice(0, unchanged);
+            currByStatus[status].splice(0, unchanged);
+        }
+        // Pair remaining previous/current entries as status changes.
+        for (const prevStatus of TEST_STATUSES) {
+            for (const currStatus of TEST_STATUSES) {
+                if (prevStatus === currStatus)
+                    continue;
+                const pairCount = Math.min(prevByStatus[prevStatus].length, currByStatus[currStatus].length);
+                for (let i = 0; i < pairCount; i++) {
+                    const prevTest = prevByStatus[prevStatus].shift();
+                    const currTest = currByStatus[currStatus].shift();
+                    statusChanged.push({
+                        name: currTest.name,
+                        suite: currTest.suite,
+                        status: currTest.status,
+                        duration: currTest.duration,
+                        previousStatus: prevTest.status,
+                    });
+                }
+            }
+        }
+        // Remaining current entries are new tests.
+        for (const status of TEST_STATUSES) {
+            for (const currTest of currByStatus[status]) {
+                newTests.push({
+                    name: currTest.name,
+                    suite: currTest.suite,
+                    status: currTest.status,
+                    duration: currTest.duration,
+                });
+            }
+        }
+        // Remaining previous entries are removed tests.
+        for (const status of TEST_STATUSES) {
+            for (const prevTest of prevByStatus[status]) {
+                removedTests.push({
+                    name: prevTest.name,
+                    suite: prevTest.suite,
+                    status: prevTest.status,
+                    duration: prevTest.duration,
+                });
+            }
+        }
+    }
+    const hasChanges = newTests.length > 0 || removedTests.length > 0 || statusChanged.length > 0;
+    return { newTests, removedTests, statusChanged, hasChanges };
 }
 function computeDelta(previous, current) {
     const prevMap = new Map();
@@ -55115,6 +55209,7 @@ async function run() {
         core.info(`Parsed ${parsed.summary.total} tests from ${successful.length} file(s): ${parsed.summary.passed} passed, ${parsed.summary.failed} failed, ${parsed.summary.skipped} skipped, ${parsed.summary.errored} errored`);
         let loadedHistory = null;
         let delta = null;
+        let testsChanged = null;
         if (historyEnabled) {
             try {
                 const branch = (process.env.GITHUB_HEAD_REF ||
@@ -55140,12 +55235,18 @@ async function run() {
                 await manager.saveHistory();
                 loadedHistory = manager.getHistory();
                 if (loadedHistory && loadedHistory.entries.length >= 2) {
+                    const entries = loadedHistory.entries;
                     try {
-                        const entries = loadedHistory.entries;
                         delta = (0, comparison_1.computeDelta)(entries[entries.length - 2], entries[entries.length - 1]);
                     }
                     catch (err) {
                         core.debug(`Delta comparison failed: ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                    try {
+                        testsChanged = (0, comparison_1.computeTestsChanged)(entries[entries.length - 2], entries[entries.length - 1]);
+                    }
+                    catch (err) {
+                        core.debug(`Tests changed computation failed: ${err instanceof Error ? err.message : String(err)}`);
                     }
                 }
             }
@@ -55187,6 +55288,7 @@ async function run() {
             highlights: result?.highlights ?? [],
             slowestTests: slowestTestsCount,
             delta,
+            testsChanged,
         });
         if (createCheck) {
             if (githubToken) {
@@ -55209,6 +55311,7 @@ async function run() {
                     healthScore: result.healthScore,
                     highlights: result.highlights ?? [],
                     runUrl: dashboardUrl,
+                    testsChanged,
                 },
             });
         }
@@ -55520,11 +55623,33 @@ function renderTestJobSection(section) {
         }
         lines.push('');
     }
+    if (section.testsChanged && section.testsChanged.hasChanges) {
+        lines.push(renderTestsChangedCompact(section.testsChanged));
+        lines.push('');
+    }
     if (section.runUrl) {
         lines.push(`[View Run →](${section.runUrl})`);
     }
     lines.push(`<!-- /tj:${safeKey} -->`);
     return lines.join('\n');
+}
+function renderTestsChangedCompact(report) {
+    const parts = [];
+    if (report.newTests.length > 0)
+        parts.push(`${report.newTests.length} new tests`);
+    if (report.removedTests.length > 0)
+        parts.push(`${report.removedTests.length} removed`);
+    if (report.statusChanged.length > 0)
+        parts.push(`${report.statusChanged.length} status changes`);
+    if (parts.length === 0)
+        return '';
+    const isFailing = (status) => status === 'failed' || status === 'errored';
+    const newlyFailing = report.statusChanged.filter((t) => isFailing(t.status) && !isFailing(t.previousStatus));
+    let line = `📝 ${parts.join(', ')}`;
+    if (newlyFailing.length > 0) {
+        line = `⚠️ ${newlyFailing.length} newly failing | ${line}`;
+    }
+    return line;
 }
 function renderPrComment(sections) {
     const lines = [];
@@ -55617,12 +55742,13 @@ exports.collectFailedTests = collectFailedTests;
 exports.renderSuiteBreakdown = renderSuiteBreakdown;
 exports.renderHighlights = renderHighlights;
 exports.renderDeltaSection = renderDeltaSection;
+exports.renderTestsChangedSection = renderTestsChangedSection;
 const core = __importStar(__nccwpck_require__(16966));
 const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, } = options;
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, } = options;
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
     core.summary.addHeading('TestGlance Results', 2);
@@ -55653,6 +55779,9 @@ async function generateSummary(options) {
     }
     if (delta) {
         core.summary.addRaw(renderDeltaSection(delta));
+    }
+    if (testsChanged && testsChanged.hasChanges) {
+        core.summary.addRaw(renderTestsChangedSection(testsChanged));
     }
     try {
         if (parsed.suites.length > 1) {
@@ -55839,6 +55968,63 @@ function renderDeltaSection(delta) {
             '\n</table>\n\n';
         if (needsCollapse) {
             lines.push(`<details><summary><strong>Changed tests</strong> (${totalTests} tests)</summary>\n\n${table}</details>\n\n`);
+        }
+        else {
+            lines.push(table);
+        }
+    }
+    return lines.join('');
+}
+const MAX_TESTS_CHANGED_SHOWN = 20;
+const TESTS_CHANGED_STATUS_EMOJI = {
+    passed: '✅',
+    failed: '❌',
+    skipped: '⏭️',
+    errored: '💥',
+};
+function renderTestsChangedSection(report) {
+    if (!report.hasChanges)
+        return '';
+    const lines = ['### Tests Changed\n\n'];
+    if (report.newTests.length > 0) {
+        lines.push(`#### New Tests (${report.newTests.length})\n\n`);
+        const shown = report.newTests.slice(0, MAX_TESTS_CHANGED_SHOWN);
+        const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} | ${formatDuration(t.duration)} |`);
+        const table = '| Test | Suite | Status | Duration |\n|------|-------|--------|----------|\n' +
+            rows.join('\n') +
+            '\n\n';
+        if (report.newTests.length > MAX_TESTS_CHANGED_SHOWN) {
+            lines.push(`<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.newTests.length} new tests</summary>\n\n${table}and ${report.newTests.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`);
+        }
+        else {
+            lines.push(table);
+        }
+    }
+    if (report.statusChanged.length > 0) {
+        lines.push(`#### Status Changed (${report.statusChanged.length})\n\n`);
+        const shown = report.statusChanged.slice(0, MAX_TESTS_CHANGED_SHOWN);
+        const rows = shown.map((t) => {
+            const prevEmoji = TESTS_CHANGED_STATUS_EMOJI[t.previousStatus ?? ''] ?? '';
+            const currEmoji = TESTS_CHANGED_STATUS_EMOJI[t.status] ?? '';
+            return `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${prevEmoji} → ${currEmoji} |`;
+        });
+        const table = '| Test | Suite | Change |\n|------|-------|--------|\n' + rows.join('\n') + '\n\n';
+        if (report.statusChanged.length > MAX_TESTS_CHANGED_SHOWN) {
+            lines.push(`<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.statusChanged.length} status changes</summary>\n\n${table}and ${report.statusChanged.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`);
+        }
+        else {
+            lines.push(table);
+        }
+    }
+    if (report.removedTests.length > 0) {
+        lines.push(`#### Removed Tests (${report.removedTests.length})\n\n`);
+        const shown = report.removedTests.slice(0, MAX_TESTS_CHANGED_SHOWN);
+        const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} |`);
+        const table = '| Test | Suite | Previous Status |\n|------|-------|-----------------|\n' +
+            rows.join('\n') +
+            '\n\n';
+        if (report.removedTests.length > MAX_TESTS_CHANGED_SHOWN) {
+            lines.push(`<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.removedTests.length} removed tests</summary>\n\n${table}and ${report.removedTests.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`);
         }
         else {
             lines.push(table);
