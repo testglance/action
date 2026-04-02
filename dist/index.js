@@ -55254,6 +55254,27 @@ async function run() {
                 core.warning(`History tracking failed: ${err instanceof Error ? err.message : String(err)}`);
             }
         }
+        let baseDelta = null;
+        const baseBranch = (process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '');
+        if (historyEnabled && baseBranch && loadedHistory) {
+            try {
+                const reportPathHash = (0, node_crypto_1.createHash)('sha256')
+                    .update(reportPath || 'auto')
+                    .digest('hex')
+                    .slice(0, 8);
+                const baseStorage = new actions_cache_storage_1.ActionsCacheStorage(baseBranch, reportPathHash);
+                const baseManager = new manager_1.HistoryManager(baseStorage, historyLimit);
+                const baseHistory = await baseManager.loadHistory();
+                if (baseHistory && baseHistory.entries.length > 0) {
+                    const baseLatest = baseHistory.entries[baseHistory.entries.length - 1];
+                    const currentEntry = loadedHistory.entries[loadedHistory.entries.length - 1];
+                    baseDelta = (0, comparison_1.computeDelta)(baseLatest, currentEntry);
+                }
+            }
+            catch (err) {
+                core.debug(`Base branch comparison failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
         const firstFile = successful[0].filePath;
         const format = reportFormat === 'auto' ? (0, detect_format_1.detectFormat)(firstFile) : reportFormat;
         const framework = (0, detect_framework_1.detectFramework)(firstFile, format === 'junit' || format === 'ctrf' ? format : null, parsed.toolName);
@@ -55312,6 +55333,8 @@ async function run() {
                     highlights: result.highlights ?? [],
                     runUrl: dashboardUrl,
                     testsChanged,
+                    baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
+                    baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
                 },
             });
         }
@@ -55535,6 +55558,7 @@ async function postPrComment(options) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.renderBaseBranchSection = renderBaseBranchSection;
 exports.renderTestJobSection = renderTestJobSection;
 exports.renderPrComment = renderPrComment;
 exports.mergeTestJobSection = mergeTestJobSection;
@@ -55602,6 +55626,36 @@ function renderHighlightRow(h) {
     }
     return `| ${emoji} | ${details} |`;
 }
+function renderBaseBranchSection(baseDelta, baseBranch) {
+    if (baseDelta === undefined || baseDelta === null) {
+        return `> No base branch data available — push to \`${baseBranch}\` to establish baseline`;
+    }
+    if (!baseDelta.hasChanges) {
+        return `> :white_check_mark: No regressions vs \`${baseBranch}\``;
+    }
+    const lines = [];
+    lines.push(`**vs \`${baseBranch}\`**`);
+    const passSign = baseDelta.passRateDelta >= 0 ? '+' : '';
+    const durSign = baseDelta.durationDelta >= 0 ? '+' : '';
+    lines.push(`| Metric | ${baseBranch} | PR | Delta |`, '|--------|------|----|----|', `| Pass rate | ${baseDelta.passRatePrev.toFixed(1)}% | ${baseDelta.passRateCurr.toFixed(1)}% | ${passSign}${baseDelta.passRateDelta.toFixed(1)}% |`, `| Duration | ${(0, summary_1.formatDuration)(baseDelta.durationPrev)} | ${(0, summary_1.formatDuration)(baseDelta.durationCurr)} | ${durSign}${baseDelta.durationDeltaPercent.toFixed(1)}% |`);
+    if (baseDelta.newlyFailing.length > 0) {
+        const names = baseDelta.newlyFailing
+            .slice(0, 5)
+            .map((t) => `\`${t.name}\``)
+            .join(', ');
+        const suffix = baseDelta.newlyFailing.length > 5 ? `, and ${baseDelta.newlyFailing.length - 5} more` : '';
+        lines.push('', `🔴 **Regressions:** ${names}${suffix}`);
+    }
+    if (baseDelta.newlyPassing.length > 0) {
+        const names = baseDelta.newlyPassing
+            .slice(0, 5)
+            .map((t) => `\`${t.name}\``)
+            .join(', ');
+        const suffix = baseDelta.newlyPassing.length > 5 ? `, and ${baseDelta.newlyPassing.length - 5} more` : '';
+        lines.push('', `🟢 **Improvements:** ${names}${suffix}`);
+    }
+    return lines.join('\n');
+}
 function renderTestJobSection(section) {
     const safeKey = sanitizeMarkerName(section.testJobName);
     const statusEmoji = section.failed > 0 ? '❌' : '✅';
@@ -55621,6 +55675,10 @@ function renderTestJobSection(section) {
         for (const h of sorted) {
             lines.push(renderHighlightRow(h));
         }
+        lines.push('');
+    }
+    if (section.baseBranch && section.baseDelta !== undefined) {
+        lines.push(renderBaseBranchSection(section.baseDelta, section.baseBranch));
         lines.push('');
     }
     if (section.testsChanged && section.testsChanged.hasChanges) {

@@ -1,5 +1,5 @@
 import type { Highlight, HighlightSeverity } from '../types';
-import type { TestsChangedReport } from '../history/types';
+import type { DeltaComparison, TestsChangedReport } from '../history/types';
 import { formatDuration } from './summary';
 
 export interface PrCommentSection {
@@ -13,6 +13,8 @@ export interface PrCommentSection {
   highlights: Highlight[];
   runUrl?: string;
   testsChanged?: TestsChangedReport | null;
+  baseDelta?: DeltaComparison | null;
+  baseBranch?: string;
 }
 
 const SEVERITY_EMOJI: Record<HighlightSeverity, string> = {
@@ -84,6 +86,52 @@ function renderHighlightRow(h: Highlight): string {
   return `| ${emoji} | ${details} |`;
 }
 
+export function renderBaseBranchSection(
+  baseDelta: DeltaComparison | null | undefined,
+  baseBranch: string,
+): string {
+  if (baseDelta === undefined || baseDelta === null) {
+    return `> No base branch data available — push to \`${baseBranch}\` to establish baseline`;
+  }
+  if (!baseDelta.hasChanges) {
+    return `> :white_check_mark: No regressions vs \`${baseBranch}\``;
+  }
+
+  const lines: string[] = [];
+  lines.push(`**vs \`${baseBranch}\`**`);
+
+  const passSign = baseDelta.passRateDelta >= 0 ? '+' : '';
+  const durSign = baseDelta.durationDelta >= 0 ? '+' : '';
+  lines.push(
+    `| Metric | ${baseBranch} | PR | Delta |`,
+    '|--------|------|----|----|',
+    `| Pass rate | ${baseDelta.passRatePrev.toFixed(1)}% | ${baseDelta.passRateCurr.toFixed(1)}% | ${passSign}${baseDelta.passRateDelta.toFixed(1)}% |`,
+    `| Duration | ${formatDuration(baseDelta.durationPrev)} | ${formatDuration(baseDelta.durationCurr)} | ${durSign}${baseDelta.durationDeltaPercent.toFixed(1)}% |`,
+  );
+
+  if (baseDelta.newlyFailing.length > 0) {
+    const names = baseDelta.newlyFailing
+      .slice(0, 5)
+      .map((t) => `\`${t.name}\``)
+      .join(', ');
+    const suffix =
+      baseDelta.newlyFailing.length > 5 ? `, and ${baseDelta.newlyFailing.length - 5} more` : '';
+    lines.push('', `🔴 **Regressions:** ${names}${suffix}`);
+  }
+
+  if (baseDelta.newlyPassing.length > 0) {
+    const names = baseDelta.newlyPassing
+      .slice(0, 5)
+      .map((t) => `\`${t.name}\``)
+      .join(', ');
+    const suffix =
+      baseDelta.newlyPassing.length > 5 ? `, and ${baseDelta.newlyPassing.length - 5} more` : '';
+    lines.push('', `🟢 **Improvements:** ${names}${suffix}`);
+  }
+
+  return lines.join('\n');
+}
+
 export function renderTestJobSection(section: PrCommentSection): string {
   const safeKey = sanitizeMarkerName(section.testJobName);
   const statusEmoji = section.failed > 0 ? '❌' : '✅';
@@ -108,6 +156,11 @@ export function renderTestJobSection(section: PrCommentSection): string {
     for (const h of sorted) {
       lines.push(renderHighlightRow(h));
     }
+    lines.push('');
+  }
+
+  if (section.baseBranch && section.baseDelta !== undefined) {
+    lines.push(renderBaseBranchSection(section.baseDelta, section.baseBranch));
     lines.push('');
   }
 

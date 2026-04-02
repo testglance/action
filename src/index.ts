@@ -194,6 +194,31 @@ export async function run(): Promise<RunResult> {
       }
     }
 
+    let baseDelta: DeltaComparison | null = null;
+    const baseBranch = (process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '');
+
+    if (historyEnabled && baseBranch && loadedHistory) {
+      try {
+        const reportPathHash = createHash('sha256')
+          .update(reportPath || 'auto')
+          .digest('hex')
+          .slice(0, 8);
+        const baseStorage = new ActionsCacheStorage(baseBranch, reportPathHash);
+        const baseManager = new HistoryManager(baseStorage, historyLimit);
+        const baseHistory = await baseManager.loadHistory();
+
+        if (baseHistory && baseHistory.entries.length > 0) {
+          const baseLatest = baseHistory.entries[baseHistory.entries.length - 1];
+          const currentEntry = loadedHistory.entries[loadedHistory.entries.length - 1];
+          baseDelta = computeDelta(baseLatest, currentEntry);
+        }
+      } catch (err) {
+        core.debug(
+          `Base branch comparison failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     const firstFile = successful[0].filePath;
     const format = reportFormat === 'auto' ? detectFormat(firstFile) : reportFormat;
     const framework = detectFramework(
@@ -260,6 +285,8 @@ export async function run(): Promise<RunResult> {
           highlights: result.highlights ?? [],
           runUrl: dashboardUrl,
           testsChanged,
+          baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
+          baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
         },
       });
     }
