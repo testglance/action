@@ -17,8 +17,8 @@ import { ActionsCacheStorage } from './history/actions-cache-storage';
 import { HistoryManager } from './history/manager';
 import type { ParsedTestRun } from './types';
 import type { FileParseResult } from './utils/merge-results';
-import type { HistoryFile, DeltaComparison } from './history/types';
-import { computeDelta } from './history/comparison';
+import type { HistoryFile, DeltaComparison, TestsChangedReport } from './history/types';
+import { computeDelta, computeTestsChanged } from './history/comparison';
 
 const DEFAULT_SLOWEST_TESTS = 10;
 
@@ -132,6 +132,7 @@ export async function run(): Promise<RunResult> {
 
     let loadedHistory: HistoryFile | null = null;
     let delta: DeltaComparison | null = null;
+    let testsChanged: TestsChangedReport | null = null;
 
     if (historyEnabled) {
       try {
@@ -166,12 +167,23 @@ export async function run(): Promise<RunResult> {
         loadedHistory = manager.getHistory();
 
         if (loadedHistory && loadedHistory.entries.length >= 2) {
+          const entries = loadedHistory.entries;
           try {
-            const entries = loadedHistory.entries;
             delta = computeDelta(entries[entries.length - 2], entries[entries.length - 1]);
           } catch (err) {
             core.debug(
               `Delta comparison failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+
+          try {
+            testsChanged = computeTestsChanged(
+              entries[entries.length - 2],
+              entries[entries.length - 1],
+            );
+          } catch (err) {
+            core.debug(
+              `Tests changed computation failed: ${err instanceof Error ? err.message : String(err)}`,
             );
           }
         }
@@ -223,6 +235,7 @@ export async function run(): Promise<RunResult> {
       highlights: result?.highlights ?? [],
       slowestTests: slowestTestsCount,
       delta,
+      testsChanged,
     });
 
     if (createCheck) {
@@ -246,6 +259,7 @@ export async function run(): Promise<RunResult> {
           healthScore: result.healthScore,
           highlights: result.highlights ?? [],
           runUrl: dashboardUrl,
+          testsChanged,
         },
       });
     }

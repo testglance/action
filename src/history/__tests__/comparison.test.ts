@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeDelta } from '../comparison';
+import { computeDelta, computeTestsChanged } from '../comparison';
 import type { HistoryEntry } from '../types';
 
 function makeEntry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
@@ -245,5 +245,136 @@ describe('computeDelta', () => {
     expect(delta.newlyFailing).toEqual([]);
     expect(delta.newlyPassing).toEqual([]);
     expect(delta.hasChanges).toBe(true);
+  });
+});
+
+describe('computeTestsChanged', () => {
+  it('detects new tests with correct status and duration', () => {
+    const previous = makeEntry();
+    const current = makeEntry({
+      tests: [
+        ...previous.tests,
+        { name: 'test_new', suite: 'auth', status: 'passed', duration: 1.5 },
+      ],
+      summary: { total: 4, passed: 3, failed: 1, skipped: 0, errored: 0, duration: 11.5 },
+    });
+
+    const report = computeTestsChanged(previous, current);
+    expect(report.newTests).toEqual([
+      { name: 'test_new', suite: 'auth', status: 'passed', duration: 1.5 },
+    ]);
+    expect(report.hasChanges).toBe(true);
+  });
+
+  it('detects removed tests with correct previous status', () => {
+    const previous = makeEntry();
+    const current = makeEntry({
+      tests: [previous.tests[0], previous.tests[1]],
+      summary: { total: 2, passed: 2, failed: 0, skipped: 0, errored: 0, duration: 7.0 },
+    });
+
+    const report = computeTestsChanged(previous, current);
+    expect(report.removedTests).toEqual([
+      { name: 'test3', suite: 'auth', status: 'failed', duration: 3.0 },
+    ]);
+    expect(report.hasChanges).toBe(true);
+  });
+
+  it('detects status changes (passed→failed, failed→passed, etc.)', () => {
+    const previous = makeEntry();
+    const current = makeEntry({
+      tests: [
+        { name: 'test1', suite: 'auth', status: 'failed', duration: 3.0 },
+        { name: 'test2', suite: 'auth', status: 'passed', duration: 4.0 },
+        { name: 'test3', suite: 'auth', status: 'passed', duration: 3.0 },
+      ],
+      summary: { total: 3, passed: 2, failed: 1, skipped: 0, errored: 0, duration: 10.0 },
+    });
+
+    const report = computeTestsChanged(previous, current);
+    expect(report.statusChanged).toEqual(
+      expect.arrayContaining([
+        {
+          name: 'test1',
+          suite: 'auth',
+          status: 'failed',
+          duration: 3.0,
+          previousStatus: 'passed',
+        },
+        {
+          name: 'test3',
+          suite: 'auth',
+          status: 'passed',
+          duration: 3.0,
+          previousStatus: 'failed',
+        },
+      ]),
+    );
+    expect(report.statusChanged).toHaveLength(2);
+  });
+
+  it('does NOT include added/removed tests in statusChanged array', () => {
+    const previous = makeEntry({
+      tests: [{ name: 'test1', suite: 'auth', status: 'passed', duration: 3.0 }],
+      summary: { total: 1, passed: 1, failed: 0, skipped: 0, errored: 0, duration: 3.0 },
+    });
+    const current = makeEntry({
+      tests: [{ name: 'test_new', suite: 'auth', status: 'failed', duration: 2.0 }],
+      summary: { total: 1, passed: 0, failed: 1, skipped: 0, errored: 0, duration: 2.0 },
+    });
+
+    const report = computeTestsChanged(previous, current);
+    expect(report.newTests).toHaveLength(1);
+    expect(report.removedTests).toHaveLength(1);
+    expect(report.statusChanged).toHaveLength(0);
+  });
+
+  it('returns hasChanges=false when all tests identical', () => {
+    const previous = makeEntry();
+    const current = makeEntry();
+
+    const report = computeTestsChanged(previous, current);
+    expect(report.hasChanges).toBe(false);
+    expect(report.newTests).toEqual([]);
+    expect(report.removedTests).toEqual([]);
+    expect(report.statusChanged).toEqual([]);
+  });
+
+  it('handles empty tests arrays (trimmed entries) — returns empty report', () => {
+    const previous = makeEntry({
+      tests: [],
+      summary: { total: 3, passed: 2, failed: 1, skipped: 0, errored: 0, duration: 10.0 },
+    });
+    const current = makeEntry();
+
+    const report = computeTestsChanged(previous, current);
+    expect(report.hasChanges).toBe(false);
+    expect(report.newTests).toEqual([]);
+    expect(report.removedTests).toEqual([]);
+    expect(report.statusChanged).toEqual([]);
+  });
+
+  it('handles suite::name composite key correctly (same name, different suites)', () => {
+    const previous = makeEntry({
+      tests: [
+        { name: 'login', suite: 'auth', status: 'passed', duration: 1.0 },
+        { name: 'login', suite: 'api', status: 'passed', duration: 1.0 },
+      ],
+      summary: { total: 2, passed: 2, failed: 0, skipped: 0, errored: 0, duration: 2.0 },
+    });
+    const current = makeEntry({
+      tests: [
+        { name: 'login', suite: 'auth', status: 'passed', duration: 1.0 },
+        { name: 'login', suite: 'api', status: 'failed', duration: 1.0 },
+      ],
+      summary: { total: 2, passed: 1, failed: 1, skipped: 0, errored: 0, duration: 2.0 },
+    });
+
+    const report = computeTestsChanged(previous, current);
+    expect(report.statusChanged).toEqual([
+      { name: 'login', suite: 'api', status: 'failed', duration: 1.0, previousStatus: 'passed' },
+    ]);
+    expect(report.newTests).toEqual([]);
+    expect(report.removedTests).toEqual([]);
   });
 });

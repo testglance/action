@@ -1,4 +1,5 @@
 import type { Highlight, HighlightSeverity } from '../types';
+import type { TestsChangedReport } from '../history/types';
 import { formatDuration } from './summary';
 
 export interface PrCommentSection {
@@ -11,6 +12,7 @@ export interface PrCommentSection {
   healthScore?: number | null;
   highlights: Highlight[];
   runUrl?: string;
+  testsChanged?: TestsChangedReport | null;
 }
 
 const SEVERITY_EMOJI: Record<HighlightSeverity, string> = {
@@ -109,6 +111,11 @@ export function renderTestJobSection(section: PrCommentSection): string {
     lines.push('');
   }
 
+  if (section.testsChanged && section.testsChanged.hasChanges) {
+    lines.push(renderTestsChangedCompact(section.testsChanged));
+    lines.push('');
+  }
+
   if (section.runUrl) {
     lines.push(`[View Run →](${section.runUrl})`);
   }
@@ -116,6 +123,25 @@ export function renderTestJobSection(section: PrCommentSection): string {
   lines.push(`<!-- /tj:${safeKey} -->`);
 
   return lines.join('\n');
+}
+
+function renderTestsChangedCompact(report: TestsChangedReport): string {
+  const parts: string[] = [];
+  if (report.newTests.length > 0) parts.push(`${report.newTests.length} new tests`);
+  if (report.removedTests.length > 0) parts.push(`${report.removedTests.length} removed`);
+  if (report.statusChanged.length > 0) parts.push(`${report.statusChanged.length} status changes`);
+
+  if (parts.length === 0) return '';
+
+  const newlyFailing = report.statusChanged.filter(
+    (t) => t.status === 'failed' && t.previousStatus !== 'failed',
+  );
+
+  let line = `📝 ${parts.join(', ')}`;
+  if (newlyFailing.length > 0) {
+    line = `⚠️ ${newlyFailing.length} newly failing | ${line}`;
+  }
+  return line;
 }
 
 export function renderPrComment(sections: PrCommentSection[]): string {

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { PrCommentSection } from '../pr-comment';
 import { renderTestJobSection, renderPrComment, mergeTestJobSection } from '../pr-comment';
 import type { Highlight } from '../../types';
+import type { TestsChangedReport } from '../../history/types';
 
 function makeSection(overrides: Partial<PrCommentSection> = {}): PrCommentSection {
   return {
@@ -157,5 +158,59 @@ describe('mergeTestJobSection', () => {
     expect(result).toContain('**150 tests**');
     expect(result).toContain('<!-- tj:e2e -->');
     expect(result).toContain('**20 tests**');
+  });
+});
+
+describe('PR comment tests-changed compact summary', () => {
+  function makeTestsChanged(overrides: Partial<TestsChangedReport> = {}): TestsChangedReport {
+    return {
+      newTests: [],
+      removedTests: [],
+      statusChanged: [],
+      hasChanges: true,
+      ...overrides,
+    };
+  }
+
+  it('compact summary line renders with correct counts', () => {
+    const tc = makeTestsChanged({
+      newTests: [
+        { name: 'a', suite: 's', status: 'passed', duration: 0.1 },
+        { name: 'b', suite: 's', status: 'passed', duration: 0.1 },
+        { name: 'c', suite: 's', status: 'passed', duration: 0.1 },
+        { name: 'd', suite: 's', status: 'passed', duration: 0.1 },
+        { name: 'e', suite: 's', status: 'passed', duration: 0.1 },
+      ],
+      removedTests: [{ name: 'r', suite: 's', status: 'passed', duration: 0.1 }],
+      statusChanged: [
+        { name: 'x', suite: 's', status: 'failed', duration: 0.1, previousStatus: 'passed' },
+        { name: 'y', suite: 's', status: 'passed', duration: 0.1, previousStatus: 'failed' },
+      ],
+    });
+    const result = renderTestJobSection(makeSection({ testsChanged: tc }));
+    expect(result).toContain('📝 5 new tests, 1 removed, 2 status changes');
+  });
+
+  it('newly failing tests highlighted with warning emoji', () => {
+    const tc = makeTestsChanged({
+      statusChanged: [
+        { name: 'x', suite: 's', status: 'failed', duration: 0.1, previousStatus: 'passed' },
+      ],
+    });
+    const result = renderTestJobSection(makeSection({ testsChanged: tc }));
+    expect(result).toContain('⚠️ 1 newly failing');
+  });
+
+  it('summary line omitted when no changes', () => {
+    const tc = makeTestsChanged({ hasChanges: false });
+    const result = renderTestJobSection(makeSection({ testsChanged: tc }));
+    expect(result).not.toContain('📝');
+    expect(result).not.toContain('⚠️');
+  });
+
+  it('summary line omitted when testsChanged is null', () => {
+    const result = renderTestJobSection(makeSection({ testsChanged: null }));
+    expect(result).not.toContain('📝');
+    expect(result).not.toContain('⚠️');
   });
 });

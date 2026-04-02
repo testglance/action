@@ -1,4 +1,10 @@
-import type { HistoryEntry, DeltaComparison, DeltaTestInfo } from './types';
+import type {
+  HistoryEntry,
+  DeltaComparison,
+  DeltaTestInfo,
+  TestsChangedReport,
+  TestsChangedEntry,
+} from './types';
 
 function buildTestKey(suite: string, name: string): string {
   return `${suite}::${name}`;
@@ -37,6 +43,71 @@ function pushRepeated(target: DeltaTestInfo[], entry: DeltaTestInfo, count: numb
   for (let i = 0; i < count; i++) {
     target.push(entry);
   }
+}
+
+export function computeTestsChanged(
+  previous: HistoryEntry,
+  current: HistoryEntry,
+): TestsChangedReport {
+  const empty: TestsChangedReport = {
+    newTests: [],
+    removedTests: [],
+    statusChanged: [],
+    hasChanges: false,
+  };
+
+  if (previous.tests.length === 0 || current.tests.length === 0) {
+    return empty;
+  }
+
+  const prevMap = new Map<string, HistoryEntry['tests'][number]>();
+  for (const t of previous.tests) {
+    prevMap.set(buildTestKey(t.suite, t.name), t);
+  }
+
+  const currMap = new Map<string, HistoryEntry['tests'][number]>();
+  for (const t of current.tests) {
+    currMap.set(buildTestKey(t.suite, t.name), t);
+  }
+
+  const newTests: TestsChangedEntry[] = [];
+  const removedTests: TestsChangedEntry[] = [];
+  const statusChanged: TestsChangedEntry[] = [];
+
+  for (const [key, curr] of currMap) {
+    const prev = prevMap.get(key);
+    if (!prev) {
+      newTests.push({
+        name: curr.name,
+        suite: curr.suite,
+        status: curr.status,
+        duration: curr.duration,
+      });
+    } else if (prev.status !== curr.status) {
+      statusChanged.push({
+        name: curr.name,
+        suite: curr.suite,
+        status: curr.status,
+        duration: curr.duration,
+        previousStatus: prev.status,
+      });
+    }
+  }
+
+  for (const [key, prev] of prevMap) {
+    if (!currMap.has(key)) {
+      removedTests.push({
+        name: prev.name,
+        suite: prev.suite,
+        status: prev.status,
+        duration: prev.duration,
+      });
+    }
+  }
+
+  const hasChanges = newTests.length > 0 || removedTests.length > 0 || statusChanged.length > 0;
+
+  return { newTests, removedTests, statusChanged, hasChanges };
 }
 
 export function computeDelta(previous: HistoryEntry, current: HistoryEntry): DeltaComparison {

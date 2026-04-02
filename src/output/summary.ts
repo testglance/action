@@ -6,7 +6,7 @@ import type {
   Highlight,
   HighlightSeverity,
 } from '../types';
-import type { DeltaComparison } from '../history/types';
+import type { DeltaComparison, TestsChangedReport } from '../history/types';
 
 export interface SummaryOptions {
   parsed: ParsedTestRun;
@@ -18,6 +18,7 @@ export interface SummaryOptions {
   highlights?: Highlight[];
   slowestTests?: number;
   delta?: DeltaComparison | null;
+  testsChanged?: TestsChangedReport | null;
 }
 
 const MAX_FAILED_TESTS_SHOWN = 25;
@@ -34,6 +35,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
     highlights,
     slowestTests,
     delta,
+    testsChanged,
   } = options;
   const { summary } = parsed;
   const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
@@ -70,6 +72,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
   if (delta) {
     core.summary.addRaw(renderDeltaSection(delta));
+  }
+
+  if (testsChanged && testsChanged.hasChanges) {
+    core.summary.addRaw(renderTestsChangedSection(testsChanged));
   }
 
   try {
@@ -315,6 +321,85 @@ export function renderDeltaSection(delta: DeltaComparison): string {
     if (needsCollapse) {
       lines.push(
         `<details><summary><strong>Changed tests</strong> (${totalTests} tests)</summary>\n\n${table}</details>\n\n`,
+      );
+    } else {
+      lines.push(table);
+    }
+  }
+
+  return lines.join('');
+}
+
+const MAX_TESTS_CHANGED_SHOWN = 20;
+
+const TESTS_CHANGED_STATUS_EMOJI: Record<string, string> = {
+  passed: '✅',
+  failed: '❌',
+  skipped: '⏭️',
+  errored: '💥',
+};
+
+export function renderTestsChangedSection(report: TestsChangedReport): string {
+  if (!report.hasChanges) return '';
+
+  const lines: string[] = ['### Tests Changed\n\n'];
+
+  if (report.newTests.length > 0) {
+    lines.push(`#### New Tests (${report.newTests.length})\n\n`);
+    const shown = report.newTests.slice(0, MAX_TESTS_CHANGED_SHOWN);
+    const rows = shown.map(
+      (t) =>
+        `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} | ${formatDuration(t.duration)} |`,
+    );
+    const table =
+      '| Test | Suite | Status | Duration |\n|------|-------|--------|----------|\n' +
+      rows.join('\n') +
+      '\n\n';
+
+    if (report.newTests.length > MAX_TESTS_CHANGED_SHOWN) {
+      lines.push(
+        `<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.newTests.length} new tests</summary>\n\n${table}and ${report.newTests.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`,
+      );
+    } else {
+      lines.push(table);
+    }
+  }
+
+  if (report.statusChanged.length > 0) {
+    lines.push(`#### Status Changed (${report.statusChanged.length})\n\n`);
+    const shown = report.statusChanged.slice(0, MAX_TESTS_CHANGED_SHOWN);
+    const rows = shown.map((t) => {
+      const prevEmoji = TESTS_CHANGED_STATUS_EMOJI[t.previousStatus ?? ''] ?? '';
+      const currEmoji = TESTS_CHANGED_STATUS_EMOJI[t.status] ?? '';
+      return `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${prevEmoji} → ${currEmoji} |`;
+    });
+    const table =
+      '| Test | Suite | Change |\n|------|-------|--------|\n' + rows.join('\n') + '\n\n';
+
+    if (report.statusChanged.length > MAX_TESTS_CHANGED_SHOWN) {
+      lines.push(
+        `<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.statusChanged.length} status changes</summary>\n\n${table}and ${report.statusChanged.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`,
+      );
+    } else {
+      lines.push(table);
+    }
+  }
+
+  if (report.removedTests.length > 0) {
+    lines.push(`#### Removed Tests (${report.removedTests.length})\n\n`);
+    const shown = report.removedTests.slice(0, MAX_TESTS_CHANGED_SHOWN);
+    const rows = shown.map(
+      (t) =>
+        `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} |`,
+    );
+    const table =
+      '| Test | Suite | Previous Status |\n|------|-------|-----------------|\n' +
+      rows.join('\n') +
+      '\n\n';
+
+    if (report.removedTests.length > MAX_TESTS_CHANGED_SHOWN) {
+      lines.push(
+        `<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.removedTests.length} removed tests</summary>\n\n${table}and ${report.removedTests.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`,
       );
     } else {
       lines.push(table);
