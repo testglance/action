@@ -6,7 +6,7 @@ import type {
   Highlight,
   HighlightSeverity,
 } from '../types';
-import type { DeltaComparison, TestsChangedReport } from '../history/types';
+import type { DeltaComparison, TestsChangedReport, FlakyDetectionResult } from '../history/types';
 
 export interface SummaryOptions {
   parsed: ParsedTestRun;
@@ -19,6 +19,7 @@ export interface SummaryOptions {
   slowestTests?: number;
   delta?: DeltaComparison | null;
   testsChanged?: TestsChangedReport | null;
+  flaky?: FlakyDetectionResult | null;
 }
 
 const MAX_FAILED_TESTS_SHOWN = 25;
@@ -36,6 +37,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
     slowestTests,
     delta,
     testsChanged,
+    flaky,
   } = options;
   const { summary } = parsed;
   const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
@@ -76,6 +78,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
   if (testsChanged && testsChanged.hasChanges) {
     core.summary.addRaw(renderTestsChangedSection(testsChanged));
+  }
+
+  if (flaky && flaky.hasFlakyTests) {
+    core.summary.addRaw(renderFlakySection(flaky));
   }
 
   try {
@@ -404,6 +410,42 @@ export function renderTestsChangedSection(report: TestsChangedReport): string {
     } else {
       lines.push(table);
     }
+  }
+
+  return lines.join('');
+}
+
+const MAX_FLAKY_TESTS_SHOWN = 15;
+
+const FLAKY_STATUS_EMOJI: Record<string, string> = {
+  passed: '✅',
+  failed: '❌',
+  skipped: '⏭️',
+  errored: '💥',
+};
+
+export function renderFlakySection(result: FlakyDetectionResult): string {
+  if (!result.hasFlakyTests) return '';
+
+  const lines: string[] = ['### Potentially Flaky Tests\n\n'];
+
+  const shown = result.flakyTests.slice(0, MAX_FLAKY_TESTS_SHOWN);
+  const rows = shown.map((t) => {
+    const timeline = t.recentStatuses.map((s) => FLAKY_STATUS_EMOJI[s] ?? '').join('');
+    return `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${Math.round(t.flakyRate)}% | ${t.flipCount} | ${timeline} |`;
+  });
+
+  const table =
+    '| Test | Suite | Flaky Rate | Flips | Recent Runs |\n|------|-------|------------|-------|-------------|\n' +
+    rows.join('\n') +
+    '\n\n';
+
+  if (result.flakyTests.length > MAX_FLAKY_TESTS_SHOWN) {
+    lines.push(
+      `<details><summary>Showing ${MAX_FLAKY_TESTS_SHOWN} of ${result.flakyTests.length} flaky tests</summary>\n\n${table}and ${result.flakyTests.length - MAX_FLAKY_TESTS_SHOWN} more...\n\n</details>\n\n`,
+    );
+  } else {
+    lines.push(table);
   }
 
   return lines.join('');

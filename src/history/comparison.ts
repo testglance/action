@@ -6,7 +6,7 @@ import type {
   TestsChangedEntry,
 } from './types';
 
-function buildTestKey(suite: string, name: string): string {
+export function buildTestKey(suite: string, name: string): string {
   return `${suite}::${name}`;
 }
 

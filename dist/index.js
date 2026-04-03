@@ -54706,6 +54706,7 @@ exports.ActionsCacheStorage = ActionsCacheStorage;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.buildTestKey = buildTestKey;
 exports.computeTestsChanged = computeTestsChanged;
 exports.computeDelta = computeDelta;
 function buildTestKey(suite, name) {
@@ -54920,6 +54921,81 @@ function computeDelta(previous, current) {
 
 /***/ }),
 
+/***/ 87690:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.detectFlakyTests = detectFlakyTests;
+const comparison_1 = __nccwpck_require__(88232);
+function detectFlakyTests(entries, threshold = 2, windowSize = 10) {
+    const window = entries.slice(-windowSize);
+    const testStatuses = new Map();
+    for (let i = 0; i < window.length; i++) {
+        const entry = window[i];
+        const seen = new Set();
+        for (const test of entry.tests) {
+            const key = (0, comparison_1.buildTestKey)(test.suite, test.name);
+            seen.add(key);
+            let record = testStatuses.get(key);
+            if (!record) {
+                record = { suite: test.suite, name: test.name, statuses: new Array(i).fill(null) };
+                testStatuses.set(key, record);
+            }
+            record.statuses.push(test.status);
+        }
+        for (const [key, record] of testStatuses) {
+            if (!seen.has(key) && record.statuses.length === i) {
+                record.statuses.push(null);
+            }
+        }
+    }
+    const flakyTests = [];
+    for (const [, record] of testStatuses) {
+        const relevant = record.statuses.filter((s) => s !== null && s !== 'skipped');
+        if (relevant.length < 2)
+            continue;
+        let flipCount = 0;
+        for (let i = 1; i < relevant.length; i++) {
+            const prev = relevant[i - 1];
+            const curr = relevant[i];
+            const prevFailing = prev === 'failed' || prev === 'errored';
+            const currFailing = curr === 'failed' || curr === 'errored';
+            const prevPassing = prev === 'passed';
+            const currPassing = curr === 'passed';
+            if ((prevPassing && currFailing) || (prevFailing && currPassing)) {
+                flipCount++;
+            }
+        }
+        if (flipCount < threshold)
+            continue;
+        const flakyRate = (flipCount / (relevant.length - 1)) * 100;
+        const recentStatuses = record.statuses
+            .map((s) => s ?? 'skipped')
+            .slice(-windowSize);
+        flakyTests.push({
+            name: record.name,
+            suite: record.suite,
+            flakyRate,
+            flipCount,
+            recentStatuses,
+        });
+    }
+    flakyTests.sort((a, b) => {
+        if (b.flakyRate !== a.flakyRate)
+            return b.flakyRate - a.flakyRate;
+        return b.flipCount - a.flipCount;
+    });
+    return {
+        flakyTests,
+        hasFlakyTests: flakyTests.length > 0,
+    };
+}
+
+
+/***/ }),
+
 /***/ 75878:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -55122,7 +55198,9 @@ const check_run_1 = __nccwpck_require__(8290);
 const actions_cache_storage_1 = __nccwpck_require__(58701);
 const manager_1 = __nccwpck_require__(75878);
 const comparison_1 = __nccwpck_require__(88232);
+const flaky_detection_1 = __nccwpck_require__(87690);
 const DEFAULT_SLOWEST_TESTS = 10;
+const DEFAULT_FLAKY_THRESHOLD = 2;
 function parseSlowestTestsCount(input) {
     const trimmed = input.trim();
     if (!trimmed) {
@@ -55133,6 +55211,22 @@ function parseSlowestTestsCount(input) {
         return DEFAULT_SLOWEST_TESTS;
     }
     return Number.parseInt(trimmed, 10);
+}
+function parseFlakyThreshold(input) {
+    const trimmed = input.trim();
+    if (!trimmed) {
+        return DEFAULT_FLAKY_THRESHOLD;
+    }
+    if (!/^\d+$/.test(trimmed)) {
+        core.warning(`Invalid "flaky-threshold" input "${input}". Expected a positive integer; defaulting to ${DEFAULT_FLAKY_THRESHOLD}.`);
+        return DEFAULT_FLAKY_THRESHOLD;
+    }
+    const parsed = Number.parseInt(trimmed, 10);
+    if (parsed < 1) {
+        core.warning(`Invalid "flaky-threshold" input "${input}". Expected a positive integer; defaulting to ${DEFAULT_FLAKY_THRESHOLD}.`);
+        return DEFAULT_FLAKY_THRESHOLD;
+    }
+    return parsed;
 }
 function parseFile(filePath, reportFormat) {
     const content = (0, node_fs_1.readFileSync)(filePath, 'utf-8');
@@ -55164,6 +55258,7 @@ async function run() {
         const createCheck = core.getInput('create-check') === 'true';
         const checkName = core.getInput('check-name') || 'Test Results';
         const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
+        const flakyThreshold = parseFlakyThreshold(core.getInput('flaky-threshold'));
         const historyEnabled = core.getInput('history') !== 'false';
         const historyLimitRaw = core.getInput('history-limit') || '20';
         const historyLimitParsed = parseInt(historyLimitRaw, 10);
@@ -55254,6 +55349,18 @@ async function run() {
                 core.warning(`History tracking failed: ${err instanceof Error ? err.message : String(err)}`);
             }
         }
+        let flaky = null;
+        if (loadedHistory && loadedHistory.entries.length >= 5) {
+            try {
+                flaky = (0, flaky_detection_1.detectFlakyTests)(loadedHistory.entries, flakyThreshold);
+            }
+            catch (err) {
+                core.debug(`Flaky detection failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        else if (historyEnabled && loadedHistory) {
+            core.debug('Need at least 5 runs for flaky detection');
+        }
         let baseDelta = null;
         const baseBranch = (process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '');
         if (historyEnabled && baseBranch && loadedHistory) {
@@ -55310,6 +55417,7 @@ async function run() {
             slowestTests: slowestTestsCount,
             delta,
             testsChanged,
+            flaky,
         });
         if (createCheck) {
             if (githubToken) {
@@ -55333,6 +55441,7 @@ async function run() {
                     highlights: result.highlights ?? [],
                     runUrl: dashboardUrl,
                     testsChanged,
+                    flaky,
                     baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
                     baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
                 },
@@ -55560,6 +55669,7 @@ async function postPrComment(options) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.renderBaseBranchSection = renderBaseBranchSection;
 exports.renderTestJobSection = renderTestJobSection;
+exports.renderFlakyCompact = renderFlakyCompact;
 exports.renderPrComment = renderPrComment;
 exports.mergeTestJobSection = mergeTestJobSection;
 const summary_1 = __nccwpck_require__(75942);
@@ -55685,6 +55795,10 @@ function renderTestJobSection(section) {
         lines.push(renderTestsChangedCompact(section.testsChanged));
         lines.push('');
     }
+    if (section.flaky && section.flaky.hasFlakyTests) {
+        lines.push(renderFlakyCompact(section.flaky));
+        lines.push('');
+    }
     if (section.runUrl) {
         lines.push(`[View Run →](${section.runUrl})`);
     }
@@ -55708,6 +55822,25 @@ function renderTestsChangedCompact(report) {
         line = `⚠️ ${newlyFailing.length} newly failing | ${line}`;
     }
     return line;
+}
+const MAX_FLAKY_COMPACT = 5;
+function toInlineCode(value) {
+    const normalized = value.replace(/\r?\n/g, ' ');
+    const runs = normalized.match(/`+/g);
+    const longestRun = runs ? Math.max(...runs.map((r) => r.length)) : 0;
+    const fence = '`'.repeat(longestRun + 1);
+    return `${fence}${normalized}${fence}`;
+}
+function renderFlakyCompact(result) {
+    if (!result.hasFlakyTests)
+        return '';
+    const total = result.flakyTests.length;
+    const shown = result.flakyTests.slice(0, MAX_FLAKY_COMPACT);
+    const names = shown.map((t) => toInlineCode(t.name)).join(', ');
+    if (total > MAX_FLAKY_COMPACT) {
+        return `⚠️ ${total} flaky tests: ${names}, +${total - MAX_FLAKY_COMPACT} more`;
+    }
+    return `⚠️ ${total} flaky test${total === 1 ? '' : 's'}: ${names}`;
 }
 function renderPrComment(sections) {
     const lines = [];
@@ -55801,12 +55934,13 @@ exports.renderSuiteBreakdown = renderSuiteBreakdown;
 exports.renderHighlights = renderHighlights;
 exports.renderDeltaSection = renderDeltaSection;
 exports.renderTestsChangedSection = renderTestsChangedSection;
+exports.renderFlakySection = renderFlakySection;
 const core = __importStar(__nccwpck_require__(16966));
 const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, } = options;
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, } = options;
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
     core.summary.addHeading('TestGlance Results', 2);
@@ -55840,6 +55974,9 @@ async function generateSummary(options) {
     }
     if (testsChanged && testsChanged.hasChanges) {
         core.summary.addRaw(renderTestsChangedSection(testsChanged));
+    }
+    if (flaky && flaky.hasFlakyTests) {
+        core.summary.addRaw(renderFlakySection(flaky));
     }
     try {
         if (parsed.suites.length > 1) {
@@ -56087,6 +56224,33 @@ function renderTestsChangedSection(report) {
         else {
             lines.push(table);
         }
+    }
+    return lines.join('');
+}
+const MAX_FLAKY_TESTS_SHOWN = 15;
+const FLAKY_STATUS_EMOJI = {
+    passed: '✅',
+    failed: '❌',
+    skipped: '⏭️',
+    errored: '💥',
+};
+function renderFlakySection(result) {
+    if (!result.hasFlakyTests)
+        return '';
+    const lines = ['### Potentially Flaky Tests\n\n'];
+    const shown = result.flakyTests.slice(0, MAX_FLAKY_TESTS_SHOWN);
+    const rows = shown.map((t) => {
+        const timeline = t.recentStatuses.map((s) => FLAKY_STATUS_EMOJI[s] ?? '').join('');
+        return `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${Math.round(t.flakyRate)}% | ${t.flipCount} | ${timeline} |`;
+    });
+    const table = '| Test | Suite | Flaky Rate | Flips | Recent Runs |\n|------|-------|------------|-------|-------------|\n' +
+        rows.join('\n') +
+        '\n\n';
+    if (result.flakyTests.length > MAX_FLAKY_TESTS_SHOWN) {
+        lines.push(`<details><summary>Showing ${MAX_FLAKY_TESTS_SHOWN} of ${result.flakyTests.length} flaky tests</summary>\n\n${table}and ${result.flakyTests.length - MAX_FLAKY_TESTS_SHOWN} more...\n\n</details>\n\n`);
+    }
+    else {
+        lines.push(table);
     }
     return lines.join('');
 }

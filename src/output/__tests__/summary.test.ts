@@ -22,9 +22,14 @@ import {
   renderSuiteBreakdown,
   renderDeltaSection,
   renderTestsChangedSection,
+  renderFlakySection,
 } from '../summary';
 import type { Highlight } from '../../types';
-import type { DeltaComparison, TestsChangedReport } from '../../history/types';
+import type {
+  DeltaComparison,
+  TestsChangedReport,
+  FlakyDetectionResult,
+} from '../../history/types';
 
 function makeParsed(
   overrides: Partial<ParsedTestRun['summary']> = {},
@@ -1290,5 +1295,134 @@ describe('renderTestsChangedSection', () => {
     const report = makeTestsChanged({ hasChanges: false });
     const result = renderTestsChangedSection(report);
     expect(result).toBe('');
+  });
+});
+
+describe('renderFlakySection', () => {
+  it('renders flaky tests table with status emoji timeline', () => {
+    const result: FlakyDetectionResult = {
+      hasFlakyTests: true,
+      flakyTests: [
+        {
+          name: 'test_login',
+          suite: 'auth',
+          flakyRate: 60,
+          flipCount: 3,
+          recentStatuses: ['passed', 'failed', 'passed', 'failed', 'passed'],
+        },
+      ],
+    };
+    const output = renderFlakySection(result);
+    expect(output).toContain('### Potentially Flaky Tests');
+    expect(output).toContain('test_login');
+    expect(output).toContain('auth');
+    expect(output).toContain('60%');
+    expect(output).toContain('3');
+    expect(output).toContain('✅❌✅❌✅');
+  });
+
+  it('returns empty string when no flaky tests', () => {
+    const result: FlakyDetectionResult = {
+      hasFlakyTests: false,
+      flakyTests: [],
+    };
+    expect(renderFlakySection(result)).toBe('');
+  });
+
+  it('wraps in details when more than 15 flaky tests', () => {
+    const flakyTests = Array.from({ length: 20 }, (_, i) => ({
+      name: `test_${i}`,
+      suite: 'suite',
+      flakyRate: 50,
+      flipCount: 2,
+      recentStatuses: ['passed', 'failed', 'passed'] as const,
+    }));
+    const result: FlakyDetectionResult = { hasFlakyTests: true, flakyTests };
+    const output = renderFlakySection(result);
+    expect(output).toContain('<details>');
+    expect(output).toContain('Showing 15 of 20 flaky tests');
+    expect(output).toContain('and 5 more...');
+  });
+
+  it('escapes HTML in test names', () => {
+    const result: FlakyDetectionResult = {
+      hasFlakyTests: true,
+      flakyTests: [
+        {
+          name: '<script>alert("xss")</script>',
+          suite: 'xss-suite',
+          flakyRate: 50,
+          flipCount: 2,
+          recentStatuses: ['passed', 'failed', 'passed'],
+        },
+      ],
+    };
+    const output = renderFlakySection(result);
+    expect(output).toContain('&lt;script&gt;');
+    expect(output).not.toContain('<script>');
+  });
+
+  it('renders errored status with 💥 emoji', () => {
+    const result: FlakyDetectionResult = {
+      hasFlakyTests: true,
+      flakyTests: [
+        {
+          name: 'crash_test',
+          suite: 'core',
+          flakyRate: 75,
+          flipCount: 3,
+          recentStatuses: ['passed', 'errored', 'passed', 'errored'],
+        },
+      ],
+    };
+    const output = renderFlakySection(result);
+    expect(output).toContain('💥');
+  });
+
+  it('is wired into generateSummary after testsChanged', async () => {
+    mockSummary.addHeading.mockClear();
+    mockSummary.addTable.mockClear();
+    mockSummary.addRaw.mockClear();
+    mockSummary.addLink.mockClear();
+    mockSummary.write.mockClear();
+
+    await generateSummary({
+      parsed: makeParsed(),
+      apiSuccess: false,
+      flaky: {
+        hasFlakyTests: true,
+        flakyTests: [
+          {
+            name: 'flaky_test',
+            suite: 'suite',
+            flakyRate: 50,
+            flipCount: 2,
+            recentStatuses: ['passed', 'failed', 'passed'],
+          },
+        ],
+      },
+    });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasFlaky = rawCalls.some((c: string) => c.includes('Potentially Flaky Tests'));
+    expect(hasFlaky).toBe(true);
+  });
+
+  it('not rendered in generateSummary when flaky is null', async () => {
+    mockSummary.addHeading.mockClear();
+    mockSummary.addTable.mockClear();
+    mockSummary.addRaw.mockClear();
+    mockSummary.addLink.mockClear();
+    mockSummary.write.mockClear();
+
+    await generateSummary({
+      parsed: makeParsed(),
+      apiSuccess: false,
+      flaky: null,
+    });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasFlaky = rawCalls.some((c: string) => c.includes('Potentially Flaky Tests'));
+    expect(hasFlaky).toBe(false);
   });
 });

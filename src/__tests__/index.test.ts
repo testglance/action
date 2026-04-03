@@ -131,6 +131,7 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'create-check': '',
     'check-name': '',
     'slowest-tests': '',
+    'flaky-threshold': '2',
     history: 'false',
     'history-limit': '20',
   };
@@ -452,6 +453,7 @@ describe('run() integration', () => {
         slowestTests: 10,
         delta: null,
         testsChanged: null,
+        flaky: null,
       });
     });
 
@@ -474,6 +476,7 @@ describe('run() integration', () => {
         slowestTests: 10,
         delta: null,
         testsChanged: null,
+        flaky: null,
       });
     });
 
@@ -1330,6 +1333,204 @@ describe('run() integration', () => {
         expect(prCommentCall.section.baseDelta).toBeUndefined();
         expect(prCommentCall.section.baseBranch).toBeUndefined();
       }
+    });
+  });
+
+  describe('flaky test detection (Story 7.5)', () => {
+    function makeFlakyHistory(entryCount: number) {
+      const entries = Array.from({ length: entryCount }, (_, i) => ({
+        timestamp: `2026-04-0${(i % 9) + 1}T12:00:00.000Z`,
+        commitSha: `sha${i}`,
+        summary: { total: 2, passed: 1, failed: 1, skipped: 0, errored: 0, duration: 1.0 },
+        tests: [
+          {
+            name: 'test1',
+            suite: 'suite1',
+            status: (i % 2 === 0 ? 'passed' : 'failed') as const,
+            duration: 0.5,
+          },
+          { name: 'test2', suite: 'suite1', status: 'passed' as const, duration: 0.5 },
+        ],
+      }));
+      return JSON.stringify({ version: 1, branch: 'main', entries });
+    }
+
+    async function setupHistoryWithEntries(entryCount: number) {
+      setupInputs({ history: 'true' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json'))
+          return makeFlakyHistory(entryCount);
+        return '<xml>content</xml>';
+      });
+    }
+
+    it('flaky result is passed to summary when history has >= 5 entries', async () => {
+      await setupHistoryWithEntries(5);
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.flaky).not.toBeNull();
+      expect(summaryCall.flaky.hasFlakyTests).toBe(true);
+      expect(summaryCall.flaky.flakyTests[0].name).toBe('test1');
+    });
+
+    it('flaky result is null when history has < 5 entries', async () => {
+      await setupHistoryWithEntries(3);
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.flaky).toBeNull();
+    });
+
+    it('logs debug message when fewer than 5 runs', async () => {
+      await setupHistoryWithEntries(3);
+
+      await run();
+
+      expect(mockDebug).toHaveBeenCalledWith('Need at least 5 runs for flaky detection');
+    });
+
+    it('flaky result is null when history is disabled', async () => {
+      setupInputs({ history: 'false' });
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.flaky).toBeNull();
+    });
+
+    it('flaky detection error does not fail the action', async () => {
+      await setupHistoryWithEntries(5);
+
+      const flakyModule = await import('../history/flaky-detection');
+      vi.spyOn(flakyModule, 'detectFlakyTests').mockImplementationOnce(() => {
+        throw new Error('flaky detection boom');
+      });
+
+      await run();
+
+      expect(mockSetFailed).not.toHaveBeenCalled();
+      expect(mockDebug).toHaveBeenCalledWith(expect.stringContaining('flaky detection boom'));
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.flaky).toBeNull();
+    });
+
+    it('flaky result is passed to PR comment section', async () => {
+      setupInputs({ history: 'true', 'github-token': 'gh_token' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return makeFlakyHistory(5);
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      if (prCommentCall) {
+        expect(prCommentCall.section.flaky).not.toBeNull();
+        expect(prCommentCall.section.flaky.hasFlakyTests).toBe(true);
+      }
+    });
+
+    it('respects custom flaky-threshold input', async () => {
+      setupInputs({ history: 'true', 'flaky-threshold': '10' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return makeFlakyHistory(5);
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.flaky).not.toBeNull();
+      // High threshold means no tests should be flagged
+      expect(summaryCall.flaky.hasFlakyTests).toBe(false);
+    });
+
+    it('falls back to default flaky-threshold when value is negative', async () => {
+      setupInputs({ history: 'true', 'flaky-threshold': '-1' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return makeFlakyHistory(5);
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid "flaky-threshold" input "-1"'),
+      );
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.flaky).not.toBeNull();
+      expect(summaryCall.flaky.hasFlakyTests).toBe(true);
+    });
+
+    it('falls back to default flaky-threshold when value is malformed', async () => {
+      setupInputs({ history: 'true', 'flaky-threshold': '2abc' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return makeFlakyHistory(5);
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid "flaky-threshold" input "2abc"'),
+      );
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.flaky).not.toBeNull();
+      expect(summaryCall.flaky.hasFlakyTests).toBe(true);
     });
   });
 });

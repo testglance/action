@@ -46,6 +46,19 @@ export interface TestsChangedReport {
   hasChanges: boolean;
 }
 
+export interface FlakyTestInfo {
+  name: string;
+  suite: string;
+  flakyRate: number;
+  flipCount: number;
+  recentStatuses: ('passed' | 'failed' | 'skipped' | 'errored')[];
+}
+
+export interface FlakyDetectionResult {
+  flakyTests: FlakyTestInfo[];
+  hasFlakyTests: boolean;
+}
+
 export interface DeltaTestInfo {
   name: string;
   suite: string;

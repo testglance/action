@@ -5,9 +5,14 @@ import {
   renderPrComment,
   mergeTestJobSection,
   renderBaseBranchSection,
+  renderFlakyCompact,
 } from '../pr-comment';
 import type { Highlight } from '../../types';
-import type { DeltaComparison, TestsChangedReport } from '../../history/types';
+import type {
+  DeltaComparison,
+  TestsChangedReport,
+  FlakyDetectionResult,
+} from '../../history/types';
 
 function makeSection(overrides: Partial<PrCommentSection> = {}): PrCommentSection {
   return {
@@ -371,5 +376,132 @@ describe('renderTestJobSection with baseDelta', () => {
     const testsChangedIdx = result.indexOf('📝');
     expect(highlightsIdx).toBeLessThan(baseBranchIdx);
     expect(baseBranchIdx).toBeLessThan(testsChangedIdx);
+  });
+});
+
+describe('renderFlakyCompact', () => {
+  it('renders flaky test names with warning emoji', () => {
+    const result: FlakyDetectionResult = {
+      hasFlakyTests: true,
+      flakyTests: [
+        {
+          name: 'test_login',
+          suite: 'auth',
+          flakyRate: 60,
+          flipCount: 3,
+          recentStatuses: ['passed', 'failed', 'passed'],
+        },
+        {
+          name: 'test_upload',
+          suite: 'files',
+          flakyRate: 40,
+          flipCount: 2,
+          recentStatuses: ['passed', 'failed', 'passed'],
+        },
+      ],
+    };
+    const output = renderFlakyCompact(result);
+    expect(output).toBe('⚠️ 2 flaky tests: `test_login`, `test_upload`');
+  });
+
+  it('returns empty string when no flaky tests', () => {
+    const result: FlakyDetectionResult = { hasFlakyTests: false, flakyTests: [] };
+    expect(renderFlakyCompact(result)).toBe('');
+  });
+
+  it('caps at 5 tests and shows +N more', () => {
+    const flakyTests = Array.from({ length: 8 }, (_, i) => ({
+      name: `test_${i}`,
+      suite: 'suite',
+      flakyRate: 50,
+      flipCount: 2,
+      recentStatuses: ['passed', 'failed', 'passed'] as const,
+    }));
+    const result: FlakyDetectionResult = { hasFlakyTests: true, flakyTests };
+    const output = renderFlakyCompact(result);
+    expect(output).toContain('+3 more');
+    expect(output).toContain('⚠️ 8 flaky tests');
+  });
+
+  it('uses singular when only 1 flaky test', () => {
+    const result: FlakyDetectionResult = {
+      hasFlakyTests: true,
+      flakyTests: [
+        {
+          name: 'test_solo',
+          suite: 'suite',
+          flakyRate: 50,
+          flipCount: 2,
+          recentStatuses: ['passed', 'failed', 'passed'],
+        },
+      ],
+    };
+    const output = renderFlakyCompact(result);
+    expect(output).toBe('⚠️ 1 flaky test: `test_solo`');
+  });
+
+  it('renders names containing backticks safely in inline code', () => {
+    const result: FlakyDetectionResult = {
+      hasFlakyTests: true,
+      flakyTests: [
+        {
+          name: 'test `with` tick\nline2',
+          suite: 'suite',
+          flakyRate: 50,
+          flipCount: 2,
+          recentStatuses: ['passed', 'failed', 'passed'],
+        },
+      ],
+    };
+
+    const output = renderFlakyCompact(result);
+    expect(output).toBe('⚠️ 1 flaky test: ``test `with` tick line2``');
+  });
+
+  it('is wired into renderTestJobSection after testsChanged', () => {
+    const section = makeSection({
+      flaky: {
+        hasFlakyTests: true,
+        flakyTests: [
+          {
+            name: 'flaky_test',
+            suite: 'suite',
+            flakyRate: 50,
+            flipCount: 2,
+            recentStatuses: ['passed', 'failed', 'passed'],
+          },
+        ],
+      },
+    });
+    const result = renderTestJobSection(section);
+    expect(result).toContain('⚠️ 1 flaky test: `flaky_test`');
+  });
+
+  it('flaky section appears after testsChanged in renderTestJobSection', () => {
+    const testsChanged: TestsChangedReport = {
+      newTests: [{ name: 'new_test', suite: 'suite', status: 'passed', duration: 1.0 }],
+      removedTests: [],
+      statusChanged: [],
+      hasChanges: true,
+    };
+    const section = makeSection({
+      testsChanged,
+      flaky: {
+        hasFlakyTests: true,
+        flakyTests: [
+          {
+            name: 'flaky_test',
+            suite: 'suite',
+            flakyRate: 50,
+            flipCount: 2,
+            recentStatuses: ['passed', 'failed', 'passed'],
+          },
+        ],
+      },
+    });
+    const result = renderTestJobSection(section);
+    const testsChangedIdx = result.indexOf('📝');
+    const flakyIdx = result.indexOf('⚠️ 1 flaky test');
+    expect(testsChangedIdx).toBeLessThan(flakyIdx);
   });
 });

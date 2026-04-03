@@ -40,6 +40,10 @@ inputs:
     description: 'Name of the GitHub Check Run'
     required: false
     default: 'Test Results'
+  flaky-threshold:
+    description: 'Minimum status flips to flag a test as flaky (positive integer, last 10 runs)'
+    required: false
+    default: '2'
   history:
     description: 'Enable run history tracking via Actions Cache'
     required: false

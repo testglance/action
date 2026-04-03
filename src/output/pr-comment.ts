@@ -1,5 +1,5 @@
 import type { Highlight, HighlightSeverity } from '../types';
-import type { DeltaComparison, TestsChangedReport } from '../history/types';
+import type { DeltaComparison, TestsChangedReport, FlakyDetectionResult } from '../history/types';
 import { formatDuration } from './summary';
 
 export interface PrCommentSection {
@@ -15,6 +15,7 @@ export interface PrCommentSection {
   testsChanged?: TestsChangedReport | null;
   baseDelta?: DeltaComparison | null;
   baseBranch?: string;
+  flaky?: FlakyDetectionResult | null;
 }
 
 const SEVERITY_EMOJI: Record<HighlightSeverity, string> = {
@@ -169,6 +170,11 @@ export function renderTestJobSection(section: PrCommentSection): string {
     lines.push('');
   }
 
+  if (section.flaky && section.flaky.hasFlakyTests) {
+    lines.push(renderFlakyCompact(section.flaky));
+    lines.push('');
+  }
+
   if (section.runUrl) {
     lines.push(`[View Run →](${section.runUrl})`);
   }
@@ -197,6 +203,29 @@ function renderTestsChangedCompact(report: TestsChangedReport): string {
     line = `⚠️ ${newlyFailing.length} newly failing | ${line}`;
   }
   return line;
+}
+
+const MAX_FLAKY_COMPACT = 5;
+
+function toInlineCode(value: string): string {
+  const normalized = value.replace(/\r?\n/g, ' ');
+  const runs = normalized.match(/`+/g);
+  const longestRun = runs ? Math.max(...runs.map((r) => r.length)) : 0;
+  const fence = '`'.repeat(longestRun + 1);
+  return `${fence}${normalized}${fence}`;
+}
+
+export function renderFlakyCompact(result: FlakyDetectionResult): string {
+  if (!result.hasFlakyTests) return '';
+
+  const total = result.flakyTests.length;
+  const shown = result.flakyTests.slice(0, MAX_FLAKY_COMPACT);
+  const names = shown.map((t) => toInlineCode(t.name)).join(', ');
+
+  if (total > MAX_FLAKY_COMPACT) {
+    return `⚠️ ${total} flaky tests: ${names}, +${total - MAX_FLAKY_COMPACT} more`;
+  }
+  return `⚠️ ${total} flaky test${total === 1 ? '' : 's'}: ${names}`;
 }
 
 export function renderPrComment(sections: PrCommentSection[]): string {
