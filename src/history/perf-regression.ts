@@ -21,6 +21,8 @@ export function detectPerfRegressions(
 
   for (const entry of previousEntries) {
     for (const test of entry.tests) {
+      if (test.duration <= 0) continue;
+
       const key = buildTestKey(test.suite, test.name);
       let durations = durationMap.get(key);
       if (!durations) {

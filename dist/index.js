@@ -55163,6 +55163,8 @@ function detectPerfRegressions(entries, threshold = 200) {
     const durationMap = new Map();
     for (const entry of previousEntries) {
         for (const test of entry.tests) {
+            if (test.duration <= 0)
+                continue;
             const key = (0, comparison_1.buildTestKey)(test.suite, test.name);
             let durations = durationMap.get(key);
             if (!durations) {
@@ -55461,6 +55463,9 @@ async function run() {
         if (loadedHistory && loadedHistory.entries.length >= 3) {
             try {
                 perfRegression = (0, perf_regression_1.detectPerfRegressions)(loadedHistory.entries, perfThreshold);
+                if (loadedHistory.entries.length < 4) {
+                    core.debug('Performance regression detection needs 4 runs (3 baseline + current); collecting baseline data');
+                }
             }
             catch (err) {
                 core.debug(`Performance regression detection failed: ${err instanceof Error ? err.message : String(err)}`);

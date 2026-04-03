@@ -263,6 +263,11 @@ export async function run(): Promise<RunResult> {
     if (loadedHistory && loadedHistory.entries.length >= 3) {
       try {
         perfRegression = detectPerfRegressions(loadedHistory.entries, perfThreshold);
+        if (loadedHistory.entries.length < 4) {
+          core.debug(
+            'Performance regression detection needs 4 runs (3 baseline + current); collecting baseline data',
+          );
+        }
       } catch (err) {
         core.debug(
           `Performance regression detection failed: ${err instanceof Error ? err.message : String(err)}`,

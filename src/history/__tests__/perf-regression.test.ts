@@ -127,6 +127,21 @@ describe('detectPerfRegressions', () => {
     expect(result.hasRegressions).toBe(false);
   });
 
+  it('ignores zero-duration historical samples when building baseline', () => {
+    const entries = [
+      makeEntry([makeTest('slow', 'suite', 0)]),
+      makeEntry([makeTest('slow', 'suite', 1.0)]),
+      makeEntry([makeTest('slow', 'suite', 1.0)]),
+      makeEntry([makeTest('slow', 'suite', 1.0)]),
+      makeEntry([makeTest('slow', 'suite', 4.0)]),
+    ];
+
+    const result = detectPerfRegressions(entries, 200);
+    expect(result.hasRegressions).toBe(true);
+    expect(result.regressions).toHaveLength(1);
+    expect(result.regressions[0].medianDuration).toBe(1.0);
+  });
+
   it('sorts regressions by increasePercent descending', () => {
     const entries = [
       makeEntry([makeTest('a', 's', 1.0), makeTest('b', 's', 1.0)]),

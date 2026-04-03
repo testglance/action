@@ -1607,6 +1607,19 @@ describe('run() integration', () => {
       );
     });
 
+    it('logs baseline message when trend exists but regression baseline is not ready', async () => {
+      await setupPerfHistoryWithEntries(2);
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.perfRegression).not.toBeNull();
+      expect(summaryCall.perfRegression.hasRegressions).toBe(false);
+      expect(mockDebug).toHaveBeenCalledWith(
+        'Performance regression detection needs 4 runs (3 baseline + current); collecting baseline data',
+      );
+    });
+
     it('perfRegression is null when history is disabled', async () => {
       setupInputs({ history: 'false' });
 
