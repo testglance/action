@@ -1,5 +1,10 @@
 import type { Highlight, HighlightSeverity } from '../types';
-import type { DeltaComparison, TestsChangedReport, FlakyDetectionResult } from '../history/types';
+import type {
+  DeltaComparison,
+  TestsChangedReport,
+  FlakyDetectionResult,
+  PerfRegressionResult,
+} from '../history/types';
 import { formatDuration } from './summary';
 
 export interface PrCommentSection {
@@ -16,6 +21,7 @@ export interface PrCommentSection {
   baseDelta?: DeltaComparison | null;
   baseBranch?: string;
   flaky?: FlakyDetectionResult | null;
+  perfRegression?: PerfRegressionResult | null;
 }
 
 const SEVERITY_EMOJI: Record<HighlightSeverity, string> = {
@@ -175,6 +181,11 @@ export function renderTestJobSection(section: PrCommentSection): string {
     lines.push('');
   }
 
+  if (section.perfRegression && section.perfRegression.hasRegressions) {
+    lines.push(renderPerfRegressionCompact(section.perfRegression));
+    lines.push('');
+  }
+
   if (section.runUrl) {
     lines.push(`[View Run →](${section.runUrl})`);
   }
@@ -226,6 +237,23 @@ export function renderFlakyCompact(result: FlakyDetectionResult): string {
     return `⚠️ ${total} flaky tests: ${names}, +${total - MAX_FLAKY_COMPACT} more`;
   }
   return `⚠️ ${total} flaky test${total === 1 ? '' : 's'}: ${names}`;
+}
+
+const MAX_PERF_COMPACT = 3;
+
+export function renderPerfRegressionCompact(result: PerfRegressionResult): string {
+  if (!result.hasRegressions) return '';
+
+  const total = result.regressions.length;
+  const shown = result.regressions.slice(0, MAX_PERF_COMPACT);
+  const names = shown
+    .map((t) => `${toInlineCode(t.name)} (+${Math.round(t.increasePercent)}%)`)
+    .join(', ');
+
+  if (total > MAX_PERF_COMPACT) {
+    return `🐌 ${total} slower tests: ${names}, +${total - MAX_PERF_COMPACT} more`;
+  }
+  return `🐌 ${total} slower test${total === 1 ? '' : 's'}: ${names}`;
 }
 
 export function renderPrComment(sections: PrCommentSection[]): string {

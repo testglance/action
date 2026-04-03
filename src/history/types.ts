@@ -59,6 +59,20 @@ export interface FlakyDetectionResult {
   hasFlakyTests: boolean;
 }
 
+export interface PerfRegressionInfo {
+  name: string;
+  suite: string;
+  currentDuration: number;
+  medianDuration: number;
+  increasePercent: number;
+}
+
+export interface PerfRegressionResult {
+  regressions: PerfRegressionInfo[];
+  hasRegressions: boolean;
+  sparkline: string;
+}
+
 export interface DeltaTestInfo {
   name: string;
   suite: string;

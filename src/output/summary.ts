@@ -6,7 +6,12 @@ import type {
   Highlight,
   HighlightSeverity,
 } from '../types';
-import type { DeltaComparison, TestsChangedReport, FlakyDetectionResult } from '../history/types';
+import type {
+  DeltaComparison,
+  TestsChangedReport,
+  FlakyDetectionResult,
+  PerfRegressionResult,
+} from '../history/types';
 
 export interface SummaryOptions {
   parsed: ParsedTestRun;
@@ -20,6 +25,7 @@ export interface SummaryOptions {
   delta?: DeltaComparison | null;
   testsChanged?: TestsChangedReport | null;
   flaky?: FlakyDetectionResult | null;
+  perfRegression?: PerfRegressionResult | null;
 }
 
 const MAX_FAILED_TESTS_SHOWN = 25;
@@ -38,6 +44,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
     delta,
     testsChanged,
     flaky,
+    perfRegression,
   } = options;
   const { summary } = parsed;
   const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
@@ -82,6 +89,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
   if (flaky && flaky.hasFlakyTests) {
     core.summary.addRaw(renderFlakySection(flaky));
+  }
+
+  if (perfRegression) {
+    core.summary.addRaw(renderPerfRegressionSection(perfRegression));
   }
 
   try {
@@ -443,6 +454,39 @@ export function renderFlakySection(result: FlakyDetectionResult): string {
   if (result.flakyTests.length > MAX_FLAKY_TESTS_SHOWN) {
     lines.push(
       `<details><summary>Showing ${MAX_FLAKY_TESTS_SHOWN} of ${result.flakyTests.length} flaky tests</summary>\n\n${table}and ${result.flakyTests.length - MAX_FLAKY_TESTS_SHOWN} more...\n\n</details>\n\n`,
+    );
+  } else {
+    lines.push(table);
+  }
+
+  return lines.join('');
+}
+
+const MAX_PERF_REGRESSIONS_SHOWN = 15;
+
+export function renderPerfRegressionSection(result: PerfRegressionResult): string {
+  const lines: string[] = ['### Performance Regressions\n\n'];
+
+  lines.push(`**Duration trend:** ${result.sparkline}\n\n`);
+
+  if (!result.hasRegressions) {
+    return lines.join('');
+  }
+
+  const shown = result.regressions.slice(0, MAX_PERF_REGRESSIONS_SHOWN);
+  const rows = shown.map(
+    (t) =>
+      `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${formatDuration(t.currentDuration)} | ${formatDuration(t.medianDuration)} | +${Math.round(t.increasePercent)}% |`,
+  );
+
+  const table =
+    '| Test | Suite | Current | Median | Increase |\n|------|-------|---------|--------|----------|\n' +
+    rows.join('\n') +
+    '\n\n';
+
+  if (result.regressions.length > MAX_PERF_REGRESSIONS_SHOWN) {
+    lines.push(
+      `<details><summary>Showing ${MAX_PERF_REGRESSIONS_SHOWN} of ${result.regressions.length} regressions</summary>\n\n${table}and ${result.regressions.length - MAX_PERF_REGRESSIONS_SHOWN} more...\n\n</details>\n\n`,
     );
   } else {
     lines.push(table);

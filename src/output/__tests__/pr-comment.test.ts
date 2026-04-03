@@ -6,12 +6,14 @@ import {
   mergeTestJobSection,
   renderBaseBranchSection,
   renderFlakyCompact,
+  renderPerfRegressionCompact,
 } from '../pr-comment';
 import type { Highlight } from '../../types';
 import type {
   DeltaComparison,
   TestsChangedReport,
   FlakyDetectionResult,
+  PerfRegressionResult,
 } from '../../history/types';
 
 function makeSection(overrides: Partial<PrCommentSection> = {}): PrCommentSection {
@@ -503,5 +505,150 @@ describe('renderFlakyCompact', () => {
     const testsChangedIdx = result.indexOf('📝');
     const flakyIdx = result.indexOf('⚠️ 1 flaky test');
     expect(testsChangedIdx).toBeLessThan(flakyIdx);
+  });
+});
+
+describe('renderPerfRegressionCompact', () => {
+  it('renders regression names with snail emoji and percentages', () => {
+    const result: PerfRegressionResult = {
+      hasRegressions: true,
+      regressions: [
+        {
+          name: 'test_heavy_query',
+          suite: 'db',
+          currentDuration: 4.0,
+          medianDuration: 1.0,
+          increasePercent: 350,
+        },
+        {
+          name: 'test_render',
+          suite: 'ui',
+          currentDuration: 3.0,
+          medianDuration: 1.0,
+          increasePercent: 280,
+        },
+      ],
+      sparkline: '▁▅',
+    };
+    const output = renderPerfRegressionCompact(result);
+    expect(output).toBe('🐌 2 slower tests: `test_heavy_query` (+350%), `test_render` (+280%)');
+  });
+
+  it('returns empty string when no regressions', () => {
+    const result: PerfRegressionResult = {
+      hasRegressions: false,
+      regressions: [],
+      sparkline: '▄▄▄',
+    };
+    expect(renderPerfRegressionCompact(result)).toBe('');
+  });
+
+  it('caps at 3 tests and shows +N more', () => {
+    const regressions = Array.from({ length: 5 }, (_, i) => ({
+      name: `test_${i}`,
+      suite: 'suite',
+      currentDuration: 10.0,
+      medianDuration: 1.0,
+      increasePercent: 900 - i * 100,
+    }));
+    const result: PerfRegressionResult = {
+      hasRegressions: true,
+      regressions,
+      sparkline: '▁',
+    };
+    const output = renderPerfRegressionCompact(result);
+    expect(output).toContain('+2 more');
+    expect(output).toContain('🐌 5 slower tests');
+    expect(output).not.toContain('test_3');
+  });
+
+  it('uses singular when only 1 regression', () => {
+    const result: PerfRegressionResult = {
+      hasRegressions: true,
+      regressions: [
+        {
+          name: 'test_solo',
+          suite: 'suite',
+          currentDuration: 10.0,
+          medianDuration: 1.0,
+          increasePercent: 900,
+        },
+      ],
+      sparkline: '▁',
+    };
+    const output = renderPerfRegressionCompact(result);
+    expect(output).toBe('🐌 1 slower test: `test_solo` (+900%)');
+  });
+
+  it('renders names containing backticks safely', () => {
+    const result: PerfRegressionResult = {
+      hasRegressions: true,
+      regressions: [
+        {
+          name: 'test `with` ticks',
+          suite: 'suite',
+          currentDuration: 10.0,
+          medianDuration: 1.0,
+          increasePercent: 900,
+        },
+      ],
+      sparkline: '▁',
+    };
+    const output = renderPerfRegressionCompact(result);
+    expect(output).toContain('``test `with` ticks``');
+  });
+
+  it('is wired into renderTestJobSection after flaky', () => {
+    const section = makeSection({
+      perfRegression: {
+        hasRegressions: true,
+        regressions: [
+          {
+            name: 'slow_test',
+            suite: 'suite',
+            currentDuration: 10.0,
+            medianDuration: 1.0,
+            increasePercent: 900,
+          },
+        ],
+        sparkline: '▁',
+      },
+    });
+    const result = renderTestJobSection(section);
+    expect(result).toContain('🐌 1 slower test: `slow_test` (+900%)');
+  });
+
+  it('perf section appears after flaky in renderTestJobSection', () => {
+    const section = makeSection({
+      flaky: {
+        hasFlakyTests: true,
+        flakyTests: [
+          {
+            name: 'flaky_test',
+            suite: 'suite',
+            flakyRate: 50,
+            flipCount: 2,
+            recentStatuses: ['passed', 'failed', 'passed'],
+          },
+        ],
+      },
+      perfRegression: {
+        hasRegressions: true,
+        regressions: [
+          {
+            name: 'slow_test',
+            suite: 'suite',
+            currentDuration: 10.0,
+            medianDuration: 1.0,
+            increasePercent: 900,
+          },
+        ],
+        sparkline: '▁',
+      },
+    });
+    const result = renderTestJobSection(section);
+    const flakyIdx = result.indexOf('⚠️ 1 flaky test');
+    const perfIdx = result.indexOf('🐌 1 slower test');
+    expect(flakyIdx).toBeLessThan(perfIdx);
   });
 });
