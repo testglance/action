@@ -41,7 +41,7 @@ inputs:
     required: false
     default: 'Test Results'
   flaky-threshold:
-    description: 'Minimum status flips to flag a test as flaky (in the last 10 runs)'
+    description: 'Minimum status flips to flag a test as flaky (positive integer, last 10 runs)'
     required: false
     default: '2'
   history:

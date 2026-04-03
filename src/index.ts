@@ -27,6 +27,7 @@ import { computeDelta, computeTestsChanged } from './history/comparison';
 import { detectFlakyTests } from './history/flaky-detection';
 
 const DEFAULT_SLOWEST_TESTS = 10;
+const DEFAULT_FLAKY_THRESHOLD = 2;
 
 function parseSlowestTestsCount(input: string): number {
   const trimmed = input.trim();
@@ -42,6 +43,30 @@ function parseSlowestTestsCount(input: string): number {
   }
 
   return Number.parseInt(trimmed, 10);
+}
+
+function parseFlakyThreshold(input: string): number {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return DEFAULT_FLAKY_THRESHOLD;
+  }
+
+  if (!/^\d+$/.test(trimmed)) {
+    core.warning(
+      `Invalid "flaky-threshold" input "${input}". Expected a positive integer; defaulting to ${DEFAULT_FLAKY_THRESHOLD}.`,
+    );
+    return DEFAULT_FLAKY_THRESHOLD;
+  }
+
+  const parsed = Number.parseInt(trimmed, 10);
+  if (parsed < 1) {
+    core.warning(
+      `Invalid "flaky-threshold" input "${input}". Expected a positive integer; defaulting to ${DEFAULT_FLAKY_THRESHOLD}.`,
+    );
+    return DEFAULT_FLAKY_THRESHOLD;
+  }
+
+  return parsed;
 }
 
 function parseFile(filePath: string, reportFormat: string): ParsedTestRun | null {
@@ -77,8 +102,7 @@ export async function run(): Promise<RunResult> {
     const createCheck = core.getInput('create-check') === 'true';
     const checkName = core.getInput('check-name') || 'Test Results';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
-    const flakyThresholdRaw = core.getInput('flaky-threshold') || '2';
-    const flakyThreshold = parseInt(flakyThresholdRaw, 10) || 2;
+    const flakyThreshold = parseFlakyThreshold(core.getInput('flaky-threshold'));
     const historyEnabled = core.getInput('history') !== 'false';
     const historyLimitRaw = core.getInput('history-limit') || '20';
     const historyLimitParsed = parseInt(historyLimitRaw, 10);
