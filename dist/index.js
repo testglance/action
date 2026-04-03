@@ -55200,6 +55200,7 @@ const manager_1 = __nccwpck_require__(75878);
 const comparison_1 = __nccwpck_require__(88232);
 const flaky_detection_1 = __nccwpck_require__(87690);
 const DEFAULT_SLOWEST_TESTS = 10;
+const DEFAULT_FLAKY_THRESHOLD = 2;
 function parseSlowestTestsCount(input) {
     const trimmed = input.trim();
     if (!trimmed) {
@@ -55210,6 +55211,22 @@ function parseSlowestTestsCount(input) {
         return DEFAULT_SLOWEST_TESTS;
     }
     return Number.parseInt(trimmed, 10);
+}
+function parseFlakyThreshold(input) {
+    const trimmed = input.trim();
+    if (!trimmed) {
+        return DEFAULT_FLAKY_THRESHOLD;
+    }
+    if (!/^\d+$/.test(trimmed)) {
+        core.warning(`Invalid "flaky-threshold" input "${input}". Expected a positive integer; defaulting to ${DEFAULT_FLAKY_THRESHOLD}.`);
+        return DEFAULT_FLAKY_THRESHOLD;
+    }
+    const parsed = Number.parseInt(trimmed, 10);
+    if (parsed < 1) {
+        core.warning(`Invalid "flaky-threshold" input "${input}". Expected a positive integer; defaulting to ${DEFAULT_FLAKY_THRESHOLD}.`);
+        return DEFAULT_FLAKY_THRESHOLD;
+    }
+    return parsed;
 }
 function parseFile(filePath, reportFormat) {
     const content = (0, node_fs_1.readFileSync)(filePath, 'utf-8');
@@ -55241,8 +55258,7 @@ async function run() {
         const createCheck = core.getInput('create-check') === 'true';
         const checkName = core.getInput('check-name') || 'Test Results';
         const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
-        const flakyThresholdRaw = core.getInput('flaky-threshold') || '2';
-        const flakyThreshold = parseInt(flakyThresholdRaw, 10) || 2;
+        const flakyThreshold = parseFlakyThreshold(core.getInput('flaky-threshold'));
         const historyEnabled = core.getInput('history') !== 'false';
         const historyLimitRaw = core.getInput('history-limit') || '20';
         const historyLimitParsed = parseInt(historyLimitRaw, 10);
@@ -55808,12 +55824,19 @@ function renderTestsChangedCompact(report) {
     return line;
 }
 const MAX_FLAKY_COMPACT = 5;
+function toInlineCode(value) {
+    const normalized = value.replace(/\r?\n/g, ' ');
+    const runs = normalized.match(/`+/g);
+    const longestRun = runs ? Math.max(...runs.map((r) => r.length)) : 0;
+    const fence = '`'.repeat(longestRun + 1);
+    return `${fence}${normalized}${fence}`;
+}
 function renderFlakyCompact(result) {
     if (!result.hasFlakyTests)
         return '';
     const total = result.flakyTests.length;
     const shown = result.flakyTests.slice(0, MAX_FLAKY_COMPACT);
-    const names = shown.map((t) => `\`${t.name}\``).join(', ');
+    const names = shown.map((t) => toInlineCode(t.name)).join(', ');
     if (total > MAX_FLAKY_COMPACT) {
         return `⚠️ ${total} flaky tests: ${names}, +${total - MAX_FLAKY_COMPACT} more`;
     }
