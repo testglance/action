@@ -132,6 +132,7 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'check-name': '',
     'slowest-tests': '',
     'flaky-threshold': '2',
+    'perf-threshold': '200',
     history: 'false',
     'history-limit': '20',
   };
@@ -454,6 +455,7 @@ describe('run() integration', () => {
         delta: null,
         testsChanged: null,
         flaky: null,
+        perfRegression: null,
       });
     });
 
@@ -477,6 +479,7 @@ describe('run() integration', () => {
         delta: null,
         testsChanged: null,
         flaky: null,
+        perfRegression: null,
       });
     });
 
@@ -1531,6 +1534,203 @@ describe('run() integration', () => {
       const summaryCall = mockGenerateSummary.mock.calls[0][0];
       expect(summaryCall.flaky).not.toBeNull();
       expect(summaryCall.flaky.hasFlakyTests).toBe(true);
+    });
+  });
+
+  describe('performance regression detection (Story 7.6)', () => {
+    function makePerfHistory(entryCount: number) {
+      // VALID_PARSED_RUN has test1 duration=0.5 and test2 duration=0.5
+      // After history load, manager.appendRun adds one more entry from VALID_PARSED_RUN.
+      // Use very small durations so that 0.5 represents a >200% increase (regression).
+      const entries = Array.from({ length: entryCount }, (_, i) => ({
+        timestamp: `2026-04-0${(i % 9) + 1}T12:00:00.000Z`,
+        commitSha: `sha${i}`,
+        summary: { total: 2, passed: 2, failed: 0, skipped: 0, errored: 0, duration: 10.0 + i },
+        tests: [
+          {
+            name: 'test1',
+            suite: 'suite1',
+            status: 'passed' as const,
+            duration: 0.1,
+          },
+          { name: 'test2', suite: 'suite1', status: 'passed' as const, duration: 0.1 },
+        ],
+      }));
+      return JSON.stringify({ version: 1, branch: 'main', entries });
+    }
+
+    async function setupPerfHistoryWithEntries(entryCount: number) {
+      setupInputs({ history: 'true' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return makePerfHistory(entryCount);
+        return '<xml>content</xml>';
+      });
+    }
+
+    it('perfRegression is passed to summary when history has >= 3 entries', async () => {
+      await setupPerfHistoryWithEntries(4);
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.perfRegression).not.toBeNull();
+      expect(summaryCall.perfRegression.hasRegressions).toBe(true);
+      expect(summaryCall.perfRegression.regressions[0].name).toBe('test1');
+    });
+
+    it('perfRegression is null when history has < 3 entries', async () => {
+      await setupPerfHistoryWithEntries(1);
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.perfRegression).toBeNull();
+    });
+
+    it('logs debug message when fewer than 3 runs', async () => {
+      await setupPerfHistoryWithEntries(1);
+
+      await run();
+
+      expect(mockDebug).toHaveBeenCalledWith(
+        'Need at least 3 runs for performance regression detection',
+      );
+    });
+
+    it('logs baseline message when trend exists but regression baseline is not ready', async () => {
+      await setupPerfHistoryWithEntries(2);
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.perfRegression).not.toBeNull();
+      expect(summaryCall.perfRegression.hasRegressions).toBe(false);
+      expect(mockDebug).toHaveBeenCalledWith(
+        'Performance regression detection needs 4 runs (3 baseline + current); collecting baseline data',
+      );
+    });
+
+    it('perfRegression is null when history is disabled', async () => {
+      setupInputs({ history: 'false' });
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.perfRegression).toBeNull();
+    });
+
+    it('perf regression error does not fail the action', async () => {
+      await setupPerfHistoryWithEntries(4);
+
+      const perfModule = await import('../history/perf-regression');
+      vi.spyOn(perfModule, 'detectPerfRegressions').mockImplementationOnce(() => {
+        throw new Error('perf detection boom');
+      });
+
+      await run();
+
+      expect(mockSetFailed).not.toHaveBeenCalled();
+      expect(mockDebug).toHaveBeenCalledWith(expect.stringContaining('perf detection boom'));
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.perfRegression).toBeNull();
+    });
+
+    it('perfRegression is passed to PR comment section', async () => {
+      setupInputs({ history: 'true', 'github-token': 'gh_token' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return makePerfHistory(4);
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      if (prCommentCall) {
+        expect(prCommentCall.section.perfRegression).not.toBeNull();
+        expect(prCommentCall.section.perfRegression.hasRegressions).toBe(true);
+      }
+    });
+
+    it('respects custom perf-threshold input', async () => {
+      setupInputs({ history: 'true', 'perf-threshold': '5000' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return makePerfHistory(4);
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.perfRegression).not.toBeNull();
+      expect(summaryCall.perfRegression.hasRegressions).toBe(false);
+    });
+
+    it('falls back to default perf-threshold when value is malformed', async () => {
+      setupInputs({ history: 'true', 'perf-threshold': 'abc' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return makePerfHistory(4);
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid "perf-threshold" input "abc"'),
+      );
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.perfRegression).not.toBeNull();
+      expect(summaryCall.perfRegression.hasRegressions).toBe(true);
+    });
+
+    it('includes sparkline in result', async () => {
+      await setupPerfHistoryWithEntries(4);
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.perfRegression.sparkline).toBeTruthy();
+      expect(typeof summaryCall.perfRegression.sparkline).toBe('string');
     });
   });
 });

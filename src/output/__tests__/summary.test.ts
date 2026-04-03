@@ -23,12 +23,14 @@ import {
   renderDeltaSection,
   renderTestsChangedSection,
   renderFlakySection,
+  renderPerfRegressionSection,
 } from '../summary';
 import type { Highlight } from '../../types';
 import type {
   DeltaComparison,
   TestsChangedReport,
   FlakyDetectionResult,
+  PerfRegressionResult,
 } from '../../history/types';
 
 function makeParsed(
@@ -1424,5 +1426,146 @@ describe('renderFlakySection', () => {
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
     const hasFlaky = rawCalls.some((c: string) => c.includes('Potentially Flaky Tests'));
     expect(hasFlaky).toBe(false);
+  });
+});
+
+describe('renderPerfRegressionSection', () => {
+  it('renders regressions table with sparkline', () => {
+    const result: PerfRegressionResult = {
+      hasRegressions: true,
+      regressions: [
+        {
+          name: 'test_heavy_query',
+          suite: 'db',
+          currentDuration: 4.0,
+          medianDuration: 1.0,
+          increasePercent: 300,
+        },
+      ],
+      sparkline: '▁▂▂▃▅',
+    };
+    const output = renderPerfRegressionSection(result);
+    expect(output).toContain('### Performance Regressions');
+    expect(output).toContain('**Duration trend:** ▁▂▂▃▅');
+    expect(output).toContain('test_heavy_query');
+    expect(output).toContain('db');
+    expect(output).toContain('+300%');
+  });
+
+  it('renders only sparkline when no regressions', () => {
+    const result: PerfRegressionResult = {
+      hasRegressions: false,
+      regressions: [],
+      sparkline: '▄▄▄▄▄',
+    };
+    const output = renderPerfRegressionSection(result);
+    expect(output).toContain('### Performance Regressions');
+    expect(output).toContain('**Duration trend:** ▄▄▄▄▄');
+    expect(output).not.toContain('| Test |');
+  });
+
+  it('wraps in details when more than 15 regressions', () => {
+    const regressions = Array.from({ length: 20 }, (_, i) => ({
+      name: `test_${i}`,
+      suite: 'suite',
+      currentDuration: 10.0,
+      medianDuration: 1.0,
+      increasePercent: 900 - i,
+    }));
+    const result: PerfRegressionResult = {
+      hasRegressions: true,
+      regressions,
+      sparkline: '▁▅',
+    };
+    const output = renderPerfRegressionSection(result);
+    expect(output).toContain('<details>');
+    expect(output).toContain('Showing 15 of 20 regressions');
+    expect(output).toContain('and 5 more...');
+  });
+
+  it('escapes HTML in test names', () => {
+    const result: PerfRegressionResult = {
+      hasRegressions: true,
+      regressions: [
+        {
+          name: '<script>alert("xss")</script>',
+          suite: 'evil',
+          currentDuration: 10.0,
+          medianDuration: 1.0,
+          increasePercent: 900,
+        },
+      ],
+      sparkline: '▁',
+    };
+    const output = renderPerfRegressionSection(result);
+    expect(output).toContain('&lt;script&gt;');
+    expect(output).not.toContain('<script>');
+  });
+
+  it('formats durations using formatDuration', () => {
+    const result: PerfRegressionResult = {
+      hasRegressions: true,
+      regressions: [
+        {
+          name: 'slow_test',
+          suite: 'suite',
+          currentDuration: 90.5,
+          medianDuration: 30.0,
+          increasePercent: 201.7,
+        },
+      ],
+      sparkline: '▁',
+    };
+    const output = renderPerfRegressionSection(result);
+    expect(output).toContain('1m 30.5s');
+    expect(output).toContain('30.0s');
+  });
+
+  it('is wired into generateSummary after flaky section', async () => {
+    mockSummary.addHeading.mockClear();
+    mockSummary.addTable.mockClear();
+    mockSummary.addRaw.mockClear();
+    mockSummary.addLink.mockClear();
+    mockSummary.write.mockClear();
+
+    await generateSummary({
+      parsed: makeParsed(),
+      apiSuccess: false,
+      perfRegression: {
+        hasRegressions: true,
+        regressions: [
+          {
+            name: 'slow_test',
+            suite: 'suite',
+            currentDuration: 10.0,
+            medianDuration: 1.0,
+            increasePercent: 900,
+          },
+        ],
+        sparkline: '▁▅',
+      },
+    });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasPerf = rawCalls.some((c: string) => c.includes('Performance Regressions'));
+    expect(hasPerf).toBe(true);
+  });
+
+  it('not rendered in generateSummary when perfRegression is null', async () => {
+    mockSummary.addHeading.mockClear();
+    mockSummary.addTable.mockClear();
+    mockSummary.addRaw.mockClear();
+    mockSummary.addLink.mockClear();
+    mockSummary.write.mockClear();
+
+    await generateSummary({
+      parsed: makeParsed(),
+      apiSuccess: false,
+      perfRegression: null,
+    });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasPerf = rawCalls.some((c: string) => c.includes('Performance Regressions'));
+    expect(hasPerf).toBe(false);
   });
 });

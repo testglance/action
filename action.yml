@@ -44,6 +44,10 @@ inputs:
     description: 'Minimum status flips to flag a test as flaky (positive integer, last 10 runs)'
     required: false
     default: '2'
+  perf-threshold:
+    description: 'Percentage increase over median duration to flag as performance regression (default: 200 means 3x slower)'
+    required: false
+    default: '200'
   history:
     description: 'Enable run history tracking via Actions Cache'
     required: false

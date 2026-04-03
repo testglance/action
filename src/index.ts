@@ -22,12 +22,15 @@ import type {
   DeltaComparison,
   TestsChangedReport,
   FlakyDetectionResult,
+  PerfRegressionResult,
 } from './history/types';
 import { computeDelta, computeTestsChanged } from './history/comparison';
 import { detectFlakyTests } from './history/flaky-detection';
+import { detectPerfRegressions } from './history/perf-regression';
 
 const DEFAULT_SLOWEST_TESTS = 10;
 const DEFAULT_FLAKY_THRESHOLD = 2;
+const DEFAULT_PERF_THRESHOLD = 200;
 
 function parseSlowestTestsCount(input: string): number {
   const trimmed = input.trim();
@@ -69,6 +72,22 @@ function parseFlakyThreshold(input: string): number {
   return parsed;
 }
 
+function parsePerfThreshold(input: string): number {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return DEFAULT_PERF_THRESHOLD;
+  }
+
+  if (!/^\d+$/.test(trimmed)) {
+    core.warning(
+      `Invalid "perf-threshold" input "${input}". Expected a non-negative integer; defaulting to ${DEFAULT_PERF_THRESHOLD}.`,
+    );
+    return DEFAULT_PERF_THRESHOLD;
+  }
+
+  return Number.parseInt(trimmed, 10);
+}
+
 function parseFile(filePath: string, reportFormat: string): ParsedTestRun | null {
   const content = readFileSync(filePath, 'utf-8');
   const format = reportFormat === 'auto' ? detectFormat(filePath) : reportFormat;
@@ -103,6 +122,7 @@ export async function run(): Promise<RunResult> {
     const checkName = core.getInput('check-name') || 'Test Results';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
     const flakyThreshold = parseFlakyThreshold(core.getInput('flaky-threshold'));
+    const perfThreshold = parsePerfThreshold(core.getInput('perf-threshold'));
     const historyEnabled = core.getInput('history') !== 'false';
     const historyLimitRaw = core.getInput('history-limit') || '20';
     const historyLimitParsed = parseInt(historyLimitRaw, 10);
@@ -238,6 +258,25 @@ export async function run(): Promise<RunResult> {
       core.debug('Need at least 5 runs for flaky detection');
     }
 
+    let perfRegression: PerfRegressionResult | null = null;
+
+    if (loadedHistory && loadedHistory.entries.length >= 3) {
+      try {
+        perfRegression = detectPerfRegressions(loadedHistory.entries, perfThreshold);
+        if (loadedHistory.entries.length < 4) {
+          core.debug(
+            'Performance regression detection needs 4 runs (3 baseline + current); collecting baseline data',
+          );
+        }
+      } catch (err) {
+        core.debug(
+          `Performance regression detection failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else if (historyEnabled && loadedHistory) {
+      core.debug('Need at least 3 runs for performance regression detection');
+    }
+
     let baseDelta: DeltaComparison | null = null;
     const baseBranch = (process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '');
 
@@ -306,6 +345,7 @@ export async function run(): Promise<RunResult> {
       delta,
       testsChanged,
       flaky,
+      perfRegression,
     });
 
     if (createCheck) {
@@ -331,6 +371,7 @@ export async function run(): Promise<RunResult> {
           runUrl: dashboardUrl,
           testsChanged,
           flaky,
+          perfRegression,
           baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
           baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
         },
