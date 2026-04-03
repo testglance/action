@@ -440,6 +440,24 @@ describe('renderFlakyCompact', () => {
     expect(output).toBe('⚠️ 1 flaky test: `test_solo`');
   });
 
+  it('renders names containing backticks safely in inline code', () => {
+    const result: FlakyDetectionResult = {
+      hasFlakyTests: true,
+      flakyTests: [
+        {
+          name: 'test `with` tick\nline2',
+          suite: 'suite',
+          flakyRate: 50,
+          flipCount: 2,
+          recentStatuses: ['passed', 'failed', 'passed'],
+        },
+      ],
+    };
+
+    const output = renderFlakyCompact(result);
+    expect(output).toBe('⚠️ 1 flaky test: ``test `with` tick line2``');
+  });
+
   it('is wired into renderTestJobSection after testsChanged', () => {
     const section = makeSection({
       flaky: {

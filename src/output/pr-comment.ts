@@ -207,12 +207,20 @@ function renderTestsChangedCompact(report: TestsChangedReport): string {
 
 const MAX_FLAKY_COMPACT = 5;
 
+function toInlineCode(value: string): string {
+  const normalized = value.replace(/\r?\n/g, ' ');
+  const runs = normalized.match(/`+/g);
+  const longestRun = runs ? Math.max(...runs.map((r) => r.length)) : 0;
+  const fence = '`'.repeat(longestRun + 1);
+  return `${fence}${normalized}${fence}`;
+}
+
 export function renderFlakyCompact(result: FlakyDetectionResult): string {
   if (!result.hasFlakyTests) return '';
 
   const total = result.flakyTests.length;
   const shown = result.flakyTests.slice(0, MAX_FLAKY_COMPACT);
-  const names = shown.map((t) => `\`${t.name}\``).join(', ');
+  const names = shown.map((t) => toInlineCode(t.name)).join(', ');
 
   if (total > MAX_FLAKY_COMPACT) {
     return `⚠️ ${total} flaky tests: ${names}, +${total - MAX_FLAKY_COMPACT} more`;
