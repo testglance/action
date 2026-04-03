@@ -55140,6 +55140,88 @@ exports.HistoryManager = HistoryManager;
 
 /***/ }),
 
+/***/ 77994:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.detectPerfRegressions = detectPerfRegressions;
+exports.buildDurationSparkline = buildDurationSparkline;
+const comparison_1 = __nccwpck_require__(88232);
+const SPARKLINE_CHARS = '▁▂▃▄▅▆▇█';
+function median(values) {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 !== 0)
+        return sorted[mid];
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+function detectPerfRegressions(entries, threshold = 200) {
+    const currentEntry = entries[entries.length - 1];
+    const previousEntries = entries.slice(0, -1);
+    const durationMap = new Map();
+    for (const entry of previousEntries) {
+        for (const test of entry.tests) {
+            const key = (0, comparison_1.buildTestKey)(test.suite, test.name);
+            let durations = durationMap.get(key);
+            if (!durations) {
+                durations = [];
+                durationMap.set(key, durations);
+            }
+            durations.push(test.duration);
+        }
+    }
+    const regressions = [];
+    for (const test of currentEntry.tests) {
+        if (test.duration === 0)
+            continue;
+        const key = (0, comparison_1.buildTestKey)(test.suite, test.name);
+        const previousDurations = durationMap.get(key);
+        if (!previousDurations || previousDurations.length < 3)
+            continue;
+        const med = median(previousDurations);
+        if (med === 0)
+            continue;
+        const increasePercent = ((test.duration - med) / med) * 100;
+        if (increasePercent > threshold) {
+            regressions.push({
+                name: test.name,
+                suite: test.suite,
+                currentDuration: test.duration,
+                medianDuration: med,
+                increasePercent,
+            });
+        }
+    }
+    regressions.sort((a, b) => b.increasePercent - a.increasePercent);
+    return {
+        regressions,
+        hasRegressions: regressions.length > 0,
+        sparkline: buildDurationSparkline(entries),
+    };
+}
+function buildDurationSparkline(entries) {
+    if (entries.length === 0)
+        return '';
+    const durations = entries.map((e) => e.summary.duration);
+    const min = Math.min(...durations);
+    const max = Math.max(...durations);
+    if (min === max) {
+        return SPARKLINE_CHARS[4].repeat(durations.length);
+    }
+    const range = max - min;
+    return durations
+        .map((d) => {
+        const idx = Math.round(((d - min) / range) * (SPARKLINE_CHARS.length - 1));
+        return SPARKLINE_CHARS[idx];
+    })
+        .join('');
+}
+
+
+/***/ }),
+
 /***/ 46866:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -55199,8 +55281,10 @@ const actions_cache_storage_1 = __nccwpck_require__(58701);
 const manager_1 = __nccwpck_require__(75878);
 const comparison_1 = __nccwpck_require__(88232);
 const flaky_detection_1 = __nccwpck_require__(87690);
+const perf_regression_1 = __nccwpck_require__(77994);
 const DEFAULT_SLOWEST_TESTS = 10;
 const DEFAULT_FLAKY_THRESHOLD = 2;
+const DEFAULT_PERF_THRESHOLD = 200;
 function parseSlowestTestsCount(input) {
     const trimmed = input.trim();
     if (!trimmed) {
@@ -55227,6 +55311,17 @@ function parseFlakyThreshold(input) {
         return DEFAULT_FLAKY_THRESHOLD;
     }
     return parsed;
+}
+function parsePerfThreshold(input) {
+    const trimmed = input.trim();
+    if (!trimmed) {
+        return DEFAULT_PERF_THRESHOLD;
+    }
+    if (!/^\d+$/.test(trimmed)) {
+        core.warning(`Invalid "perf-threshold" input "${input}". Expected a non-negative integer; defaulting to ${DEFAULT_PERF_THRESHOLD}.`);
+        return DEFAULT_PERF_THRESHOLD;
+    }
+    return Number.parseInt(trimmed, 10);
 }
 function parseFile(filePath, reportFormat) {
     const content = (0, node_fs_1.readFileSync)(filePath, 'utf-8');
@@ -55259,6 +55354,7 @@ async function run() {
         const checkName = core.getInput('check-name') || 'Test Results';
         const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
         const flakyThreshold = parseFlakyThreshold(core.getInput('flaky-threshold'));
+        const perfThreshold = parsePerfThreshold(core.getInput('perf-threshold'));
         const historyEnabled = core.getInput('history') !== 'false';
         const historyLimitRaw = core.getInput('history-limit') || '20';
         const historyLimitParsed = parseInt(historyLimitRaw, 10);
@@ -55361,6 +55457,18 @@ async function run() {
         else if (historyEnabled && loadedHistory) {
             core.debug('Need at least 5 runs for flaky detection');
         }
+        let perfRegression = null;
+        if (loadedHistory && loadedHistory.entries.length >= 3) {
+            try {
+                perfRegression = (0, perf_regression_1.detectPerfRegressions)(loadedHistory.entries, perfThreshold);
+            }
+            catch (err) {
+                core.debug(`Performance regression detection failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        else if (historyEnabled && loadedHistory) {
+            core.debug('Need at least 3 runs for performance regression detection');
+        }
         let baseDelta = null;
         const baseBranch = (process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '');
         if (historyEnabled && baseBranch && loadedHistory) {
@@ -55418,6 +55526,7 @@ async function run() {
             delta,
             testsChanged,
             flaky,
+            perfRegression,
         });
         if (createCheck) {
             if (githubToken) {
@@ -55442,6 +55551,7 @@ async function run() {
                     runUrl: dashboardUrl,
                     testsChanged,
                     flaky,
+                    perfRegression,
                     baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
                     baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
                 },
@@ -55670,6 +55780,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.renderBaseBranchSection = renderBaseBranchSection;
 exports.renderTestJobSection = renderTestJobSection;
 exports.renderFlakyCompact = renderFlakyCompact;
+exports.renderPerfRegressionCompact = renderPerfRegressionCompact;
 exports.renderPrComment = renderPrComment;
 exports.mergeTestJobSection = mergeTestJobSection;
 const summary_1 = __nccwpck_require__(75942);
@@ -55799,6 +55910,10 @@ function renderTestJobSection(section) {
         lines.push(renderFlakyCompact(section.flaky));
         lines.push('');
     }
+    if (section.perfRegression && section.perfRegression.hasRegressions) {
+        lines.push(renderPerfRegressionCompact(section.perfRegression));
+        lines.push('');
+    }
     if (section.runUrl) {
         lines.push(`[View Run →](${section.runUrl})`);
     }
@@ -55841,6 +55956,20 @@ function renderFlakyCompact(result) {
         return `⚠️ ${total} flaky tests: ${names}, +${total - MAX_FLAKY_COMPACT} more`;
     }
     return `⚠️ ${total} flaky test${total === 1 ? '' : 's'}: ${names}`;
+}
+const MAX_PERF_COMPACT = 3;
+function renderPerfRegressionCompact(result) {
+    if (!result.hasRegressions)
+        return '';
+    const total = result.regressions.length;
+    const shown = result.regressions.slice(0, MAX_PERF_COMPACT);
+    const names = shown
+        .map((t) => `${toInlineCode(t.name)} (+${Math.round(t.increasePercent)}%)`)
+        .join(', ');
+    if (total > MAX_PERF_COMPACT) {
+        return `🐌 ${total} slower tests: ${names}, +${total - MAX_PERF_COMPACT} more`;
+    }
+    return `🐌 ${total} slower test${total === 1 ? '' : 's'}: ${names}`;
 }
 function renderPrComment(sections) {
     const lines = [];
@@ -55935,12 +56064,13 @@ exports.renderHighlights = renderHighlights;
 exports.renderDeltaSection = renderDeltaSection;
 exports.renderTestsChangedSection = renderTestsChangedSection;
 exports.renderFlakySection = renderFlakySection;
+exports.renderPerfRegressionSection = renderPerfRegressionSection;
 const core = __importStar(__nccwpck_require__(16966));
 const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, } = options;
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, } = options;
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
     core.summary.addHeading('TestGlance Results', 2);
@@ -55977,6 +56107,9 @@ async function generateSummary(options) {
     }
     if (flaky && flaky.hasFlakyTests) {
         core.summary.addRaw(renderFlakySection(flaky));
+    }
+    if (perfRegression) {
+        core.summary.addRaw(renderPerfRegressionSection(perfRegression));
     }
     try {
         if (parsed.suites.length > 1) {
@@ -56248,6 +56381,26 @@ function renderFlakySection(result) {
         '\n\n';
     if (result.flakyTests.length > MAX_FLAKY_TESTS_SHOWN) {
         lines.push(`<details><summary>Showing ${MAX_FLAKY_TESTS_SHOWN} of ${result.flakyTests.length} flaky tests</summary>\n\n${table}and ${result.flakyTests.length - MAX_FLAKY_TESTS_SHOWN} more...\n\n</details>\n\n`);
+    }
+    else {
+        lines.push(table);
+    }
+    return lines.join('');
+}
+const MAX_PERF_REGRESSIONS_SHOWN = 15;
+function renderPerfRegressionSection(result) {
+    const lines = ['### Performance Regressions\n\n'];
+    lines.push(`**Duration trend:** ${result.sparkline}\n\n`);
+    if (!result.hasRegressions) {
+        return lines.join('');
+    }
+    const shown = result.regressions.slice(0, MAX_PERF_REGRESSIONS_SHOWN);
+    const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${formatDuration(t.currentDuration)} | ${formatDuration(t.medianDuration)} | +${Math.round(t.increasePercent)}% |`);
+    const table = '| Test | Suite | Current | Median | Increase |\n|------|-------|---------|--------|----------|\n' +
+        rows.join('\n') +
+        '\n\n';
+    if (result.regressions.length > MAX_PERF_REGRESSIONS_SHOWN) {
+        lines.push(`<details><summary>Showing ${MAX_PERF_REGRESSIONS_SHOWN} of ${result.regressions.length} regressions</summary>\n\n${table}and ${result.regressions.length - MAX_PERF_REGRESSIONS_SHOWN} more...\n\n</details>\n\n`);
     }
     else {
         lines.push(table);
