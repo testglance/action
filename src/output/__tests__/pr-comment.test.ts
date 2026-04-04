@@ -7,6 +7,7 @@ import {
   renderBaseBranchSection,
   renderFlakyCompact,
   renderPerfRegressionCompact,
+  renderTrendLine,
 } from '../pr-comment';
 import type { Highlight } from '../../types';
 import type {
@@ -14,6 +15,7 @@ import type {
   TestsChangedReport,
   FlakyDetectionResult,
   PerfRegressionResult,
+  TrendIndicators,
 } from '../../history/types';
 
 function makeSection(overrides: Partial<PrCommentSection> = {}): PrCommentSection {
@@ -650,5 +652,91 @@ describe('renderPerfRegressionCompact', () => {
     const flakyIdx = result.indexOf('⚠️ 1 flaky test');
     const perfIdx = result.indexOf('🐌 1 slower test');
     expect(flakyIdx).toBeLessThan(perfIdx);
+  });
+});
+
+function makeTrends(overrides: Partial<TrendIndicators> = {}): TrendIndicators {
+  return {
+    passRate: { direction: 'up', current: 97.5, delta: 2.3, sparkline: '' },
+    duration: { direction: 'down', current: 12.4, delta: -1.2, deltaPercent: -8.8, sparkline: '' },
+    testCount: { current: 100, delta: 3 },
+    ...overrides,
+  };
+}
+
+describe('renderTrendLine', () => {
+  it('renders improving pass rate, faster duration, positive test count', () => {
+    const line = renderTrendLine(makeTrends());
+    expect(line).toContain('📈');
+    expect(line).toContain('Pass rate: 97.5% ↑ (+2.3%)');
+    expect(line).toContain('Duration: 12.4s ↓');
+    expect(line).toContain('Tests: 100 (+3)');
+  });
+
+  it('renders stable indicators', () => {
+    const line = renderTrendLine(
+      makeTrends({
+        passRate: { direction: 'stable', current: 95.0, delta: 0.2, sparkline: '' },
+        duration: {
+          direction: 'stable',
+          current: 10.0,
+          delta: 0.1,
+          deltaPercent: 1.0,
+          sparkline: '',
+        },
+        testCount: { current: 100, delta: 0 },
+      }),
+    );
+    expect(line).toContain('Pass rate: 95.0% →');
+    expect(line).toContain('Duration: 10.0s →');
+    expect(line).toContain('Tests: 100 (+0)');
+  });
+
+  it('renders declining pass rate, slower duration, negative test count', () => {
+    const line = renderTrendLine(
+      makeTrends({
+        passRate: { direction: 'down', current: 88.0, delta: -5.0, sparkline: '' },
+        duration: { direction: 'up', current: 15.0, delta: 3.0, deltaPercent: 25.0, sparkline: '' },
+        testCount: { current: 97, delta: -3 },
+      }),
+    );
+    expect(line).toContain('Pass rate: 88.0% ↓ (-5.0%)');
+    expect(line).toContain('Duration: 15.0s ↑');
+    expect(line).toContain('Tests: 97 (-3)');
+  });
+});
+
+describe('renderTestJobSection with trends', () => {
+  it('includes trend line when trends present', () => {
+    const section = makeSection({ trends: makeTrends() });
+    const result = renderTestJobSection(section);
+    expect(result).toContain('📈');
+    expect(result).toContain('Pass rate: 97.5% ↑');
+  });
+
+  it('omits trend line when trends is null', () => {
+    const section = makeSection({ trends: null });
+    const result = renderTestJobSection(section);
+    expect(result).not.toContain('📈');
+  });
+
+  it('omits trend line when trends is undefined', () => {
+    const section = makeSection();
+    const result = renderTestJobSection(section);
+    expect(result).not.toContain('📈');
+  });
+
+  it('renders trend line between stats and highlights', () => {
+    const section = makeSection({
+      trends: makeTrends(),
+      highlights: [
+        { type: 'new_tests', severity: 'info' as const, message: 'msg', data: { count: 5 } },
+      ],
+    });
+    const result = renderTestJobSection(section);
+    const trendIdx = result.indexOf('📈');
+    const highlightIdx = result.indexOf('| Signal |');
+    expect(trendIdx).toBeGreaterThan(0);
+    expect(trendIdx).toBeLessThan(highlightIdx);
   });
 });

@@ -24,6 +24,7 @@ import {
   renderTestsChangedSection,
   renderFlakySection,
   renderPerfRegressionSection,
+  renderTrendsSection,
 } from '../summary';
 import type { Highlight } from '../../types';
 import type {
@@ -31,6 +32,7 @@ import type {
   TestsChangedReport,
   FlakyDetectionResult,
   PerfRegressionResult,
+  TrendIndicators,
 } from '../../history/types';
 
 function makeParsed(
@@ -1567,5 +1569,99 @@ describe('renderPerfRegressionSection', () => {
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
     const hasPerf = rawCalls.some((c: string) => c.includes('Performance Regressions'));
     expect(hasPerf).toBe(false);
+  });
+});
+
+function makeTrends(overrides: Partial<TrendIndicators> = {}): TrendIndicators {
+  return {
+    passRate: { direction: 'up', current: 97.5, delta: 2.3, sparkline: '▃▅▅▆▇' },
+    duration: {
+      direction: 'down',
+      current: 12.4,
+      delta: -1.2,
+      deltaPercent: -8.8,
+      sparkline: '▅▃▃▂▁',
+    },
+    testCount: { current: 100, delta: 3 },
+    ...overrides,
+  };
+}
+
+describe('renderTrendsSection', () => {
+  it('renders pass rate with sparkline and arrow', () => {
+    const output = renderTrendsSection(makeTrends());
+    expect(output).toContain('### Trends');
+    expect(output).toContain('▃▅▅▆▇');
+    expect(output).toContain('97.5% ↑ (+2.3%)');
+  });
+
+  it('renders duration with sparkline and arrow', () => {
+    const output = renderTrendsSection(makeTrends());
+    expect(output).toContain('▅▃▃▂▁');
+    expect(output).toContain('12.4s ↓');
+  });
+
+  it('renders test count with delta', () => {
+    const output = renderTrendsSection(makeTrends());
+    expect(output).toContain('**Tests:** 100 (+3)');
+  });
+
+  it('omits sparklines when empty (< 5 entries)', () => {
+    const output = renderTrendsSection(
+      makeTrends({
+        passRate: { direction: 'stable', current: 95.0, delta: 0.0, sparkline: '' },
+        duration: {
+          direction: 'stable',
+          current: 10.0,
+          delta: 0.0,
+          deltaPercent: 0.0,
+          sparkline: '',
+        },
+      }),
+    );
+    expect(output).toContain('95.0% →');
+    expect(output).not.toContain('▃');
+    expect(output).not.toContain('��');
+  });
+
+  it('renders negative test count delta', () => {
+    const output = renderTrendsSection(makeTrends({ testCount: { current: 97, delta: -3 } }));
+    expect(output).toContain('**Tests:** 97 (-3)');
+  });
+
+  it('is wired into generateSummary when trends present', async () => {
+    mockSummary.addHeading.mockClear();
+    mockSummary.addTable.mockClear();
+    mockSummary.addRaw.mockClear();
+    mockSummary.addLink.mockClear();
+    mockSummary.write.mockClear();
+
+    await generateSummary({
+      parsed: makeParsed(),
+      apiSuccess: false,
+      trends: makeTrends(),
+    });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasTrends = rawCalls.some((c: string) => c.includes('### Trends'));
+    expect(hasTrends).toBe(true);
+  });
+
+  it('is not rendered when trends is null', async () => {
+    mockSummary.addHeading.mockClear();
+    mockSummary.addTable.mockClear();
+    mockSummary.addRaw.mockClear();
+    mockSummary.addLink.mockClear();
+    mockSummary.write.mockClear();
+
+    await generateSummary({
+      parsed: makeParsed(),
+      apiSuccess: false,
+      trends: null,
+    });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasTrends = rawCalls.some((c: string) => c.includes('### Trends'));
+    expect(hasTrends).toBe(false);
   });
 });
