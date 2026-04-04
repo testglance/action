@@ -55260,9 +55260,7 @@ function computeTrends(entries) {
     const durationDelta = currentDuration - avgPrevDuration;
     const durationDeltaPercent = avgPrevDuration !== 0 ? (durationDelta / avgPrevDuration) * 100 : 0;
     const previousEntry = entries.length >= 2 ? entries[entries.length - 2] : null;
-    const testCountDelta = previousEntry
-        ? current.summary.total - previousEntry.summary.total
-        : 0;
+    const testCountDelta = previousEntry ? current.summary.total - previousEntry.summary.total : 0;
     const allPassRates = entries.map((e) => e.summary.total > 0 ? (e.summary.passed / e.summary.total) * 100 : 0);
     const allDurations = entries.map((e) => e.summary.duration);
     return {
