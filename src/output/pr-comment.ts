@@ -4,6 +4,7 @@ import type {
   TestsChangedReport,
   FlakyDetectionResult,
   PerfRegressionResult,
+  TrendIndicators,
 } from '../history/types';
 import { formatDuration } from './summary';
 
@@ -22,6 +23,7 @@ export interface PrCommentSection {
   baseBranch?: string;
   flaky?: FlakyDetectionResult | null;
   perfRegression?: PerfRegressionResult | null;
+  trends?: TrendIndicators | null;
 }
 
 const SEVERITY_EMOJI: Record<HighlightSeverity, string> = {
@@ -139,6 +141,27 @@ export function renderBaseBranchSection(
   return lines.join('\n');
 }
 
+const TREND_ARROW: Record<string, string> = {
+  up: '↑',
+  stable: '→',
+  down: '↓',
+};
+
+export function renderTrendLine(trends: TrendIndicators): string {
+  const passSign = trends.passRate.delta >= 0 ? '+' : '';
+  const passArrow = TREND_ARROW[trends.passRate.direction];
+  const passStr = `Pass rate: ${trends.passRate.current.toFixed(1)}% ${passArrow} (${passSign}${trends.passRate.delta.toFixed(1)}%)`;
+
+  const durSign = trends.duration.delta >= 0 ? '+' : '';
+  const durArrow = TREND_ARROW[trends.duration.direction];
+  const durStr = `Duration: ${formatDuration(trends.duration.current)} ${durArrow} (${durSign}${formatDuration(Math.abs(trends.duration.delta))}, ${durSign}${trends.duration.deltaPercent.toFixed(1)}%)`;
+
+  const countSign = trends.testCount.delta >= 0 ? '+' : '';
+  const countStr = `Tests: ${trends.testCount.current} (${countSign}${trends.testCount.delta})`;
+
+  return `📈 ${passStr} · ${durStr} · ${countStr}`;
+}
+
 export function renderTestJobSection(section: PrCommentSection): string {
   const safeKey = sanitizeMarkerName(section.testJobName);
   const statusEmoji = section.failed > 0 ? '❌' : '✅';
@@ -152,6 +175,11 @@ export function renderTestJobSection(section: PrCommentSection): string {
     statsLine += ` | Health: ${section.healthScore}/100`;
   }
   lines.push(statsLine);
+
+  if (section.trends) {
+    lines.push(renderTrendLine(section.trends));
+  }
+
   lines.push('');
 
   if (section.highlights.length > 0) {

@@ -23,10 +23,12 @@ import type {
   TestsChangedReport,
   FlakyDetectionResult,
   PerfRegressionResult,
+  TrendIndicators,
 } from './history/types';
 import { computeDelta, computeTestsChanged } from './history/comparison';
 import { detectFlakyTests } from './history/flaky-detection';
 import { detectPerfRegressions } from './history/perf-regression';
+import { computeTrends } from './history/trends';
 
 const DEFAULT_SLOWEST_TESTS = 10;
 const DEFAULT_FLAKY_THRESHOLD = 2;
@@ -277,6 +279,16 @@ export async function run(): Promise<RunResult> {
       core.debug('Need at least 3 runs for performance regression detection');
     }
 
+    let trends: TrendIndicators | null = null;
+
+    if (loadedHistory && loadedHistory.entries.length >= 3) {
+      try {
+        trends = computeTrends(loadedHistory.entries);
+      } catch (err) {
+        core.debug(`Trend computation failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     let baseDelta: DeltaComparison | null = null;
     const baseBranch = (process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '');
 
@@ -346,6 +358,7 @@ export async function run(): Promise<RunResult> {
       testsChanged,
       flaky,
       perfRegression,
+      trends,
     });
 
     if (createCheck) {
@@ -372,6 +385,7 @@ export async function run(): Promise<RunResult> {
           testsChanged,
           flaky,
           perfRegression,
+          trends,
           baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
           baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
         },

@@ -78,6 +78,28 @@ export interface DeltaTestInfo {
   suite: string;
 }
 
+export type TrendDirection = 'up' | 'stable' | 'down';
+
+export interface TrendIndicators {
+  passRate: {
+    direction: TrendDirection;
+    current: number;
+    delta: number;
+    sparkline: string;
+  };
+  duration: {
+    direction: TrendDirection;
+    current: number;
+    delta: number;
+    deltaPercent: number;
+    sparkline: string;
+  };
+  testCount: {
+    current: number;
+    delta: number;
+  };
+}
+
 export interface DeltaComparison {
   testsAdded: DeltaTestInfo[];
   testsRemoved: DeltaTestInfo[];

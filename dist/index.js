@@ -55149,7 +55149,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.detectPerfRegressions = detectPerfRegressions;
 exports.buildDurationSparkline = buildDurationSparkline;
 const comparison_1 = __nccwpck_require__(88232);
-const SPARKLINE_CHARS = '▁▂▃▄▅▆▇█';
+const trends_1 = __nccwpck_require__(55709);
 function median(values) {
     const sorted = [...values].sort((a, b) => a - b);
     const mid = Math.floor(sorted.length / 2);
@@ -55206,19 +55206,82 @@ function detectPerfRegressions(entries, threshold = 200) {
 function buildDurationSparkline(entries) {
     if (entries.length === 0)
         return '';
-    const durations = entries.map((e) => e.summary.duration);
-    const min = Math.min(...durations);
-    const max = Math.max(...durations);
+    return (0, trends_1.buildSparkline)(entries.map((e) => e.summary.duration));
+}
+
+
+/***/ }),
+
+/***/ 55709:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.buildSparkline = buildSparkline;
+exports.computeTrends = computeTrends;
+const SPARKLINE_CHARS = '▁▂▃▄▅▆▇█';
+const PASS_RATE_THRESHOLD = 1.0;
+const DURATION_THRESHOLD = 5.0;
+const MIN_SPARKLINE_ENTRIES = 5;
+function buildSparkline(values) {
+    if (values.length === 0)
+        return '';
+    const min = Math.min(...values);
+    const max = Math.max(...values);
     if (min === max) {
-        return SPARKLINE_CHARS[4].repeat(durations.length);
+        return SPARKLINE_CHARS[4].repeat(values.length);
     }
     const range = max - min;
-    return durations
-        .map((d) => {
-        const idx = Math.round(((d - min) / range) * (SPARKLINE_CHARS.length - 1));
+    return values
+        .map((v) => {
+        const idx = Math.round(((v - min) / range) * (SPARKLINE_CHARS.length - 1));
         return SPARKLINE_CHARS[idx];
     })
         .join('');
+}
+function classifyDirection(delta, threshold) {
+    if (delta > threshold)
+        return 'up';
+    if (delta < -threshold)
+        return 'down';
+    return 'stable';
+}
+function computeTrends(entries) {
+    const current = entries[entries.length - 1];
+    const previous = entries.slice(0, -1);
+    const currentPassRate = current.summary.total > 0 ? (current.summary.passed / current.summary.total) * 100 : 0;
+    const prevPassRates = previous.map((e) => e.summary.total > 0 ? (e.summary.passed / e.summary.total) * 100 : 0);
+    const avgPrevPassRate = prevPassRates.reduce((sum, r) => sum + r, 0) / prevPassRates.length;
+    const passRateDelta = currentPassRate - avgPrevPassRate;
+    const currentDuration = current.summary.duration;
+    const prevDurations = previous.map((e) => e.summary.duration);
+    const avgPrevDuration = prevDurations.reduce((sum, d) => sum + d, 0) / prevDurations.length;
+    const durationDelta = currentDuration - avgPrevDuration;
+    const durationDeltaPercent = avgPrevDuration !== 0 ? (durationDelta / avgPrevDuration) * 100 : 0;
+    const previousEntry = entries.length >= 2 ? entries[entries.length - 2] : null;
+    const testCountDelta = previousEntry ? current.summary.total - previousEntry.summary.total : 0;
+    const allPassRates = entries.map((e) => e.summary.total > 0 ? (e.summary.passed / e.summary.total) * 100 : 0);
+    const allDurations = entries.map((e) => e.summary.duration);
+    return {
+        passRate: {
+            direction: classifyDirection(passRateDelta, PASS_RATE_THRESHOLD),
+            current: currentPassRate,
+            delta: passRateDelta,
+            sparkline: entries.length >= MIN_SPARKLINE_ENTRIES ? buildSparkline(allPassRates) : '',
+        },
+        duration: {
+            direction: classifyDirection(durationDeltaPercent, DURATION_THRESHOLD),
+            current: currentDuration,
+            delta: durationDelta,
+            deltaPercent: durationDeltaPercent,
+            sparkline: entries.length >= MIN_SPARKLINE_ENTRIES ? buildSparkline(allDurations) : '',
+        },
+        testCount: {
+            current: current.summary.total,
+            delta: testCountDelta,
+        },
+    };
 }
 
 
@@ -55284,6 +55347,7 @@ const manager_1 = __nccwpck_require__(75878);
 const comparison_1 = __nccwpck_require__(88232);
 const flaky_detection_1 = __nccwpck_require__(87690);
 const perf_regression_1 = __nccwpck_require__(77994);
+const trends_1 = __nccwpck_require__(55709);
 const DEFAULT_SLOWEST_TESTS = 10;
 const DEFAULT_FLAKY_THRESHOLD = 2;
 const DEFAULT_PERF_THRESHOLD = 200;
@@ -55474,6 +55538,15 @@ async function run() {
         else if (historyEnabled && loadedHistory) {
             core.debug('Need at least 3 runs for performance regression detection');
         }
+        let trends = null;
+        if (loadedHistory && loadedHistory.entries.length >= 3) {
+            try {
+                trends = (0, trends_1.computeTrends)(loadedHistory.entries);
+            }
+            catch (err) {
+                core.debug(`Trend computation failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
         let baseDelta = null;
         const baseBranch = (process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '');
         if (historyEnabled && baseBranch && loadedHistory) {
@@ -55532,6 +55605,7 @@ async function run() {
             testsChanged,
             flaky,
             perfRegression,
+            trends,
         });
         if (createCheck) {
             if (githubToken) {
@@ -55557,6 +55631,7 @@ async function run() {
                     testsChanged,
                     flaky,
                     perfRegression,
+                    trends,
                     baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
                     baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
                 },
@@ -55783,6 +55858,7 @@ async function postPrComment(options) {
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.renderBaseBranchSection = renderBaseBranchSection;
+exports.renderTrendLine = renderTrendLine;
 exports.renderTestJobSection = renderTestJobSection;
 exports.renderFlakyCompact = renderFlakyCompact;
 exports.renderPerfRegressionCompact = renderPerfRegressionCompact;
@@ -55882,6 +55958,22 @@ function renderBaseBranchSection(baseDelta, baseBranch) {
     }
     return lines.join('\n');
 }
+const TREND_ARROW = {
+    up: '↑',
+    stable: '→',
+    down: '↓',
+};
+function renderTrendLine(trends) {
+    const passSign = trends.passRate.delta >= 0 ? '+' : '';
+    const passArrow = TREND_ARROW[trends.passRate.direction];
+    const passStr = `Pass rate: ${trends.passRate.current.toFixed(1)}% ${passArrow} (${passSign}${trends.passRate.delta.toFixed(1)}%)`;
+    const durSign = trends.duration.delta >= 0 ? '+' : '';
+    const durArrow = TREND_ARROW[trends.duration.direction];
+    const durStr = `Duration: ${(0, summary_1.formatDuration)(trends.duration.current)} ${durArrow} (${durSign}${(0, summary_1.formatDuration)(Math.abs(trends.duration.delta))}, ${durSign}${trends.duration.deltaPercent.toFixed(1)}%)`;
+    const countSign = trends.testCount.delta >= 0 ? '+' : '';
+    const countStr = `Tests: ${trends.testCount.current} (${countSign}${trends.testCount.delta})`;
+    return `📈 ${passStr} · ${durStr} · ${countStr}`;
+}
 function renderTestJobSection(section) {
     const safeKey = sanitizeMarkerName(section.testJobName);
     const statusEmoji = section.failed > 0 ? '❌' : '✅';
@@ -55893,6 +55985,9 @@ function renderTestJobSection(section) {
         statsLine += ` | Health: ${section.healthScore}/100`;
     }
     lines.push(statsLine);
+    if (section.trends) {
+        lines.push(renderTrendLine(section.trends));
+    }
     lines.push('');
     if (section.highlights.length > 0) {
         const sorted = [...section.highlights].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
@@ -56069,13 +56164,14 @@ exports.renderHighlights = renderHighlights;
 exports.renderDeltaSection = renderDeltaSection;
 exports.renderTestsChangedSection = renderTestsChangedSection;
 exports.renderFlakySection = renderFlakySection;
+exports.renderTrendsSection = renderTrendsSection;
 exports.renderPerfRegressionSection = renderPerfRegressionSection;
 const core = __importStar(__nccwpck_require__(16966));
 const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, } = options;
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, trends, } = options;
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
     core.summary.addHeading('TestGlance Results', 2);
@@ -56103,6 +56199,9 @@ async function generateSummary(options) {
     }
     if (highlights && highlights.length > 0) {
         core.summary.addRaw(renderHighlights(highlights, dashboardUrl));
+    }
+    if (trends) {
+        core.summary.addRaw(renderTrendsSection(trends));
     }
     if (delta) {
         core.summary.addRaw(renderDeltaSection(delta));
@@ -56390,6 +56489,33 @@ function renderFlakySection(result) {
     else {
         lines.push(table);
     }
+    return lines.join('');
+}
+const TREND_ARROW = {
+    up: '↑',
+    stable: '→',
+    down: '↓',
+};
+function renderTrendsSection(trends) {
+    const lines = ['### Trends\n\n'];
+    const passSign = trends.passRate.delta >= 0 ? '+' : '';
+    const passArrow = TREND_ARROW[trends.passRate.direction];
+    let passLine = `**Pass rate:** `;
+    if (trends.passRate.sparkline) {
+        passLine += `${trends.passRate.sparkline} `;
+    }
+    passLine += `${trends.passRate.current.toFixed(1)}% ${passArrow} (${passSign}${trends.passRate.delta.toFixed(1)}%)\n\n`;
+    lines.push(passLine);
+    const durSign = trends.duration.delta >= 0 ? '+' : '';
+    const durArrow = TREND_ARROW[trends.duration.direction];
+    let durLine = `**Duration:** `;
+    if (trends.duration.sparkline) {
+        durLine += `${trends.duration.sparkline} `;
+    }
+    durLine += `${formatDuration(trends.duration.current)} ${durArrow} (${durSign}${formatDuration(Math.abs(trends.duration.delta))})\n\n`;
+    lines.push(durLine);
+    const countSign = trends.testCount.delta >= 0 ? '+' : '';
+    lines.push(`**Tests:** ${trends.testCount.current} (${countSign}${trends.testCount.delta})\n\n`);
     return lines.join('');
 }
 const MAX_PERF_REGRESSIONS_SHOWN = 15;

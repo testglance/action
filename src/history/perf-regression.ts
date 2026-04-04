@@ -1,7 +1,6 @@
 import type { HistoryEntry, PerfRegressionInfo, PerfRegressionResult } from './types';
 import { buildTestKey } from './comparison';
-
-const SPARKLINE_CHARS = '▁▂▃▄▅▆▇█';
+import { buildSparkline } from './trends';
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -69,20 +68,5 @@ export function detectPerfRegressions(
 
 export function buildDurationSparkline(entries: HistoryEntry[]): string {
   if (entries.length === 0) return '';
-
-  const durations = entries.map((e) => e.summary.duration);
-  const min = Math.min(...durations);
-  const max = Math.max(...durations);
-
-  if (min === max) {
-    return SPARKLINE_CHARS[4].repeat(durations.length);
-  }
-
-  const range = max - min;
-  return durations
-    .map((d) => {
-      const idx = Math.round(((d - min) / range) * (SPARKLINE_CHARS.length - 1));
-      return SPARKLINE_CHARS[idx];
-    })
-    .join('');
+  return buildSparkline(entries.map((e) => e.summary.duration));
 }

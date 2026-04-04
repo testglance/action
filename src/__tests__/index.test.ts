@@ -456,6 +456,7 @@ describe('run() integration', () => {
         testsChanged: null,
         flaky: null,
         perfRegression: null,
+        trends: null,
       });
     });
 
@@ -480,6 +481,7 @@ describe('run() integration', () => {
         testsChanged: null,
         flaky: null,
         perfRegression: null,
+        trends: null,
       });
     });
 
@@ -1731,6 +1733,120 @@ describe('run() integration', () => {
       const summaryCall = mockGenerateSummary.mock.calls[0][0];
       expect(summaryCall.perfRegression.sparkline).toBeTruthy();
       expect(typeof summaryCall.perfRegression.sparkline).toBe('string');
+    });
+  });
+
+  describe('trend indicators (Story 7.7)', () => {
+    function makeTrendHistory(entryCount: number) {
+      const entries = Array.from({ length: entryCount }, (_, i) => ({
+        timestamp: `2026-04-0${(i % 9) + 1}T12:00:00.000Z`,
+        commitSha: `sha${i}`,
+        summary: {
+          total: 100 + i,
+          passed: 95 + i,
+          failed: 3,
+          skipped: 2,
+          errored: 0,
+          duration: 10.0 + i,
+        },
+        tests: [
+          { name: 'test1', suite: 'suite1', status: 'passed' as const, duration: 0.5 },
+          { name: 'test2', suite: 'suite1', status: 'passed' as const, duration: 0.5 },
+        ],
+      }));
+      return JSON.stringify({ version: 1, branch: 'main', entries });
+    }
+
+    async function setupTrendHistoryWithEntries(entryCount: number) {
+      setupInputs({ history: 'true' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json'))
+          return makeTrendHistory(entryCount);
+        return '<xml>content</xml>';
+      });
+    }
+
+    it('trends computed and passed to summary when >= 3 entries', async () => {
+      await setupTrendHistoryWithEntries(3);
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.trends).not.toBeNull();
+      expect(summaryCall.trends.passRate).toBeDefined();
+      expect(summaryCall.trends.duration).toBeDefined();
+      expect(summaryCall.trends.testCount).toBeDefined();
+    });
+
+    it('trends is null when < 3 entries', async () => {
+      await setupTrendHistoryWithEntries(1);
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.trends).toBeNull();
+    });
+
+    it('trends is null when history is disabled', async () => {
+      setupInputs({ history: 'false' });
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.trends).toBeNull();
+    });
+
+    it('trends error does not fail the action', async () => {
+      await setupTrendHistoryWithEntries(3);
+
+      const trendsModule = await import('../history/trends');
+      vi.spyOn(trendsModule, 'computeTrends').mockImplementationOnce(() => {
+        throw new Error('trends computation boom');
+      });
+
+      await run();
+
+      expect(mockSetFailed).not.toHaveBeenCalled();
+      expect(mockDebug).toHaveBeenCalledWith(expect.stringContaining('trends computation boom'));
+
+      const summaryCall = mockGenerateSummary.mock.calls[0][0];
+      expect(summaryCall.trends).toBeNull();
+    });
+
+    it('trends is passed to PR comment section', async () => {
+      setupInputs({ history: 'true', 'github-token': 'gh_token' });
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      const cache = await import('@actions/cache');
+      (cache.restoreCache as ReturnType<typeof vi.fn>).mockResolvedValueOnce('some-cache-key');
+
+      const fs = await import('node:fs');
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (p: string) => typeof p === 'string' && p.includes('history.json'),
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('history.json')) return makeTrendHistory(3);
+        return '<xml>content</xml>';
+      });
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      if (prCommentCall) {
+        expect(prCommentCall.section.trends).not.toBeNull();
+        expect(prCommentCall.section.trends.passRate).toBeDefined();
+      }
     });
   });
 });

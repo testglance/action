@@ -11,6 +11,7 @@ import type {
   TestsChangedReport,
   FlakyDetectionResult,
   PerfRegressionResult,
+  TrendIndicators,
 } from '../history/types';
 
 export interface SummaryOptions {
@@ -26,6 +27,7 @@ export interface SummaryOptions {
   testsChanged?: TestsChangedReport | null;
   flaky?: FlakyDetectionResult | null;
   perfRegression?: PerfRegressionResult | null;
+  trends?: TrendIndicators | null;
 }
 
 const MAX_FAILED_TESTS_SHOWN = 25;
@@ -45,6 +47,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
     testsChanged,
     flaky,
     perfRegression,
+    trends,
   } = options;
   const { summary } = parsed;
   const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
@@ -77,6 +80,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
   if (highlights && highlights.length > 0) {
     core.summary.addRaw(renderHighlights(highlights, dashboardUrl));
+  }
+
+  if (trends) {
+    core.summary.addRaw(renderTrendsSection(trends));
   }
 
   if (delta) {
@@ -458,6 +465,39 @@ export function renderFlakySection(result: FlakyDetectionResult): string {
   } else {
     lines.push(table);
   }
+
+  return lines.join('');
+}
+
+const TREND_ARROW: Record<string, string> = {
+  up: '↑',
+  stable: '→',
+  down: '↓',
+};
+
+export function renderTrendsSection(trends: TrendIndicators): string {
+  const lines: string[] = ['### Trends\n\n'];
+
+  const passSign = trends.passRate.delta >= 0 ? '+' : '';
+  const passArrow = TREND_ARROW[trends.passRate.direction];
+  let passLine = `**Pass rate:** `;
+  if (trends.passRate.sparkline) {
+    passLine += `${trends.passRate.sparkline} `;
+  }
+  passLine += `${trends.passRate.current.toFixed(1)}% ${passArrow} (${passSign}${trends.passRate.delta.toFixed(1)}%)\n\n`;
+  lines.push(passLine);
+
+  const durSign = trends.duration.delta >= 0 ? '+' : '';
+  const durArrow = TREND_ARROW[trends.duration.direction];
+  let durLine = `**Duration:** `;
+  if (trends.duration.sparkline) {
+    durLine += `${trends.duration.sparkline} `;
+  }
+  durLine += `${formatDuration(trends.duration.current)} ${durArrow} (${durSign}${formatDuration(Math.abs(trends.duration.delta))})\n\n`;
+  lines.push(durLine);
+
+  const countSign = trends.testCount.delta >= 0 ? '+' : '';
+  lines.push(`**Tests:** ${trends.testCount.current} (${countSign}${trends.testCount.delta})\n\n`);
 
   return lines.join('');
 }
