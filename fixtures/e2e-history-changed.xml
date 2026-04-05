@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="e2e-history" tests="5" failures="1" errors="0" skipped="0" time="5.400">
+  <testcase name="should create user" classname="api.users" time="0.900"/>
+  <testcase name="should list users" classname="api.users" time="0.600"/>
+  <testcase name="should update profile" classname="api.profile" time="4.200">
+    <failure message="Timeout waiting for response">TimeoutError: 4200ms exceeded</failure>
+  </testcase>
+  <testcase name="should validate email" classname="api.profile" time="0.400"/>
+  <testcase name="should upload avatar" classname="api.profile" time="0.300"/>
+</testsuite>
