@@ -258,13 +258,11 @@ describe('generateSummary', () => {
     await generateSummary({ parsed, apiSuccess: true });
 
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const tableCall = rawCalls.find((c: string) => c.includes('<th>Error</th>'));
-    expect(tableCall).toBeDefined();
-    const aIdx = tableCall!.indexOf('a-suite');
-    const mIdx = tableCall!.indexOf('m-suite');
-    const zIdx = tableCall!.indexOf('z-suite');
-    expect(aIdx).toBeLessThan(mIdx);
-    expect(mIdx).toBeLessThan(zIdx);
+    const failedTables = rawCalls.filter((c: string) => c.includes('<th>Error</th>'));
+    expect(failedTables).toHaveLength(3);
+    expect(failedTables[0]).toContain('a-suite');
+    expect(failedTables[1]).toContain('m-suite');
+    expect(failedTables[2]).toContain('z-suite');
   });
 
   it('renders stack traces in details/summary collapse', async () => {
