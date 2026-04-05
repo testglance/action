@@ -122,10 +122,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
       const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
 
       for (const t of shown) {
+        const error = truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH);
         core.summary.addRaw(
-          '<table>\n<tr><th>Suite</th><th>Test</th><th>Error</th></tr>\n' +
-            `<tr><td>${escapeHtml(t.suite)}</td><td><strong>${escapeHtml(t.name)}</strong></td><td>${escapeHtml(truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH))}</td></tr>` +
-            '\n</table>\n\n',
+          `**\`${escapeHtml(t.name)}\`** · \`${escapeHtml(t.suite)}\`\n` +
+            `> ${escapeHtml(error)}\n\n`,
         );
         if (t.stackTrace) {
           core.summary.addRaw(renderStackTrace(t.name, t.stackTrace));

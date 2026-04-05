@@ -163,11 +163,10 @@ describe('generateSummary', () => {
 
     expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('### ❌ Failed Tests'));
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const tableCall = rawCalls.find((c: string) => c.includes('<th>Suite</th>'));
-    expect(tableCall).toBeDefined();
-    expect(tableCall).toContain('<strong>should reject expired token</strong>');
-    expect(tableCall).toContain('auth.login');
-    expect(tableCall).toContain('Expected 401 but received 200');
+    const failureBlock = rawCalls.find((c: string) => c.includes('should reject expired token'));
+    expect(failureBlock).toBeDefined();
+    expect(failureBlock).toContain('`auth.login`');
+    expect(failureBlock).toContain('Expected 401 but received 200');
   });
 
   it('truncates error messages longer than 200 characters', async () => {
@@ -191,10 +190,10 @@ describe('generateSummary', () => {
     await generateSummary({ parsed, apiSuccess: true });
 
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const tableCall = rawCalls.find((c: string) => c.includes('<th>Error</th>'));
-    expect(tableCall).toBeDefined();
-    expect(tableCall).toContain('A'.repeat(197) + '...');
-    expect(tableCall).not.toContain('A'.repeat(198));
+    const failureBlock = rawCalls.find((c: string) => c.includes('`test1`'));
+    expect(failureBlock).toBeDefined();
+    expect(failureBlock).toContain('A'.repeat(197) + '...');
+    expect(failureBlock).not.toContain('A'.repeat(198));
   });
 
   it('shows "... and N more" when more than 25 failed tests', async () => {
@@ -258,11 +257,11 @@ describe('generateSummary', () => {
     await generateSummary({ parsed, apiSuccess: true });
 
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const failedTables = rawCalls.filter((c: string) => c.includes('<th>Error</th>'));
-    expect(failedTables).toHaveLength(3);
-    expect(failedTables[0]).toContain('a-suite');
-    expect(failedTables[1]).toContain('m-suite');
-    expect(failedTables[2]).toContain('z-suite');
+    const failureBlocks = rawCalls.filter((c: string) => c.includes('> err'));
+    expect(failureBlocks).toHaveLength(3);
+    expect(failureBlocks[0]).toContain('`a-suite`');
+    expect(failureBlocks[1]).toContain('`m-suite`');
+    expect(failureBlocks[2]).toContain('`z-suite`');
   });
 
   it('renders stack traces in details/summary collapse', async () => {
@@ -414,8 +413,8 @@ describe('generateSummary', () => {
     await generateSummary({ parsed, apiSuccess: true });
 
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const tableCall = rawCalls.find((c: string) => c.includes('<th>Suite</th>'));
-    expect(tableCall).toContain('No error message');
+    const failureBlock = rawCalls.find((c: string) => c.includes('`test1`'));
+    expect(failureBlock).toContain('No error message');
   });
 });
 
