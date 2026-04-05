@@ -56294,7 +56294,7 @@ async function generateSummary(options) {
             const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
             for (const t of shown) {
                 const error = (0, format_1.truncate)(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH);
-                core.summary.addRaw(`**\`${(0, format_1.escapeHtml)(t.name)}\`** · \`${(0, format_1.escapeHtml)(t.suite)}\`\n` +
+                core.summary.addRaw(`🔴 **\`${(0, format_1.escapeHtml)(t.name)}\`** · \`${(0, format_1.escapeHtml)(t.suite)}\`\n` +
                     `> ${(0, format_1.escapeHtml)(error)}\n\n`);
                 if (t.stackTrace) {
                     core.summary.addRaw(renderStackTrace(t.name, t.stackTrace));
