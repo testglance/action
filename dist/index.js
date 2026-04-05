@@ -54653,7 +54653,8 @@ class ActionsCacheStorage {
             `testglance-history-${branch}-${reportPathHash}-`,
             `testglance-history-${branch}-`,
         ];
-        this.tempDir = (0, node_fs_1.mkdtempSync)((0, node_path_1.join)((0, node_os_1.tmpdir)(), 'testglance-'));
+        this.tempDir = (0, node_path_1.join)((0, node_os_1.tmpdir)(), `testglance-history-${branch}-${reportPathHash}`);
+        (0, node_fs_1.mkdirSync)(this.tempDir, { recursive: true });
         this.filePath = (0, node_path_1.join)(this.tempDir, HISTORY_FILENAME);
     }
     async load() {
