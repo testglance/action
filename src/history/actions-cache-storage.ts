@@ -1,7 +1,7 @@
 import * as cache from '@actions/cache';
 import { ReserveCacheError } from '@actions/cache';
 import * as core from '@actions/core';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { HistoryFile, HistoryStorage } from './types';
@@ -21,7 +21,8 @@ export class ActionsCacheStorage implements HistoryStorage {
       `testglance-history-${branch}-${reportPathHash}-`,
       `testglance-history-${branch}-`,
     ];
-    this.tempDir = mkdtempSync(join(tmpdir(), 'testglance-'));
+    this.tempDir = join(tmpdir(), `testglance-history-${branch}-${reportPathHash}`);
+    mkdirSync(this.tempDir, { recursive: true });
     this.filePath = join(this.tempDir, HISTORY_FILENAME);
   }
 
