@@ -22,13 +22,13 @@ vi.mock('@actions/core', () => ({
   warning: (...args: unknown[]) => mockWarning(...args),
 }));
 
-const mockMkdtempSync = vi.fn().mockReturnValue('/tmp/testglance-abc');
+const mockMkdirSync = vi.fn();
 const mockWriteFileSync = vi.fn();
 const mockReadFileSync = vi.fn();
 const mockExistsSync = vi.fn();
 
 vi.mock('node:fs', () => ({
-  mkdtempSync: (...args: unknown[]) => mockMkdtempSync(...args),
+  mkdirSync: (...args: unknown[]) => mockMkdirSync(...args),
   writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args),
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
@@ -59,7 +59,10 @@ describe('ActionsCacheStorage', () => {
   it('cache key format includes branch, hash, and runId', () => {
     const storage = new ActionsCacheStorage('main', 'ab12cd34', '12345');
 
-    expect(mockMkdtempSync).toHaveBeenCalledWith(expect.stringContaining('testglance-'));
+    expect(mockMkdirSync).toHaveBeenCalledWith(
+      expect.stringContaining('testglance-history-main-ab12cd34'),
+      { recursive: true },
+    );
 
     mockRestoreCache.mockResolvedValue(undefined);
     storage.load();

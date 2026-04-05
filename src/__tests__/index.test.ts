@@ -18,7 +18,7 @@ const mockReadFileSync = vi.fn();
 
 vi.mock('node:fs', () => ({
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
-  mkdtempSync: vi.fn(() => '/tmp/testglance-mock'),
+  mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
   existsSync: vi.fn(() => false),
 }));
