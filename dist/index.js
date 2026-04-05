@@ -56292,13 +56292,10 @@ async function generateSummary(options) {
             core.summary.addRaw('---\n\n');
             core.summary.addRaw('### ❌ Failed Tests\n\n');
             const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
-            const tableRows = shown
-                .map((t) => `<tr><td>${(0, format_1.escapeHtml)(t.suite)}</td><td><strong>${(0, format_1.escapeHtml)(t.name)}</strong></td><td>${(0, format_1.escapeHtml)((0, format_1.truncate)(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH))}</td></tr>`)
-                .join('\n');
-            core.summary.addRaw('<table>\n<tr><th>Suite</th><th>Test</th><th>Error</th></tr>\n' +
-                tableRows +
-                '\n</table>\n\n');
             for (const t of shown) {
+                core.summary.addRaw('<table>\n<tr><th>Suite</th><th>Test</th><th>Error</th></tr>\n' +
+                    `<tr><td>${(0, format_1.escapeHtml)(t.suite)}</td><td><strong>${(0, format_1.escapeHtml)(t.name)}</strong></td><td>${(0, format_1.escapeHtml)((0, format_1.truncate)(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH))}</td></tr>` +
+                    '\n</table>\n\n');
                 if (t.stackTrace) {
                     core.summary.addRaw(renderStackTrace(t.name, t.stackTrace));
                 }
