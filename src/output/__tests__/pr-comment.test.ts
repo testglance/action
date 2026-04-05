@@ -38,20 +38,21 @@ describe('renderTestJobSection', () => {
     const result = renderTestJobSection(makeSection());
     expect(result).toContain('<!-- tj:ci/test -->');
     expect(result).toContain('<!-- /tj:ci/test -->');
-    expect(result).toContain('### ✅ ci/test');
-    expect(result).toContain('**313 tests**');
+    expect(result).toContain('### ✅ ci/test —');
+    expect(result).toContain('✅ 313 passed');
+    expect(result).not.toContain('❌ 0 failed');
     expect(result).toContain('11.2s');
-    expect(result).toContain('Health: 94/100');
+    expect(result).toContain('🏥 94/100');
   });
 
   it('renders failed section with failure emoji', () => {
     const result = renderTestJobSection(makeSection({ status: 'failed', failed: 2 }));
-    expect(result).toContain('### ❌ ci/test');
+    expect(result).toContain('### ❌ ci/test —');
   });
 
   it('omits health score when null', () => {
     const result = renderTestJobSection(makeSection({ healthScore: null }));
-    expect(result).not.toContain('Health:');
+    expect(result).not.toContain('🏥');
   });
 
   it('renders highlights as signal table', () => {
@@ -101,7 +102,7 @@ describe('renderPrComment', () => {
   it('wraps sections with top marker, header, and footer', () => {
     const result = renderPrComment([makeSection()]);
     expect(result).toContain('<!-- testglance-pr-summary -->');
-    expect(result).toContain('## 🔬 TestGlance Test Summary');
+    expect(result).toContain('## 🔬 TestGlance');
     expect(result).toContain('*Updated ');
   });
 
@@ -130,19 +131,19 @@ describe('mergeTestJobSection', () => {
   ].join('\n');
 
   it('replaces existing section by marker', () => {
-    const newSection = makeSection({ testJobName: 'unit', total: 200 });
+    const newSection = makeSection({ testJobName: 'unit', total: 200, passed: 200 });
     const result = mergeTestJobSection(existingBody, newSection);
-    expect(result).toContain('**200 tests**');
+    expect(result).toContain('✅ 200 passed');
     expect(result).not.toContain('**100 tests**');
     expect(result).toContain('<!-- tj:unit -->');
   });
 
   it('appends new section when not found', () => {
-    const newSection = makeSection({ testJobName: 'e2e', total: 50 });
+    const newSection = makeSection({ testJobName: 'e2e', total: 50, passed: 50 });
     const result = mergeTestJobSection(existingBody, newSection);
     expect(result).toContain('<!-- tj:unit -->');
     expect(result).toContain('<!-- tj:e2e -->');
-    expect(result).toContain('**50 tests**');
+    expect(result).toContain('✅ 50 passed');
   });
 
   it('preserves other TestJob sections', () => {
@@ -167,9 +168,9 @@ describe('mergeTestJobSection', () => {
       '*Updated 2026-03-18T00:00:00.000Z*',
     ].join('\n');
 
-    const newSection = makeSection({ testJobName: 'unit', total: 150 });
+    const newSection = makeSection({ testJobName: 'unit', total: 150, passed: 150 });
     const result = mergeTestJobSection(bodyWithTwo, newSection);
-    expect(result).toContain('**150 tests**');
+    expect(result).toContain('✅ 150 passed');
     expect(result).toContain('<!-- tj:e2e -->');
     expect(result).toContain('**20 tests**');
   });

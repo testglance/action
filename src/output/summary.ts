@@ -13,6 +13,16 @@ import type {
   PerfRegressionResult,
   TrendIndicators,
 } from '../history/types';
+import {
+  escapeHtml,
+  formatDuration,
+  truncate,
+  renderProgressBar,
+  statusEmoji,
+  renderMetricsStrip,
+} from './format';
+
+export { formatDuration, truncate } from './format';
 
 export interface SummaryOptions {
   parsed: ParsedTestRun;
@@ -52,27 +62,23 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   const { summary } = parsed;
   const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
 
-  core.summary.addHeading('TestGlance Results', 2);
+  core.summary.addRaw(
+    `## ${statusEmoji(summary.failed)} TestGlance Results — ${passRate}% pass rate\n\n`,
+  );
 
-  core.summary.addTable([
-    [
-      { data: 'Metric', header: true },
-      { data: 'Value', header: true },
-    ],
-    ['Total', String(summary.total)],
-    ['Passed', String(summary.passed)],
-    ['Failed', String(summary.failed)],
-    ['Skipped', String(summary.skipped)],
-    ['Errored', String(summary.errored)],
-    ['Pass Rate', `${passRate}%`],
-    ['Duration', formatDuration(summary.duration)],
-  ]);
-
-  if (apiSuccess && healthScore !== null && healthScore !== undefined) {
-    core.summary.addRaw(`**Health Score:** ${healthScore}/100\n\n`);
-  } else if (apiSuccess) {
-    core.summary.addRaw('**Health Score:** available after 5 runs\n\n');
+  if (!apiSuccess) {
+    core.summary.addRaw('> ⚠️ **API submission failed** — dashboard data not updated\n\n');
   }
+
+  core.summary.addRaw(`${renderProgressBar(Number(passRate))}\n\n`);
+
+  let metricsLine = `${renderMetricsStrip(summary)} · ⏱️ ${formatDuration(summary.duration)}`;
+  if (apiSuccess && healthScore !== null && healthScore !== undefined) {
+    metricsLine += ` · 🏥 ${healthScore}/100`;
+  } else if (apiSuccess) {
+    metricsLine += ' · 🏥 available after 5 runs';
+  }
+  core.summary.addRaw(`${metricsLine}\n\n`);
 
   if (flakyCount && flakyCount > 0) {
     core.summary.addRaw(`**Flaky tests detected:** ${flakyCount}\n\n`);
@@ -85,6 +91,8 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   if (trends) {
     core.summary.addRaw(renderTrendsSection(trends));
   }
+
+  core.summary.addRaw('---\n\n');
 
   if (delta) {
     core.summary.addRaw(renderDeltaSection(delta));
@@ -109,22 +117,24 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
     const failedTests = collectFailedTests(parsed).sort((a, b) => a.suite.localeCompare(b.suite));
     if (failedTests.length > 0) {
-      core.summary.addHeading('Failed Tests', 3);
+      core.summary.addRaw('---\n\n');
+      core.summary.addRaw('### ❌ Failed Tests\n\n');
       const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
 
+      const tableRows = shown
+        .map(
+          (t) =>
+            `<tr><td>${escapeHtml(t.suite)}</td><td><strong>${escapeHtml(t.name)}</strong></td><td>${escapeHtml(truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH))}</td></tr>`,
+        )
+        .join('\n');
+
+      core.summary.addRaw(
+        '<table>\n<tr><th>Suite</th><th>Test</th><th>Error</th></tr>\n' +
+          tableRows +
+          '\n</table>\n\n',
+      );
+
       for (const t of shown) {
-        core.summary.addTable([
-          [
-            { data: 'Suite', header: true },
-            { data: 'Test', header: true },
-            { data: 'Error', header: true },
-          ],
-          [
-            t.suite,
-            t.name,
-            truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
-          ],
-        ]);
         if (t.stackTrace) {
           core.summary.addRaw(renderStackTrace(t.name, t.stackTrace));
         }
@@ -143,25 +153,26 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
       const sorted = [...withDuration].sort((a, b) => b.duration - a.duration);
       const top = sorted.slice(0, slowestTests);
       if (top.length > 0) {
-        core.summary.addHeading('Slowest Tests', 3);
-        core.summary.addTable([
-          [
-            { data: 'Test', header: true },
-            { data: 'Suite', header: true },
-            { data: 'Duration', header: true },
-          ],
-          ...top.map((t) => [t.name, t.suite, formatDuration(t.duration)]),
-        ]);
+        core.summary.addRaw('### 🐌 Slowest Tests\n\n');
+        core.summary.addRaw(
+          '<details><summary>Slowest ' +
+            top.length +
+            ' tests</summary>\n\n' +
+            '<table>\n<tr><th>Test</th><th>Suite</th><th>Duration</th></tr>\n' +
+            top
+              .map(
+                (t) =>
+                  `<tr><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.suite)}</td><td>${formatDuration(t.duration)}</td></tr>`,
+              )
+              .join('\n') +
+            '\n</table>\n\n</details>\n\n',
+        );
       }
     }
   } catch (err) {
     core.warning(
       `Enhanced summary generation failed, using basic summary: ${err instanceof Error ? err.message : String(err)}`,
     );
-  }
-
-  if (!apiSuccess) {
-    core.summary.addRaw('> **Note:** API submission failed — dashboard data not updated.\n\n');
   }
 
   if (dashboardUrl) {
@@ -172,13 +183,6 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   await core.summary.write();
 }
 
-export function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs.toFixed(1)}s`;
-}
-
 function renderStackTrace(testName: string, stackTrace: string): string {
   const lines = stackTrace.split('\n');
   let truncated = lines.slice(0, MAX_STACK_TRACE_LINES).join('\n');
@@ -187,20 +191,6 @@ function renderStackTrace(testName: string, stackTrace: string): string {
     truncated += `\n... ${lines.length - MAX_STACK_TRACE_LINES} more lines truncated`;
   }
   return `<details><summary>Stack trace: ${safeTestName}</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>\n\n`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-export function truncate(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str;
-  return str.slice(0, maxLen - 3) + '...';
 }
 
 export function collectFailedTests(parsed: ParsedTestRun): ParsedTestCase[] {
@@ -261,7 +251,7 @@ export function renderHighlights(highlights: Highlight[], dashboardUrl?: string)
     (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
   );
   const shown = sorted.slice(0, MAX_HIGHLIGHTS_SHOWN);
-  const lines: string[] = ['### Highlights\n\n'];
+  const lines: string[] = ['### 💡 Highlights\n\n'];
 
   for (const h of shown) {
     lines.push(`${SEVERITY_EMOJI[h.severity]} ${renderHighlightMessage(h)}\n\n`);
@@ -284,15 +274,12 @@ const DELTA_STATUS_EMOJI: Record<string, string> = {
 };
 
 export function renderDeltaSection(delta: DeltaComparison): string {
-  const lines: string[] = ['### Changes Since Last Run\n\n'];
+  const lines: string[] = ['### 🔄 Changes Since Last Run\n\n'];
 
   const sign = (n: number) => (n >= 0 ? '+' : '-');
 
   if (!delta.hasChanges) {
     lines.push('✅ No changes since last run\n\n');
-    lines.push(
-      `**Pass rate:** ${delta.passRateCurr.toFixed(1)}% | **Duration:** ${formatDuration(delta.durationCurr)}\n\n`,
-    );
     return lines.join('');
   }
 
@@ -366,7 +353,7 @@ const TESTS_CHANGED_STATUS_EMOJI: Record<string, string> = {
 export function renderTestsChangedSection(report: TestsChangedReport): string {
   if (!report.hasChanges) return '';
 
-  const lines: string[] = ['### Tests Changed\n\n'];
+  const lines: string[] = ['### 📝 Tests Changed\n\n'];
 
   if (report.newTests.length > 0) {
     lines.push(`#### New Tests (${report.newTests.length})\n\n`);
@@ -445,7 +432,7 @@ const FLAKY_STATUS_EMOJI: Record<string, string> = {
 export function renderFlakySection(result: FlakyDetectionResult): string {
   if (!result.hasFlakyTests) return '';
 
-  const lines: string[] = ['### Potentially Flaky Tests\n\n'];
+  const lines: string[] = ['### 🔀 Potentially Flaky Tests\n\n'];
 
   const shown = result.flakyTests.slice(0, MAX_FLAKY_TESTS_SHOWN);
   const rows = shown.map((t) => {
@@ -476,7 +463,7 @@ const TREND_ARROW: Record<string, string> = {
 };
 
 export function renderTrendsSection(trends: TrendIndicators): string {
-  const lines: string[] = ['### Trends\n\n'];
+  const lines: string[] = ['### 📈 Trends\n\n'];
 
   const passSign = trends.passRate.delta >= 0 ? '+' : '';
   const passArrow = TREND_ARROW[trends.passRate.direction];
@@ -505,7 +492,7 @@ export function renderTrendsSection(trends: TrendIndicators): string {
 const MAX_PERF_REGRESSIONS_SHOWN = 15;
 
 export function renderPerfRegressionSection(result: PerfRegressionResult): string {
-  const lines: string[] = ['### Performance Regressions\n\n'];
+  const lines: string[] = ['### ⚡ Performance Regressions\n\n'];
 
   lines.push(`**Duration trend:** ${result.sparkline}\n\n`);
 

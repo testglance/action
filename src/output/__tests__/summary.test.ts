@@ -58,57 +58,62 @@ describe('generateSummary', () => {
     vi.clearAllMocks();
   });
 
-  it('outputs heading and summary table with correct counts and pass rate', async () => {
+  it('outputs hero header with status emoji and pass rate', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true });
 
-    expect(mockSummary.addHeading).toHaveBeenCalledWith('TestGlance Results', 2);
-    expect(mockSummary.addTable).toHaveBeenCalledWith([
-      [
-        { data: 'Metric', header: true },
-        { data: 'Value', header: true },
-      ],
-      ['Total', '142'],
-      ['Passed', '138'],
-      ['Failed', '3'],
-      ['Skipped', '1'],
-      ['Errored', '0'],
-      ['Pass Rate', '97.2%'],
-      ['Duration', '12.3s'],
-    ]);
+    expect(mockSummary.addRaw).toHaveBeenCalledWith(
+      expect.stringContaining('## 🔴 TestGlance Results — 97.2% pass rate'),
+    );
   });
 
-  it('shows health score when API succeeds with a score', async () => {
+  it('outputs progress bar and metrics strip', async () => {
+    await generateSummary({ parsed: makeParsed(), apiSuccess: true });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasProgressBar = rawCalls.some((c: string) => c.includes('█') || c.includes('░'));
+    expect(hasProgressBar).toBe(true);
+    const hasMetrics = rawCalls.some(
+      (c: string) => c.includes('✅ 138 passed') && c.includes('❌ 3 failed'),
+    );
+    expect(hasMetrics).toBe(true);
+  });
+
+  it('shows health score inline in metrics when API succeeds with a score', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true, healthScore: 94 });
 
-    expect(mockSummary.addRaw).toHaveBeenCalledWith('**Health Score:** 94/100\n\n');
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const metricsLine = rawCalls.find((c: string) => c.includes('✅ 138 passed'));
+    expect(metricsLine).toContain('🏥 94/100');
   });
 
-  it('shows "available after 5 runs" when health score is null', async () => {
+  it('shows "available after 5 runs" inline when health score is null', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true, healthScore: null });
 
-    expect(mockSummary.addRaw).toHaveBeenCalledWith('**Health Score:** available after 5 runs\n\n');
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const metricsLine = rawCalls.find((c: string) => c.includes('✅ 138 passed'));
+    expect(metricsLine).toContain('🏥 available after 5 runs');
   });
 
-  it('shows "available after 5 runs" when health score is undefined and API succeeded', async () => {
+  it('shows "available after 5 runs" inline when health score is undefined and API succeeded', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true });
 
-    expect(mockSummary.addRaw).toHaveBeenCalledWith('**Health Score:** available after 5 runs\n\n');
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const metricsLine = rawCalls.find((c: string) => c.includes('✅ 138 passed'));
+    expect(metricsLine).toContain('🏥 available after 5 runs');
   });
 
-  it('shows API failure note when apiSuccess is false', async () => {
+  it('shows API failure warning when apiSuccess is false', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: false });
 
     expect(mockSummary.addRaw).toHaveBeenCalledWith(
-      '> **Note:** API submission failed — dashboard data not updated.\n\n',
+      '> ⚠️ **API submission failed** — dashboard data not updated\n\n',
     );
   });
 
   it('does not show health score section when API failed', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: false });
 
-    const healthCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) =>
-      c[0].includes('Health Score'),
-    );
+    const healthCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) => c[0].includes('🏥'));
     expect(healthCalls).toHaveLength(0);
   });
 
@@ -136,7 +141,7 @@ describe('generateSummary', () => {
     expect(flakyCalls).toHaveLength(0);
   });
 
-  it('shows failed test details with suite, name, and error', async () => {
+  it('shows failed test details in consolidated HTML table', async () => {
     const parsed = makeParsed({ failed: 1 }, [
       {
         name: 'auth.login',
@@ -156,16 +161,13 @@ describe('generateSummary', () => {
 
     await generateSummary({ parsed, apiSuccess: true });
 
-    expect(mockSummary.addHeading).toHaveBeenCalledWith('Failed Tests', 3);
-    const tableCall = mockSummary.addTable.mock.calls[1];
-    expect(tableCall[0]).toEqual([
-      [
-        { data: 'Suite', header: true },
-        { data: 'Test', header: true },
-        { data: 'Error', header: true },
-      ],
-      ['auth.login', 'should reject expired token', 'Expected 401 but received 200'],
-    ]);
+    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('### ❌ Failed Tests'));
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const tableCall = rawCalls.find((c: string) => c.includes('<th>Suite</th>'));
+    expect(tableCall).toBeDefined();
+    expect(tableCall).toContain('<strong>should reject expired token</strong>');
+    expect(tableCall).toContain('auth.login');
+    expect(tableCall).toContain('Expected 401 but received 200');
   });
 
   it('truncates error messages longer than 200 characters', async () => {
@@ -188,10 +190,11 @@ describe('generateSummary', () => {
 
     await generateSummary({ parsed, apiSuccess: true });
 
-    const tableCall = mockSummary.addTable.mock.calls[1];
-    const errorCell = tableCall[0][1][2];
-    expect(errorCell.length).toBe(200);
-    expect(errorCell.endsWith('...')).toBe(true);
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const tableCall = rawCalls.find((c: string) => c.includes('<th>Error</th>'));
+    expect(tableCall).toBeDefined();
+    expect(tableCall).toContain('A'.repeat(197) + '...');
+    expect(tableCall).not.toContain('A'.repeat(198));
   });
 
   it('shows "... and N more" when more than 25 failed tests', async () => {
@@ -209,7 +212,7 @@ describe('generateSummary', () => {
     expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('and 5 more'));
   });
 
-  it('sorts failed tests by suite name', async () => {
+  it('sorts failed tests by suite name in consolidated table', async () => {
     const parsed = makeParsed({ failed: 3 }, [
       {
         name: 'z-suite',
@@ -254,12 +257,14 @@ describe('generateSummary', () => {
 
     await generateSummary({ parsed, apiSuccess: true });
 
-    const failedTableCalls = mockSummary.addTable.mock.calls.filter(
-      (c: unknown[][]) => c[0][0]?.[0]?.data === 'Suite' && c[0][0]?.[1]?.data === 'Test',
-    );
-    expect(failedTableCalls).toHaveLength(3);
-    const suiteOrder = failedTableCalls.map((c: unknown[][]) => c[0][1][0]);
-    expect(suiteOrder).toEqual(['a-suite', 'm-suite', 'z-suite']);
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const tableCall = rawCalls.find((c: string) => c.includes('<th>Error</th>'));
+    expect(tableCall).toBeDefined();
+    const aIdx = tableCall!.indexOf('a-suite');
+    const mIdx = tableCall!.indexOf('m-suite');
+    const zIdx = tableCall!.indexOf('z-suite');
+    expect(aIdx).toBeLessThan(mIdx);
+    expect(mIdx).toBeLessThan(zIdx);
   });
 
   it('renders stack traces in details/summary collapse', async () => {
@@ -360,10 +365,9 @@ describe('generateSummary', () => {
 
     await generateSummary({ parsed, apiSuccess: true });
 
-    const failedHeading = mockSummary.addHeading.mock.calls.filter(
-      (c: unknown[]) => c[0] === 'Failed Tests',
-    );
-    expect(failedHeading).toHaveLength(0);
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasFailedSection = rawCalls.some((c: string) => c.includes('❌ Failed Tests'));
+    expect(hasFailedSection).toBe(false);
   });
 
   it('renders dashboard link when available', async () => {
@@ -397,9 +401,7 @@ describe('generateSummary', () => {
       apiSuccess: true,
     });
 
-    const tableCall = mockSummary.addTable.mock.calls[0];
-    const passRateRow = tableCall[0].find((row: string[]) => row[0] === 'Pass Rate');
-    expect(passRateRow[1]).toBe('0.0%');
+    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('0.0% pass rate'));
   });
 
   it('uses "No error message" when errorMessage is undefined', async () => {
@@ -413,8 +415,9 @@ describe('generateSummary', () => {
 
     await generateSummary({ parsed, apiSuccess: true });
 
-    const tableCall = mockSummary.addTable.mock.calls[1];
-    expect(tableCall[0][1][2]).toBe('No error message');
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const tableCall = rawCalls.find((c: string) => c.includes('<th>Suite</th>'));
+    expect(tableCall).toContain('No error message');
   });
 });
 
@@ -659,7 +662,7 @@ describe('generateSummary slowest tests', () => {
     vi.clearAllMocks();
   });
 
-  it('renders slowest tests section sorted by duration descending', async () => {
+  it('renders slowest tests section sorted by duration descending in collapsible', async () => {
     const parsed = makeParsed({ total: 4, passed: 4, failed: 0 }, [
       {
         name: 'suite1',
@@ -675,18 +678,19 @@ describe('generateSummary slowest tests', () => {
 
     await generateSummary({ parsed, apiSuccess: true, slowestTests: 3 });
 
-    const headingCalls = mockSummary.addHeading.mock.calls;
-    expect(headingCalls).toContainEqual(['Slowest Tests', 3]);
-
-    const tableCall = mockSummary.addTable.mock.calls.find(
-      (c: unknown[][]) => c[0][0]?.[0]?.data === 'Test',
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const slowestHeading = rawCalls.find((c: string) => c.includes('### 🐌 Slowest Tests'));
+    expect(slowestHeading).toBeDefined();
+    const slowestTable = rawCalls.find(
+      (c: string) => c.includes('<details>') && c.includes('Slowest'),
     );
-    expect(tableCall).toBeDefined();
-    const rows = tableCall![0].slice(1);
-    expect(rows).toHaveLength(3);
-    expect(rows[0][0]).toBe('slow-test');
-    expect(rows[1][0]).toBe('medium-test');
-    expect(rows[2][0]).toBe('quick-test');
+    expect(slowestTable).toBeDefined();
+    const slowIdx = slowestTable!.indexOf('slow-test');
+    const medIdx = slowestTable!.indexOf('medium-test');
+    const quickIdx = slowestTable!.indexOf('quick-test');
+    expect(slowIdx).toBeLessThan(medIdx);
+    expect(medIdx).toBeLessThan(quickIdx);
+    expect(slowestTable).not.toContain('fast-test');
   });
 
   it('skips slowest tests section when slowestTests is 0', async () => {
@@ -703,9 +707,8 @@ describe('generateSummary slowest tests', () => {
 
     await generateSummary({ parsed, apiSuccess: true, slowestTests: 0 });
 
-    const headingCalls = mockSummary.addHeading.mock.calls;
-    const slowestHeading = headingCalls.filter((c: unknown[]) => c[0] === 'Slowest Tests');
-    expect(slowestHeading).toHaveLength(0);
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    expect(rawCalls.some((c: string) => c.includes('🐌 Slowest Tests'))).toBe(false);
   });
 
   it('skips slowest tests section when slowestTests is undefined', async () => {
@@ -722,9 +725,8 @@ describe('generateSummary slowest tests', () => {
 
     await generateSummary({ parsed, apiSuccess: true });
 
-    const headingCalls = mockSummary.addHeading.mock.calls;
-    const slowestHeading = headingCalls.filter((c: unknown[]) => c[0] === 'Slowest Tests');
-    expect(slowestHeading).toHaveLength(0);
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    expect(rawCalls.some((c: string) => c.includes('🐌 Slowest Tests'))).toBe(false);
   });
 
   it('excludes tests under 0.2s and hides section if none qualify', async () => {
@@ -742,9 +744,8 @@ describe('generateSummary slowest tests', () => {
 
     await generateSummary({ parsed, apiSuccess: true, slowestTests: 10 });
 
-    const headingCalls = mockSummary.addHeading.mock.calls;
-    const slowestHeading = headingCalls.filter((c: unknown[]) => c[0] === 'Slowest Tests');
-    expect(slowestHeading).toHaveLength(0);
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    expect(rawCalls.some((c: string) => c.includes('🐌 Slowest Tests'))).toBe(false);
   });
 
   it('only includes tests with duration >= 0.2s', async () => {
@@ -762,12 +763,14 @@ describe('generateSummary slowest tests', () => {
 
     await generateSummary({ parsed, apiSuccess: true, slowestTests: 10 });
 
-    const tableCall = mockSummary.addTable.mock.calls.find(
-      (c: unknown[][]) => c[0][0]?.[0]?.data === 'Test',
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const slowestTable = rawCalls.find(
+      (c: string) => c.includes('<details>') && c.includes('Slowest'),
     );
-    expect(tableCall).toBeDefined();
-    const rows = tableCall![0].slice(1);
-    expect(rows).toHaveLength(2);
+    expect(slowestTable).toBeDefined();
+    expect(slowestTable).toContain('has-time');
+    expect(slowestTable).toContain('also-time');
+    expect(slowestTable).not.toContain('too-fast');
   });
 
   it('includes formatted duration in table', async () => {
@@ -781,11 +784,12 @@ describe('generateSummary slowest tests', () => {
 
     await generateSummary({ parsed, apiSuccess: true, slowestTests: 5 });
 
-    const tableCall = mockSummary.addTable.mock.calls.find(
-      (c: unknown[][]) => c[0][0]?.[0]?.data === 'Test',
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const slowestTable = rawCalls.find(
+      (c: string) => c.includes('<details>') && c.includes('Slowest'),
     );
-    expect(tableCall).toBeDefined();
-    expect(tableCall![0][1][2]).toBe('1m 5.3s');
+    expect(slowestTable).toBeDefined();
+    expect(slowestTable).toContain('1m 5.3s');
   });
 });
 
@@ -806,7 +810,7 @@ describe('generateSummary with highlights', () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true, highlights });
 
     const highlightCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) =>
-      c[0].includes('Highlights'),
+      c[0].includes('💡 Highlights'),
     );
     expect(highlightCalls).toHaveLength(1);
   });
@@ -815,7 +819,7 @@ describe('generateSummary with highlights', () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true, highlights: [] });
 
     const highlightCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) =>
-      c[0].includes('Highlights'),
+      c[0].includes('💡 Highlights'),
     );
     expect(highlightCalls).toHaveLength(0);
   });
@@ -824,7 +828,7 @@ describe('generateSummary with highlights', () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true });
 
     const highlightCalls = mockSummary.addRaw.mock.calls.filter((c: string[]) =>
-      c[0].includes('Highlights'),
+      c[0].includes('💡 Highlights'),
     );
     expect(highlightCalls).toHaveLength(0);
   });
@@ -1123,7 +1127,7 @@ describe('renderDeltaSection', () => {
     });
 
     const result = renderDeltaSection(delta);
-    expect(result).toContain('Changes Since Last Run');
+    expect(result).toContain('🔄 Changes Since Last Run');
     expect(result).toContain('94.0% → 97.0% (+3.0%)');
     expect(result).toContain('🆕 Added');
     expect(result).toContain('test_new');
@@ -1135,7 +1139,7 @@ describe('renderDeltaSection', () => {
     expect(result).toContain('test_old');
   });
 
-  it('shows "No changes" with checkmark when hasChanges is false', () => {
+  it('shows "No changes" with checkmark when hasChanges is false, no duplicate stats', () => {
     const delta = makeDelta({
       hasChanges: false,
       passRateDelta: 0,
@@ -1149,8 +1153,8 @@ describe('renderDeltaSection', () => {
 
     const result = renderDeltaSection(delta);
     expect(result).toContain('✅ No changes since last run');
-    expect(result).toContain('97.0%');
-    expect(result).toContain('13.1s');
+    expect(result).not.toContain('**Pass rate:**');
+    expect(result).not.toContain('**Duration:**');
   });
 
   it('delta section is omitted when delta is null (tested via generateSummary)', async () => {
@@ -1158,7 +1162,7 @@ describe('renderDeltaSection', () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true, delta: null });
 
     const allAddRawCalls = mockSummary.addRaw.mock.calls.map((c: unknown[]) => c[0]);
-    const hasDelta = allAddRawCalls.some((s: string) => s.includes('Changes Since Last Run'));
+    const hasDelta = allAddRawCalls.some((s: string) => s.includes('🔄 Changes Since Last Run'));
     expect(hasDelta).toBe(false);
   });
 
@@ -1242,7 +1246,7 @@ describe('renderTestsChangedSection', () => {
       ],
     });
     const result = renderTestsChangedSection(report);
-    expect(result).toContain('### Tests Changed');
+    expect(result).toContain('### 📝 Tests Changed');
     expect(result).toContain('#### New Tests (1)');
     expect(result).toContain('#### Removed Tests (1)');
     expect(result).toContain('#### Status Changed (1)');
@@ -1317,7 +1321,7 @@ describe('renderFlakySection', () => {
       ],
     };
     const output = renderFlakySection(result);
-    expect(output).toContain('### Potentially Flaky Tests');
+    expect(output).toContain('### 🔀 Potentially Flaky Tests');
     expect(output).toContain('test_login');
     expect(output).toContain('auth');
     expect(output).toContain('60%');
@@ -1447,7 +1451,7 @@ describe('renderPerfRegressionSection', () => {
       sparkline: '▁▂▂▃▅',
     };
     const output = renderPerfRegressionSection(result);
-    expect(output).toContain('### Performance Regressions');
+    expect(output).toContain('### ⚡ Performance Regressions');
     expect(output).toContain('**Duration trend:** ▁▂▂▃▅');
     expect(output).toContain('test_heavy_query');
     expect(output).toContain('db');
@@ -1461,7 +1465,7 @@ describe('renderPerfRegressionSection', () => {
       sparkline: '▄▄▄▄▄',
     };
     const output = renderPerfRegressionSection(result);
-    expect(output).toContain('### Performance Regressions');
+    expect(output).toContain('### ⚡ Performance Regressions');
     expect(output).toContain('**Duration trend:** ▄▄▄▄▄');
     expect(output).not.toContain('| Test |');
   });
@@ -1590,7 +1594,7 @@ function makeTrends(overrides: Partial<TrendIndicators> = {}): TrendIndicators {
 describe('renderTrendsSection', () => {
   it('renders pass rate with sparkline and arrow', () => {
     const output = renderTrendsSection(makeTrends());
-    expect(output).toContain('### Trends');
+    expect(output).toContain('### 📈 Trends');
     expect(output).toContain('▃▅▅▆▇');
     expect(output).toContain('97.5% ↑ (+2.3%)');
   });
@@ -1643,7 +1647,7 @@ describe('renderTrendsSection', () => {
     });
 
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const hasTrends = rawCalls.some((c: string) => c.includes('### Trends'));
+    const hasTrends = rawCalls.some((c: string) => c.includes('### 📈 Trends'));
     expect(hasTrends).toBe(true);
   });
 
@@ -1661,7 +1665,7 @@ describe('renderTrendsSection', () => {
     });
 
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const hasTrends = rawCalls.some((c: string) => c.includes('### Trends'));
+    const hasTrends = rawCalls.some((c: string) => c.includes('### 📈 Trends'));
     expect(hasTrends).toBe(false);
   });
 });

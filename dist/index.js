@@ -55763,6 +55763,61 @@ async function createCheckRun(options) {
 
 /***/ }),
 
+/***/ 71431:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.escapeHtml = escapeHtml;
+exports.formatDuration = formatDuration;
+exports.truncate = truncate;
+exports.renderProgressBar = renderProgressBar;
+exports.statusEmoji = statusEmoji;
+exports.renderMetricsStrip = renderMetricsStrip;
+function escapeHtml(value) {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+function formatDuration(seconds) {
+    if (seconds < 60)
+        return `${seconds.toFixed(1)}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs.toFixed(1)}s`;
+}
+function truncate(str, maxLen) {
+    if (str.length <= maxLen)
+        return str;
+    return str.slice(0, maxLen - 3) + '...';
+}
+function renderProgressBar(passRate, width = 16) {
+    const clamped = Math.max(0, Math.min(100, passRate));
+    const filled = clamped === 100 ? width : Math.floor((clamped / 100) * width);
+    const empty = width - filled;
+    return `${'█'.repeat(filled)}${'░'.repeat(empty)} ${clamped.toFixed(1)}%`;
+}
+function statusEmoji(failed) {
+    return failed > 0 ? '🔴' : '✅';
+}
+function renderMetricsStrip(summary) {
+    const parts = [`✅ ${summary.passed} passed`];
+    if (summary.failed > 0)
+        parts.push(`❌ ${summary.failed} failed`);
+    if (summary.skipped > 0)
+        parts.push(`⏭️ ${summary.skipped} skipped`);
+    if (summary.errored > 0)
+        parts.push(`💥 ${summary.errored} errored`);
+    return parts.join(' · ');
+}
+
+
+/***/ }),
+
 /***/ 4685:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -55865,7 +55920,7 @@ exports.renderFlakyCompact = renderFlakyCompact;
 exports.renderPerfRegressionCompact = renderPerfRegressionCompact;
 exports.renderPrComment = renderPrComment;
 exports.mergeTestJobSection = mergeTestJobSection;
-const summary_1 = __nccwpck_require__(75942);
+const format_1 = __nccwpck_require__(71431);
 const SEVERITY_EMOJI = {
     critical: '🔴',
     warning: '🟡',
@@ -55906,7 +55961,7 @@ function renderHighlightRow(h) {
             const currentDuration = data.currentDuration;
             const deltaPercent = data.deltaPercent;
             const sign = deltaPercent >= 0 ? '+' : '';
-            details = `Duration ${sign}${deltaPercent}% vs baseline (${(0, summary_1.formatDuration)(currentDuration)})`;
+            details = `Duration ${sign}${deltaPercent}% vs baseline (${(0, format_1.formatDuration)(currentDuration)})`;
             break;
         }
         case 'fixed_tests': {
@@ -55940,7 +55995,7 @@ function renderBaseBranchSection(baseDelta, baseBranch) {
     lines.push(`**vs \`${baseBranch}\`**`);
     const passSign = baseDelta.passRateDelta >= 0 ? '+' : '';
     const durSign = baseDelta.durationDelta >= 0 ? '+' : '';
-    lines.push(`| Metric | ${baseBranch} | PR | Delta |`, '|--------|------|----|----|', `| Pass rate | ${baseDelta.passRatePrev.toFixed(1)}% | ${baseDelta.passRateCurr.toFixed(1)}% | ${passSign}${baseDelta.passRateDelta.toFixed(1)}% |`, `| Duration | ${(0, summary_1.formatDuration)(baseDelta.durationPrev)} | ${(0, summary_1.formatDuration)(baseDelta.durationCurr)} | ${durSign}${baseDelta.durationDeltaPercent.toFixed(1)}% |`);
+    lines.push(`| Metric | ${baseBranch} | PR | Delta |`, '|--------|------|----|----|', `| Pass rate | ${baseDelta.passRatePrev.toFixed(1)}% | ${baseDelta.passRateCurr.toFixed(1)}% | ${passSign}${baseDelta.passRateDelta.toFixed(1)}% |`, `| Duration | ${(0, format_1.formatDuration)(baseDelta.durationPrev)} | ${(0, format_1.formatDuration)(baseDelta.durationCurr)} | ${durSign}${baseDelta.durationDeltaPercent.toFixed(1)}% |`);
     if (baseDelta.newlyFailing.length > 0) {
         const names = baseDelta.newlyFailing
             .slice(0, 5)
@@ -55970,26 +56025,41 @@ function renderTrendLine(trends) {
     const passStr = `Pass rate: ${trends.passRate.current.toFixed(1)}% ${passArrow} (${passSign}${trends.passRate.delta.toFixed(1)}%)`;
     const durSign = trends.duration.delta >= 0 ? '+' : '';
     const durArrow = TREND_ARROW[trends.duration.direction];
-    const durStr = `Duration: ${(0, summary_1.formatDuration)(trends.duration.current)} ${durArrow} (${durSign}${(0, summary_1.formatDuration)(Math.abs(trends.duration.delta))}, ${durSign}${trends.duration.deltaPercent.toFixed(1)}%)`;
+    const durStr = `Duration: ${(0, format_1.formatDuration)(trends.duration.current)} ${durArrow} (${durSign}${(0, format_1.formatDuration)(Math.abs(trends.duration.delta))}, ${durSign}${trends.duration.deltaPercent.toFixed(1)}%)`;
     const countSign = trends.testCount.delta >= 0 ? '+' : '';
     const countStr = `Tests: ${trends.testCount.current} (${countSign}${trends.testCount.delta})`;
     return `📈 ${passStr} · ${durStr} · ${countStr}`;
 }
 function renderTestJobSection(section) {
     const safeKey = sanitizeMarkerName(section.testJobName);
-    const statusEmoji = section.failed > 0 ? '❌' : '✅';
+    const emoji = section.failed > 0 ? '❌' : '✅';
+    const passRate = section.total > 0 ? ((section.passed / section.total) * 100).toFixed(1) : '0.0';
     const lines = [];
     lines.push(`<!-- tj:${safeKey} -->`);
-    lines.push(`### ${statusEmoji} ${section.testJobName}`);
-    let statsLine = `**${section.total} tests** | ${(0, summary_1.formatDuration)(section.duration)}`;
+    lines.push(`### ${emoji} ${section.testJobName} — ${passRate}% pass rate`);
+    lines.push((0, format_1.renderProgressBar)(Number(passRate)));
+    const statsParts = [`✅ ${section.passed} passed`];
+    if (section.failed > 0)
+        statsParts.push(`❌ ${section.failed} failed`);
+    statsParts.push(`⏱️ ${(0, format_1.formatDuration)(section.duration)}`);
+    let statsLine = statsParts.join(' · ');
     if (section.healthScore !== null && section.healthScore !== undefined) {
-        statsLine += ` | Health: ${section.healthScore}/100`;
+        statsLine += ` · 🏥 ${section.healthScore}/100`;
     }
     lines.push(statsLine);
     if (section.trends) {
         lines.push(renderTrendLine(section.trends));
     }
-    lines.push('');
+    const hasDetails = section.highlights.length > 0 ||
+        (section.baseBranch && section.baseDelta !== undefined) ||
+        (section.testsChanged && section.testsChanged.hasChanges) ||
+        (section.flaky && section.flaky.hasFlakyTests) ||
+        (section.perfRegression && section.perfRegression.hasRegressions);
+    if (hasDetails) {
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+    }
     if (section.highlights.length > 0) {
         const sorted = [...section.highlights].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
         lines.push('| Signal | Details |');
@@ -56075,7 +56145,7 @@ function renderPerfRegressionCompact(result) {
 function renderPrComment(sections) {
     const lines = [];
     lines.push('<!-- testglance-pr-summary -->');
-    lines.push('## 🔬 TestGlance Test Summary');
+    lines.push('## 🔬 TestGlance');
     lines.push('');
     for (let i = 0; i < sections.length; i++) {
         lines.push(renderTestJobSection(sections[i]));
@@ -56156,9 +56226,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.truncate = exports.formatDuration = void 0;
 exports.generateSummary = generateSummary;
-exports.formatDuration = formatDuration;
-exports.truncate = truncate;
 exports.collectFailedTests = collectFailedTests;
 exports.renderSuiteBreakdown = renderSuiteBreakdown;
 exports.renderHighlights = renderHighlights;
@@ -56168,6 +56237,10 @@ exports.renderFlakySection = renderFlakySection;
 exports.renderTrendsSection = renderTrendsSection;
 exports.renderPerfRegressionSection = renderPerfRegressionSection;
 const core = __importStar(__nccwpck_require__(16966));
+const format_1 = __nccwpck_require__(71431);
+var format_2 = __nccwpck_require__(71431);
+Object.defineProperty(exports, "formatDuration", ({ enumerable: true, get: function () { return format_2.formatDuration; } }));
+Object.defineProperty(exports, "truncate", ({ enumerable: true, get: function () { return format_2.truncate; } }));
 const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
@@ -56175,26 +56248,19 @@ async function generateSummary(options) {
     const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, trends, } = options;
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
-    core.summary.addHeading('TestGlance Results', 2);
-    core.summary.addTable([
-        [
-            { data: 'Metric', header: true },
-            { data: 'Value', header: true },
-        ],
-        ['Total', String(summary.total)],
-        ['Passed', String(summary.passed)],
-        ['Failed', String(summary.failed)],
-        ['Skipped', String(summary.skipped)],
-        ['Errored', String(summary.errored)],
-        ['Pass Rate', `${passRate}%`],
-        ['Duration', formatDuration(summary.duration)],
-    ]);
+    core.summary.addRaw(`## ${(0, format_1.statusEmoji)(summary.failed)} TestGlance Results — ${passRate}% pass rate\n\n`);
+    if (!apiSuccess) {
+        core.summary.addRaw('> ⚠️ **API submission failed** — dashboard data not updated\n\n');
+    }
+    core.summary.addRaw(`${(0, format_1.renderProgressBar)(Number(passRate))}\n\n`);
+    let metricsLine = `${(0, format_1.renderMetricsStrip)(summary)} · ⏱️ ${(0, format_1.formatDuration)(summary.duration)}`;
     if (apiSuccess && healthScore !== null && healthScore !== undefined) {
-        core.summary.addRaw(`**Health Score:** ${healthScore}/100\n\n`);
+        metricsLine += ` · 🏥 ${healthScore}/100`;
     }
     else if (apiSuccess) {
-        core.summary.addRaw('**Health Score:** available after 5 runs\n\n');
+        metricsLine += ' · 🏥 available after 5 runs';
     }
+    core.summary.addRaw(`${metricsLine}\n\n`);
     if (flakyCount && flakyCount > 0) {
         core.summary.addRaw(`**Flaky tests detected:** ${flakyCount}\n\n`);
     }
@@ -56204,6 +56270,7 @@ async function generateSummary(options) {
     if (trends) {
         core.summary.addRaw(renderTrendsSection(trends));
     }
+    core.summary.addRaw('---\n\n');
     if (delta) {
         core.summary.addRaw(renderDeltaSection(delta));
     }
@@ -56222,21 +56289,16 @@ async function generateSummary(options) {
         }
         const failedTests = collectFailedTests(parsed).sort((a, b) => a.suite.localeCompare(b.suite));
         if (failedTests.length > 0) {
-            core.summary.addHeading('Failed Tests', 3);
+            core.summary.addRaw('---\n\n');
+            core.summary.addRaw('### ❌ Failed Tests\n\n');
             const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
+            const tableRows = shown
+                .map((t) => `<tr><td>${(0, format_1.escapeHtml)(t.suite)}</td><td><strong>${(0, format_1.escapeHtml)(t.name)}</strong></td><td>${(0, format_1.escapeHtml)((0, format_1.truncate)(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH))}</td></tr>`)
+                .join('\n');
+            core.summary.addRaw('<table>\n<tr><th>Suite</th><th>Test</th><th>Error</th></tr>\n' +
+                tableRows +
+                '\n</table>\n\n');
             for (const t of shown) {
-                core.summary.addTable([
-                    [
-                        { data: 'Suite', header: true },
-                        { data: 'Test', header: true },
-                        { data: 'Error', header: true },
-                    ],
-                    [
-                        t.suite,
-                        t.name,
-                        truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH),
-                    ],
-                ]);
                 if (t.stackTrace) {
                     core.summary.addRaw(renderStackTrace(t.name, t.stackTrace));
                 }
@@ -56251,23 +56313,20 @@ async function generateSummary(options) {
             const sorted = [...withDuration].sort((a, b) => b.duration - a.duration);
             const top = sorted.slice(0, slowestTests);
             if (top.length > 0) {
-                core.summary.addHeading('Slowest Tests', 3);
-                core.summary.addTable([
-                    [
-                        { data: 'Test', header: true },
-                        { data: 'Suite', header: true },
-                        { data: 'Duration', header: true },
-                    ],
-                    ...top.map((t) => [t.name, t.suite, formatDuration(t.duration)]),
-                ]);
+                core.summary.addRaw('### 🐌 Slowest Tests\n\n');
+                core.summary.addRaw('<details><summary>Slowest ' +
+                    top.length +
+                    ' tests</summary>\n\n' +
+                    '<table>\n<tr><th>Test</th><th>Suite</th><th>Duration</th></tr>\n' +
+                    top
+                        .map((t) => `<tr><td>${(0, format_1.escapeHtml)(t.name)}</td><td>${(0, format_1.escapeHtml)(t.suite)}</td><td>${(0, format_1.formatDuration)(t.duration)}</td></tr>`)
+                        .join('\n') +
+                    '\n</table>\n\n</details>\n\n');
             }
         }
     }
     catch (err) {
         core.warning(`Enhanced summary generation failed, using basic summary: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    if (!apiSuccess) {
-        core.summary.addRaw('> **Note:** API submission failed — dashboard data not updated.\n\n');
     }
     if (dashboardUrl) {
         core.summary.addLink('View Dashboard', dashboardUrl);
@@ -56275,34 +56334,14 @@ async function generateSummary(options) {
     }
     await core.summary.write();
 }
-function formatDuration(seconds) {
-    if (seconds < 60)
-        return `${seconds.toFixed(1)}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs.toFixed(1)}s`;
-}
 function renderStackTrace(testName, stackTrace) {
     const lines = stackTrace.split('\n');
     let truncated = lines.slice(0, MAX_STACK_TRACE_LINES).join('\n');
-    const safeTestName = escapeHtml(testName);
+    const safeTestName = (0, format_1.escapeHtml)(testName);
     if (lines.length > MAX_STACK_TRACE_LINES) {
         truncated += `\n... ${lines.length - MAX_STACK_TRACE_LINES} more lines truncated`;
     }
     return `<details><summary>Stack trace: ${safeTestName}</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>\n\n`;
-}
-function escapeHtml(value) {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-function truncate(str, maxLen) {
-    if (str.length <= maxLen)
-        return str;
-    return str.slice(0, maxLen - 3) + '...';
 }
 function collectFailedTests(parsed) {
     return parsed.suites.flatMap((suite) => suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'));
@@ -56325,7 +56364,7 @@ function renderSuiteBreakdown(suites) {
         return a.passRate - b.passRate;
     });
     const tableRows = rows
-        .map((r) => `<tr><td>${escapeHtml(r.name)}</td><td>${r.total}</td><td>${r.passed}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${r.total > 0 ? `${r.passRate.toFixed(1)}%` : 'N/A'}</td><td>${formatDuration(r.duration)}</td></tr>`)
+        .map((r) => `<tr><td>${(0, format_1.escapeHtml)(r.name)}</td><td>${r.total}</td><td>${r.passed}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${r.total > 0 ? `${r.passRate.toFixed(1)}%` : 'N/A'}</td><td>${(0, format_1.formatDuration)(r.duration)}</td></tr>`)
         .join('\n');
     core.summary.addRaw(`<details><summary><strong>Suite Breakdown</strong> (${suites.length} suites)</summary>\n\n` +
         '<table>\n' +
@@ -56348,7 +56387,7 @@ const SEVERITY_ORDER = {
 function renderHighlights(highlights, dashboardUrl) {
     const sorted = [...highlights].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
     const shown = sorted.slice(0, MAX_HIGHLIGHTS_SHOWN);
-    const lines = ['### Highlights\n\n'];
+    const lines = ['### 💡 Highlights\n\n'];
     for (const h of shown) {
         lines.push(`${SEVERITY_EMOJI[h.severity]} ${renderHighlightMessage(h)}\n\n`);
     }
@@ -56365,16 +56404,15 @@ const DELTA_STATUS_EMOJI = {
     newlyPassing: '✅ Now Passing',
 };
 function renderDeltaSection(delta) {
-    const lines = ['### Changes Since Last Run\n\n'];
+    const lines = ['### 🔄 Changes Since Last Run\n\n'];
     const sign = (n) => (n >= 0 ? '+' : '-');
     if (!delta.hasChanges) {
         lines.push('✅ No changes since last run\n\n');
-        lines.push(`**Pass rate:** ${delta.passRateCurr.toFixed(1)}% | **Duration:** ${formatDuration(delta.durationCurr)}\n\n`);
         return lines.join('');
     }
     lines.push(`**Pass rate:** ${delta.passRatePrev.toFixed(1)}% → ${delta.passRateCurr.toFixed(1)}% (${sign(delta.passRateDelta)}${Math.abs(delta.passRateDelta).toFixed(1)}%)\n\n`);
     const durSign = sign(delta.durationDelta);
-    lines.push(`**Duration:** ${formatDuration(delta.durationPrev)} → ${formatDuration(delta.durationCurr)} (${durSign}${formatDuration(Math.abs(delta.durationDelta))}, ${durSign}${Math.abs(delta.durationDeltaPercent).toFixed(1)}%)\n\n`);
+    lines.push(`**Duration:** ${(0, format_1.formatDuration)(delta.durationPrev)} → ${(0, format_1.formatDuration)(delta.durationCurr)} (${durSign}${(0, format_1.formatDuration)(Math.abs(delta.durationDelta))}, ${durSign}${Math.abs(delta.durationDeltaPercent).toFixed(1)}%)\n\n`);
     const categories = [
         { key: 'added', tests: delta.testsAdded },
         { key: 'newlyFailing', tests: delta.newlyFailing },
@@ -56388,7 +56426,7 @@ function renderDeltaSection(delta) {
             const tests = cat.tests;
             const shown = tests.slice(0, MAX_DELTA_TESTS_SHOWN);
             for (const t of shown) {
-                allRows.push(`<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.suite)}</td></tr>`);
+                allRows.push(`<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td>${(0, format_1.escapeHtml)(t.name)}</td><td>${(0, format_1.escapeHtml)(t.suite)}</td></tr>`);
             }
             if (tests.length > MAX_DELTA_TESTS_SHOWN) {
                 allRows.push(`<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td colspan="2"><em>and ${tests.length - MAX_DELTA_TESTS_SHOWN} more...</em></td></tr>`);
@@ -56418,11 +56456,11 @@ const TESTS_CHANGED_STATUS_EMOJI = {
 function renderTestsChangedSection(report) {
     if (!report.hasChanges)
         return '';
-    const lines = ['### Tests Changed\n\n'];
+    const lines = ['### 📝 Tests Changed\n\n'];
     if (report.newTests.length > 0) {
         lines.push(`#### New Tests (${report.newTests.length})\n\n`);
         const shown = report.newTests.slice(0, MAX_TESTS_CHANGED_SHOWN);
-        const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} | ${formatDuration(t.duration)} |`);
+        const rows = shown.map((t) => `| ${(0, format_1.escapeHtml)(t.name)} | ${(0, format_1.escapeHtml)(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} | ${(0, format_1.formatDuration)(t.duration)} |`);
         const table = '| Test | Suite | Status | Duration |\n|------|-------|--------|----------|\n' +
             rows.join('\n') +
             '\n\n';
@@ -56439,7 +56477,7 @@ function renderTestsChangedSection(report) {
         const rows = shown.map((t) => {
             const prevEmoji = TESTS_CHANGED_STATUS_EMOJI[t.previousStatus ?? ''] ?? '';
             const currEmoji = TESTS_CHANGED_STATUS_EMOJI[t.status] ?? '';
-            return `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${prevEmoji} → ${currEmoji} |`;
+            return `| ${(0, format_1.escapeHtml)(t.name)} | ${(0, format_1.escapeHtml)(t.suite)} | ${prevEmoji} → ${currEmoji} |`;
         });
         const table = '| Test | Suite | Change |\n|------|-------|--------|\n' + rows.join('\n') + '\n\n';
         if (report.statusChanged.length > MAX_TESTS_CHANGED_SHOWN) {
@@ -56452,7 +56490,7 @@ function renderTestsChangedSection(report) {
     if (report.removedTests.length > 0) {
         lines.push(`#### Removed Tests (${report.removedTests.length})\n\n`);
         const shown = report.removedTests.slice(0, MAX_TESTS_CHANGED_SHOWN);
-        const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} |`);
+        const rows = shown.map((t) => `| ${(0, format_1.escapeHtml)(t.name)} | ${(0, format_1.escapeHtml)(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} |`);
         const table = '| Test | Suite | Previous Status |\n|------|-------|-----------------|\n' +
             rows.join('\n') +
             '\n\n';
@@ -56475,11 +56513,11 @@ const FLAKY_STATUS_EMOJI = {
 function renderFlakySection(result) {
     if (!result.hasFlakyTests)
         return '';
-    const lines = ['### Potentially Flaky Tests\n\n'];
+    const lines = ['### 🔀 Potentially Flaky Tests\n\n'];
     const shown = result.flakyTests.slice(0, MAX_FLAKY_TESTS_SHOWN);
     const rows = shown.map((t) => {
         const timeline = t.recentStatuses.map((s) => FLAKY_STATUS_EMOJI[s] ?? '').join('');
-        return `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${Math.round(t.flakyRate)}% | ${t.flipCount} | ${timeline} |`;
+        return `| ${(0, format_1.escapeHtml)(t.name)} | ${(0, format_1.escapeHtml)(t.suite)} | ${Math.round(t.flakyRate)}% | ${t.flipCount} | ${timeline} |`;
     });
     const table = '| Test | Suite | Flaky Rate | Flips | Recent Runs |\n|------|-------|------------|-------|-------------|\n' +
         rows.join('\n') +
@@ -56498,7 +56536,7 @@ const TREND_ARROW = {
     down: '↓',
 };
 function renderTrendsSection(trends) {
-    const lines = ['### Trends\n\n'];
+    const lines = ['### 📈 Trends\n\n'];
     const passSign = trends.passRate.delta >= 0 ? '+' : '';
     const passArrow = TREND_ARROW[trends.passRate.direction];
     let passLine = `**Pass rate:** `;
@@ -56513,7 +56551,7 @@ function renderTrendsSection(trends) {
     if (trends.duration.sparkline) {
         durLine += `${trends.duration.sparkline} `;
     }
-    durLine += `${formatDuration(trends.duration.current)} ${durArrow} (${durSign}${formatDuration(Math.abs(trends.duration.delta))})\n\n`;
+    durLine += `${(0, format_1.formatDuration)(trends.duration.current)} ${durArrow} (${durSign}${(0, format_1.formatDuration)(Math.abs(trends.duration.delta))})\n\n`;
     lines.push(durLine);
     const countSign = trends.testCount.delta >= 0 ? '+' : '';
     lines.push(`**Tests:** ${trends.testCount.current} (${countSign}${trends.testCount.delta})\n\n`);
@@ -56521,13 +56559,13 @@ function renderTrendsSection(trends) {
 }
 const MAX_PERF_REGRESSIONS_SHOWN = 15;
 function renderPerfRegressionSection(result) {
-    const lines = ['### Performance Regressions\n\n'];
+    const lines = ['### ⚡ Performance Regressions\n\n'];
     lines.push(`**Duration trend:** ${result.sparkline}\n\n`);
     if (!result.hasRegressions) {
         return lines.join('');
     }
     const shown = result.regressions.slice(0, MAX_PERF_REGRESSIONS_SHOWN);
-    const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${formatDuration(t.currentDuration)} | ${formatDuration(t.medianDuration)} | +${Math.round(t.increasePercent)}% |`);
+    const rows = shown.map((t) => `| ${(0, format_1.escapeHtml)(t.name)} | ${(0, format_1.escapeHtml)(t.suite)} | ${(0, format_1.formatDuration)(t.currentDuration)} | ${(0, format_1.formatDuration)(t.medianDuration)} | +${Math.round(t.increasePercent)}% |`);
     const table = '| Test | Suite | Current | Median | Increase |\n|------|-------|---------|--------|----------|\n' +
         rows.join('\n') +
         '\n\n';
@@ -56559,7 +56597,7 @@ function renderHighlightMessage(h) {
             const currentDuration = data.currentDuration;
             const deltaPercent = data.deltaPercent;
             const sign = deltaPercent >= 0 ? '+' : '';
-            return `**Duration:** ${formatDuration(currentDuration)} (${sign}${deltaPercent}% vs baseline)`;
+            return `**Duration:** ${(0, format_1.formatDuration)(currentDuration)} (${sign}${deltaPercent}% vs baseline)`;
         }
         case 'fixed_tests': {
             const tests = data.tests ?? [];

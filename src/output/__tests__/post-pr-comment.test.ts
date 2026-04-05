@@ -87,14 +87,17 @@ describe('postPrComment', () => {
       ],
     });
 
-    await postPrComment({ githubToken: 'ghp_test', section: makeSection({ total: 200 }) });
+    await postPrComment({
+      githubToken: 'ghp_test',
+      section: makeSection({ total: 200, passed: 200 }),
+    });
 
     expect(mockUpdateComment).toHaveBeenCalledWith(
       expect.objectContaining({
         owner: 'test-owner',
         repo: 'test-repo',
         comment_id: 999,
-        body: expect.stringContaining('**200 tests**'),
+        body: expect.stringContaining('✅ 200 passed'),
       }),
     );
     expect(mockCreateComment).not.toHaveBeenCalled();
