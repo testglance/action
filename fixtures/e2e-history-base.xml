@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="e2e-history" tests="5" failures="1" errors="0" skipped="0" time="3.100">
+  <testcase name="should create user" classname="api.users" time="0.800"/>
+  <testcase name="should list users" classname="api.users" time="0.500"/>
+  <testcase name="should delete user" classname="api.users" time="0.300"/>
+  <testcase name="should update profile" classname="api.profile" time="1.000"/>
+  <testcase name="should validate email" classname="api.profile" time="0.500">
+    <failure message="Invalid email not rejected">AssertionError: expected 400 but got 200</failure>
+  </testcase>
+</testsuite>

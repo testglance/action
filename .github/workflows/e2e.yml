@@ -86,6 +86,32 @@ jobs:
           test-job-name: my-custom-job
           slowest-tests: '0'
 
+      # ── History features (Epic 7): delta, tests changed, trends ──
+      # Both steps use the same report-path (same cache key hash).
+      # Step 1 seeds the cache with baseline data; the copy swaps in
+      # different results; step 2 restores history and shows diffs.
+      # Over successive main runs, cross-run history accumulates and
+      # enables flaky detection, perf regression, and trend indicators.
+      - name: 'History: prepare baseline'
+        run: cp fixtures/e2e-history-base.xml fixtures/e2e-history.xml
+
+      - name: 'History: seed baseline'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/e2e-history.xml
+
+      - name: 'History: swap to changed fixture'
+        run: cp fixtures/e2e-history-changed.xml fixtures/e2e-history.xml
+
+      - name: 'History: delta + tests changed'
+        uses: ./
+        with:
+          api-key: unused
+          send-results: false
+          report-path: fixtures/e2e-history.xml
+
       # ── Edge cases: must warn but NOT fail ──
       - name: 'Edge: malformed XML (should warn, exit 0)'
         uses: ./
