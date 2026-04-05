@@ -6,7 +6,7 @@ import type {
   PerfRegressionResult,
   TrendIndicators,
 } from '../history/types';
-import { formatDuration } from './summary';
+import { formatDuration, renderProgressBar } from './format';
 
 export interface PrCommentSection {
   testJobName: string;
@@ -164,15 +164,20 @@ export function renderTrendLine(trends: TrendIndicators): string {
 
 export function renderTestJobSection(section: PrCommentSection): string {
   const safeKey = sanitizeMarkerName(section.testJobName);
-  const statusEmoji = section.failed > 0 ? '❌' : '✅';
+  const emoji = section.failed > 0 ? '❌' : '✅';
+  const passRate = section.total > 0 ? ((section.passed / section.total) * 100).toFixed(1) : '0.0';
 
   const lines: string[] = [];
   lines.push(`<!-- tj:${safeKey} -->`);
-  lines.push(`### ${statusEmoji} ${section.testJobName}`);
+  lines.push(`### ${emoji} ${section.testJobName} — ${passRate}% pass rate`);
+  lines.push(renderProgressBar(Number(passRate)));
 
-  let statsLine = `**${section.total} tests** | ${formatDuration(section.duration)}`;
+  const statsParts: string[] = [`✅ ${section.passed} passed`];
+  if (section.failed > 0) statsParts.push(`❌ ${section.failed} failed`);
+  statsParts.push(`⏱️ ${formatDuration(section.duration)}`);
+  let statsLine = statsParts.join(' · ');
   if (section.healthScore !== null && section.healthScore !== undefined) {
-    statsLine += ` | Health: ${section.healthScore}/100`;
+    statsLine += ` · 🏥 ${section.healthScore}/100`;
   }
   lines.push(statsLine);
 
@@ -180,7 +185,18 @@ export function renderTestJobSection(section: PrCommentSection): string {
     lines.push(renderTrendLine(section.trends));
   }
 
-  lines.push('');
+  const hasDetails =
+    section.highlights.length > 0 ||
+    (section.baseBranch && section.baseDelta !== undefined) ||
+    (section.testsChanged && section.testsChanged.hasChanges) ||
+    (section.flaky && section.flaky.hasFlakyTests) ||
+    (section.perfRegression && section.perfRegression.hasRegressions);
+
+  if (hasDetails) {
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+  }
 
   if (section.highlights.length > 0) {
     const sorted = [...section.highlights].sort(
@@ -287,7 +303,7 @@ export function renderPerfRegressionCompact(result: PerfRegressionResult): strin
 export function renderPrComment(sections: PrCommentSection[]): string {
   const lines: string[] = [];
   lines.push('<!-- testglance-pr-summary -->');
-  lines.push('## 🔬 TestGlance Test Summary');
+  lines.push('## 🔬 TestGlance');
   lines.push('');
 
   for (let i = 0; i < sections.length; i++) {
