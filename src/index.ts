@@ -122,7 +122,8 @@ export async function run(): Promise<RunResult> {
     const testJobName = core.getInput('test-job-name') || '';
     const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
     const sendResults = core.getInput('send-results') !== 'false';
-    const createCheck = core.getInput('create-check') === 'true';
+    const annotateFailures =
+      core.getInput('annotate-failures') === 'true' || core.getInput('create-check') === 'true';
     const checkName = core.getInput('check-name') || 'Test Results';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
     const flakyThreshold = parseFlakyThreshold(core.getInput('flaky-threshold'));
@@ -400,11 +401,11 @@ export async function run(): Promise<RunResult> {
       artifactUrl,
     });
 
-    if (createCheck) {
+    if (annotateFailures) {
       if (githubToken) {
         await createCheckRun({ githubToken, checkName, parsed });
       } else {
-        core.warning('create-check requires github-token — skipping Check Run creation');
+        core.warning('annotate-failures requires github-token — skipping inline annotations');
       }
     }
 

@@ -138,6 +138,7 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'test-job-name': '',
     'send-results': '',
     'github-token': '',
+    'annotate-failures': '',
     'create-check': '',
     'check-name': '',
     'slowest-tests': '',
@@ -891,9 +892,9 @@ describe('run() integration', () => {
     });
   });
 
-  describe('Check Run creation (Story 6.4)', () => {
-    it('calls createCheckRun when create-check is true and github-token is provided', async () => {
-      setupInputs({ 'create-check': 'true', 'github-token': 'ghp_abc123' });
+  describe('Inline failure annotations (Story 6.4)', () => {
+    it('calls createCheckRun when annotate-failures is true and github-token is provided', async () => {
+      setupInputs({ 'annotate-failures': 'true', 'github-token': 'ghp_abc123' });
 
       await run();
 
@@ -908,7 +909,7 @@ describe('run() integration', () => {
 
     it('uses custom check-name when provided', async () => {
       setupInputs({
-        'create-check': 'true',
+        'annotate-failures': 'true',
         'check-name': 'Unit Tests',
         'github-token': 'ghp_abc123',
       });
@@ -920,38 +921,38 @@ describe('run() integration', () => {
       );
     });
 
-    it('does not call createCheckRun when create-check is false', async () => {
-      setupInputs({ 'create-check': 'false', 'github-token': 'ghp_abc123' });
+    it('does not annotate when annotate-failures is false', async () => {
+      setupInputs({ 'annotate-failures': 'false', 'github-token': 'ghp_abc123' });
 
       await run();
 
       expect(mockCreateCheckRun).not.toHaveBeenCalled();
     });
 
-    it('does not call createCheckRun when create-check is empty (default)', async () => {
-      setupInputs({ 'create-check': '', 'github-token': 'ghp_abc123' });
+    it('does not annotate when annotate-failures is empty (default)', async () => {
+      setupInputs({ 'annotate-failures': '', 'github-token': 'ghp_abc123' });
 
       await run();
 
       expect(mockCreateCheckRun).not.toHaveBeenCalled();
     });
 
-    it('warns and skips when create-check is true but github-token is missing', async () => {
-      setupInputs({ 'create-check': 'true', 'github-token': '' });
+    it('warns and skips when annotate-failures is true but github-token is missing', async () => {
+      setupInputs({ 'annotate-failures': 'true', 'github-token': '' });
       const original = process.env.GITHUB_TOKEN;
       delete process.env.GITHUB_TOKEN;
 
       await run();
 
       expect(mockWarning).toHaveBeenCalledWith(
-        expect.stringContaining('create-check requires github-token'),
+        expect.stringContaining('annotate-failures requires github-token'),
       );
       expect(mockCreateCheckRun).not.toHaveBeenCalled();
       if (original !== undefined) process.env.GITHUB_TOKEN = original;
     });
 
     it('continues normally when createCheckRun throws', async () => {
-      setupInputs({ 'create-check': 'true', 'github-token': 'ghp_abc123' });
+      setupInputs({ 'annotate-failures': 'true', 'github-token': 'ghp_abc123' });
       mockCreateCheckRun.mockRejectedValue(new Error('Check run failed'));
 
       await run();
@@ -961,7 +962,7 @@ describe('run() integration', () => {
 
     it('works independently of send-results flag', async () => {
       setupInputs({
-        'create-check': 'true',
+        'annotate-failures': 'true',
         'github-token': 'ghp_abc123',
         'send-results': 'false',
       });
@@ -970,6 +971,14 @@ describe('run() integration', () => {
 
       expect(mockCreateCheckRun).toHaveBeenCalled();
       expect(mockSendTestRun).not.toHaveBeenCalled();
+    });
+
+    it('supports deprecated create-check input as fallback', async () => {
+      setupInputs({ 'create-check': 'true', 'github-token': 'ghp_abc123' });
+
+      await run();
+
+      expect(mockCreateCheckRun).toHaveBeenCalled();
     });
   });
 
