@@ -24,6 +24,7 @@ export interface PrCommentSection {
   flaky?: FlakyDetectionResult | null;
   perfRegression?: PerfRegressionResult | null;
   trends?: TrendIndicators | null;
+  artifactUrl?: string;
 }
 
 const SEVERITY_EMOJI: Record<HighlightSeverity, string> = {
@@ -230,9 +231,10 @@ export function renderTestJobSection(section: PrCommentSection): string {
     lines.push('');
   }
 
-  if (section.runUrl) {
-    lines.push(`[View Run →](${section.runUrl})`);
-  }
+  const links: string[] = [];
+  if (section.runUrl) links.push(`[View Run →](${section.runUrl})`);
+  if (section.artifactUrl) links.push(`[📄 HTML Report](${section.artifactUrl})`);
+  if (links.length > 0) lines.push(links.join(' · '));
 
   lines.push(`<!-- /tj:${safeKey} -->`);
 

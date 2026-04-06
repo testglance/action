@@ -56,6 +56,14 @@ inputs:
     description: 'Maximum number of runs to keep in history'
     required: false
     default: '20'
+  html-report:
+    description: 'Generate a self-contained HTML report and upload as a workflow artifact'
+    required: false
+    default: 'true'
+  artifact-name:
+    description: 'Name of the uploaded HTML report artifact'
+    required: false
+    default: 'testglance-report'
 runs:
   using: 'node20'
   main: 'dist/index.js'

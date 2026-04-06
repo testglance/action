@@ -13,6 +13,8 @@ import { handleApiUnreachable, handleApiError, handleUnexpectedError } from './u
 import { generateSummary } from './output/summary';
 import { postPrComment } from './output/post-pr-comment';
 import { createCheckRun } from './output/check-run';
+import { generateHtmlReport } from './output/html-report';
+import { uploadArtifact } from './output/upload-artifact';
 import { ActionsCacheStorage } from './history/actions-cache-storage';
 import { HistoryManager } from './history/manager';
 import type { ParsedTestRun } from './types';
@@ -125,6 +127,8 @@ export async function run(): Promise<RunResult> {
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
     const flakyThreshold = parseFlakyThreshold(core.getInput('flaky-threshold'));
     const perfThreshold = parsePerfThreshold(core.getInput('perf-threshold'));
+    const htmlReport = core.getInput('html-report') === 'true';
+    const artifactName = core.getInput('artifact-name') || 'testglance-report';
     const historyEnabled = core.getInput('history') !== 'false';
     const historyLimitRaw = core.getInput('history-limit') || '20';
     const historyLimitParsed = parseInt(historyLimitRaw, 10);
@@ -346,6 +350,40 @@ export async function run(): Promise<RunResult> {
       ? `https://www.testglance.dev/runs/${result.runId}`
       : undefined;
 
+    const runUrl = `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+    let artifactUrl: string | undefined;
+
+    if (htmlReport) {
+      try {
+        const branch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'unknown';
+        const html = generateHtmlReport({
+          parsed,
+          apiSuccess: result?.success ?? false,
+          healthScore: result?.healthScore,
+          dashboardUrl,
+          highlights: result?.highlights ?? [],
+          slowestTests: slowestTestsCount,
+          delta,
+          testsChanged,
+          flaky,
+          perfRegression,
+          trends,
+          commitSha: process.env.GITHUB_SHA || 'unknown',
+          branch,
+          workflowRunUrl: runUrl,
+          timestamp: new Date().toISOString(),
+        });
+        const uploadSuccess = await uploadArtifact(html, artifactName);
+        if (uploadSuccess) {
+          artifactUrl = `${runUrl}#artifacts`;
+        }
+      } catch (err) {
+        core.warning(
+          `HTML report generation failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     await generateSummary({
       parsed,
       apiSuccess: result?.success ?? false,
@@ -359,6 +397,7 @@ export async function run(): Promise<RunResult> {
       flaky,
       perfRegression,
       trends,
+      artifactUrl,
     });
 
     if (createCheck) {
@@ -388,6 +427,7 @@ export async function run(): Promise<RunResult> {
           trends,
           baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
           baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
+          artifactUrl,
         },
       });
     }
