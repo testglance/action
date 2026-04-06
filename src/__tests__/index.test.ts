@@ -95,6 +95,16 @@ vi.mock('../output/check-run', () => ({
   createCheckRun: (...args: unknown[]) => mockCreateCheckRun(...args),
 }));
 
+const mockGenerateHtmlReport = vi.fn().mockReturnValue('<html>report</html>');
+vi.mock('../output/html-report', () => ({
+  generateHtmlReport: (...args: unknown[]) => mockGenerateHtmlReport(...args),
+}));
+
+const mockUploadArtifact = vi.fn().mockResolvedValue(undefined);
+vi.mock('../output/upload-artifact', () => ({
+  uploadArtifact: (...args: unknown[]) => mockUploadArtifact(...args),
+}));
+
 vi.mock('@actions/cache', () => ({
   restoreCache: vi.fn().mockResolvedValue(undefined),
   saveCache: vi.fn().mockResolvedValue(0),
@@ -135,6 +145,8 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'perf-threshold': '200',
     history: 'false',
     'history-limit': '20',
+    'html-report': '',
+    'artifact-name': '',
   };
   const inputs = { ...defaults, ...overrides };
   mockGetInput.mockImplementation((name: string) => inputs[name] ?? '');
@@ -1847,6 +1859,64 @@ describe('run() integration', () => {
         expect(prCommentCall.section.trends).not.toBeNull();
         expect(prCommentCall.section.trends.passRate).toBeDefined();
       }
+    });
+  });
+
+  describe('HTML report generation', () => {
+    it('generates HTML report and uploads artifact when html-report=true', async () => {
+      setupInputs({ 'html-report': 'true' });
+
+      await run();
+
+      expect(mockGenerateHtmlReport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parsed: VALID_PARSED_RUN,
+          commitSha: expect.any(String),
+          branch: expect.any(String),
+          workflowRunUrl: expect.any(String),
+          timestamp: expect.any(String),
+        }),
+      );
+      expect(mockUploadArtifact).toHaveBeenCalledWith('<html>report</html>', 'testglance-report');
+    });
+
+    it('uses custom artifact name', async () => {
+      setupInputs({ 'html-report': 'true', 'artifact-name': 'my-report' });
+
+      await run();
+
+      expect(mockUploadArtifact).toHaveBeenCalledWith('<html>report</html>', 'my-report');
+    });
+
+    it('skips HTML report when html-report is not set', async () => {
+      setupInputs({ 'html-report': '' });
+
+      await run();
+
+      expect(mockGenerateHtmlReport).not.toHaveBeenCalled();
+      expect(mockUploadArtifact).not.toHaveBeenCalled();
+    });
+
+    it('skips HTML report when html-report=false', async () => {
+      setupInputs({ 'html-report': 'false' });
+
+      await run();
+
+      expect(mockGenerateHtmlReport).not.toHaveBeenCalled();
+    });
+
+    it('does not fail the action when HTML report generation throws', async () => {
+      setupInputs({ 'html-report': 'true' });
+      mockGenerateHtmlReport.mockImplementation(() => {
+        throw new Error('render failed');
+      });
+
+      await run();
+
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('HTML report generation failed'),
+      );
+      expect(mockGenerateSummary).toHaveBeenCalled();
     });
   });
 });

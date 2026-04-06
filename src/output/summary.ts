@@ -38,6 +38,7 @@ export interface SummaryOptions {
   flaky?: FlakyDetectionResult | null;
   perfRegression?: PerfRegressionResult | null;
   trends?: TrendIndicators | null;
+  artifactUrl?: string;
 }
 
 const MAX_FAILED_TESTS_SHOWN = 25;
@@ -170,6 +171,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   if (dashboardUrl) {
     core.summary.addLink('View Dashboard', dashboardUrl);
     core.summary.addRaw('\n');
+  }
+
+  if (options.artifactUrl) {
+    core.summary.addRaw(`📄 [Download HTML Report](${options.artifactUrl})\n`);
   }
 
   await core.summary.write();
