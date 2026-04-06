@@ -41,6 +41,9 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -56,6 +59,7 @@ jobs:
           api-key: ${{ secrets.TESTGLANCE_API_KEY }}
           report-path: test-results/vitest.xml
           github-token: ${{ github.token }}
+          annotate-failures: true
 
   build:
     name: Build
