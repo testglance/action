@@ -30,23 +30,23 @@ beforeEach(() => {
 
 describe('uploadArtifact', () => {
   it('writes HTML to temp file and uploads', async () => {
-    await uploadArtifact('<html>report</html>', 'testglance-report');
+    await expect(uploadArtifact('<html>report</html>', 'testglance-report')).resolves.toBe(true);
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      expect.stringContaining('testglance-report.html'),
+      expect.stringContaining('testglance-report-'),
       '<html>report</html>',
       'utf-8',
     );
     expect(mockUploadArtifact).toHaveBeenCalledWith(
       'testglance-report',
-      [expect.stringContaining('testglance-report.html')],
+      [expect.stringContaining('testglance-report-')],
       expect.any(String),
     );
     expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('uploaded'));
   });
 
   it('uses custom artifact name', async () => {
-    await uploadArtifact('<html></html>', 'my-custom-report');
+    await expect(uploadArtifact('<html></html>', 'my-custom-report')).resolves.toBe(true);
 
     expect(mockUploadArtifact).toHaveBeenCalledWith(
       'my-custom-report',
@@ -58,13 +58,13 @@ describe('uploadArtifact', () => {
   it('cleans up temp file after successful upload', async () => {
     await uploadArtifact('<html></html>', 'test');
 
-    expect(mockUnlinkSync).toHaveBeenCalledWith(expect.stringContaining('testglance-report.html'));
+    expect(mockUnlinkSync).toHaveBeenCalledWith(expect.stringContaining('testglance-report-'));
   });
 
   it('logs warning on upload failure without throwing', async () => {
     mockUploadArtifact.mockRejectedValue(new Error('upload failed'));
 
-    await expect(uploadArtifact('<html></html>', 'test')).resolves.toBeUndefined();
+    await expect(uploadArtifact('<html></html>', 'test')).resolves.toBe(false);
 
     expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('upload failed'));
   });
@@ -82,6 +82,6 @@ describe('uploadArtifact', () => {
       throw new Error('permission denied');
     });
 
-    await expect(uploadArtifact('<html></html>', 'test')).resolves.toBeUndefined();
+    await expect(uploadArtifact('<html></html>', 'test')).resolves.toBe(true);
   });
 });

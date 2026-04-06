@@ -373,8 +373,10 @@ export async function run(): Promise<RunResult> {
           workflowRunUrl: runUrl,
           timestamp: new Date().toISOString(),
         });
-        await uploadArtifact(html, artifactName);
-        artifactUrl = `${runUrl}#artifacts`;
+        const uploadSuccess = await uploadArtifact(html, artifactName);
+        if (uploadSuccess) {
+          artifactUrl = `${runUrl}#artifacts`;
+        }
       } catch (err) {
         core.warning(
           `HTML report generation failed: ${err instanceof Error ? err.message : String(err)}`,
