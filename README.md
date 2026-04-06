@@ -25,13 +25,17 @@ That's it. TestGlance auto-detects your test reports and generates a CI summary.
 ### With PR Comments
 
 ```yaml
-- uses: testglance/action@v1
-  with:
-    api-key: ${{ secrets.TESTGLANCE_API_KEY }}
-    github-token: ${{ github.token }}
+permissions:
+  pull-requests: write
+
+steps:
+  - uses: testglance/action@v1
+    with:
+      api-key: ${{ secrets.TESTGLANCE_API_KEY }}
+      github-token: ${{ github.token }}
 ```
 
-Requires `pull-requests: write` permission.
+Requires `pull-requests: write` permission. See [Permissions](#permissions) for details.
 
 ### Standalone (No SaaS)
 
@@ -134,6 +138,41 @@ See [`examples/reusable-workflow.yml`](examples/reusable-workflow.yml) for a `wo
 | `github-token`  |    No    | `''`                         | GitHub token for PR comments and Check Runs                  |
 | `create-check`  |    No    | `false`                      | Create a GitHub Check Run with inline annotations            |
 | `check-name`    |    No    | `Test Results`               | Name of the Check Run                                        |
+
+## Permissions
+
+TestGlance's core functionality (CI summaries, auto-detection, API reporting) requires **no special permissions**. You only need to configure permissions when using PR comments or Check Runs via `github-token`.
+
+| Feature     | Permission Required    |
+| ----------- | ---------------------- |
+| CI Summary  | None                   |
+| PR Comments | `pull-requests: write` |
+| Check Runs  | `checks: write`        |
+
+### Setting permissions
+
+Add a `permissions` block at the **job level** or **workflow level**:
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write # PR comments
+      checks: write # Check Runs
+    steps:
+      - uses: testglance/action@v1
+        with:
+          api-key: ${{ secrets.TESTGLANCE_API_KEY }}
+          github-token: ${{ github.token }}
+          create-check: true
+```
+
+> **Important:** When you add a `permissions` block, GitHub removes all default permissions and grants **only** what you list. If your job needs other permissions (e.g., `contents: read` to check out code), you must include them explicitly.
+
+### Missing permissions
+
+If `github-token` is provided but the required permissions are missing, TestGlance will log a warning and skip the PR comment or Check Run. It will **never fail your build** — the [non-blocking guarantee](#non-blocking-guarantee) still applies.
 
 ## Supported Formats
 
