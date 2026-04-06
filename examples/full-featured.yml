@@ -29,6 +29,6 @@ jobs:
         with:
           api-key: ${{ secrets.TESTGLANCE_API_KEY }}
           github-token: ${{ github.token }}
-          create-check: true
+          annotate-failures: true
           check-name: Unit Tests
           slowest-tests: '15'
