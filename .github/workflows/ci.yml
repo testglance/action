@@ -42,6 +42,7 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       checks: write
       pull-requests: write
     steps:

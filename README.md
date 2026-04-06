@@ -9,7 +9,7 @@ Zero-config test reporting for GitHub Actions. Never breaks your CI.
 - **Zero config** — auto-detects test report files; no `report-path` required
 - **Rich CI summaries** — failed tests with stack traces, slowest tests, per-suite breakdowns
 - **PR comments** — multi-job test summaries posted directly on pull requests
-- **Check Runs** — inline annotations on failed test lines (opt-in)
+- **Inline annotations** — failed tests annotated directly on the PR diff (opt-in)
 - **Non-blocking** — guaranteed exit code 0, your builds are always safe
 
 ## Quick Start
@@ -57,7 +57,7 @@ Use TestGlance for CI summaries without sending data to the platform:
 - **Suite Breakdown** — per-suite pass/fail/skip counts and durations
 - **Auto-Detection** — finds `**/test-results/*.xml`, `**/junit.xml`, `**/ctrf/*.json`, and more
 - **Multi-File Merge** — glob patterns merge multiple report files into a single summary
-- **Check Runs** — opt-in GitHub Check Run with inline annotations on failed test file:line
+- **Inline Annotations** — opt-in failure annotations on the PR diff at the exact file:line
 - **PR Comments** — multi-job summaries merged into a single comment, updated on re-runs
 - **SaaS Dashboard** — optional health scores, flaky test detection, and trend tracking
 
@@ -96,7 +96,7 @@ Use TestGlance for CI summaries without sending data to the platform:
     github-token: ${{ github.token }}
 ```
 
-### With Check Runs
+### With Inline Failure Annotations
 
 ```yaml
 permissions:
@@ -107,7 +107,7 @@ steps:
     with:
       api-key: ${{ secrets.TESTGLANCE_API_KEY }}
       github-token: ${{ github.token }}
-      create-check: true
+      annotate-failures: true
       check-name: Unit Tests
 ```
 
@@ -126,28 +126,28 @@ See [`examples/reusable-workflow.yml`](examples/reusable-workflow.yml) for a `wo
 
 ## Inputs
 
-| Input           | Required | Default                      | Description                                                  |
-| --------------- | :------: | ---------------------------- | ------------------------------------------------------------ |
-| `report-path`   |    No    | `''` (auto-detect)           | Path to test report file(s). Supports glob patterns.         |
-| `api-key`       | **Yes**  | —                            | TestGlance project API key                                   |
-| `api-url`       |    No    | `https://www.testglance.dev` | TestGlance API URL                                           |
-| `report-format` |    No    | `auto`                       | Format: `junit`, `ctrf`, or `auto` (detect from extension)   |
-| `test-job-name` |    No    | `''`                         | Override the display name for this test job                  |
-| `slowest-tests` |    No    | `10`                         | Number of slowest tests to show in CI summary (0 to disable) |
-| `send-results`  |    No    | `true`                       | Send results to TestGlance API (`false` for local-only)      |
-| `github-token`  |    No    | `''`                         | GitHub token for PR comments and Check Runs                  |
-| `create-check`  |    No    | `false`                      | Create a GitHub Check Run with inline annotations            |
-| `check-name`    |    No    | `Test Results`               | Name of the Check Run                                        |
+| Input               | Required | Default                      | Description                                                       |
+| ------------------- | :------: | ---------------------------- | ----------------------------------------------------------------- |
+| `report-path`       |    No    | `''` (auto-detect)           | Path to test report file(s). Supports glob patterns.              |
+| `api-key`           | **Yes**  | —                            | TestGlance project API key                                        |
+| `api-url`           |    No    | `https://www.testglance.dev` | TestGlance API URL                                                |
+| `report-format`     |    No    | `auto`                       | Format: `junit`, `ctrf`, or `auto` (detect from extension)        |
+| `test-job-name`     |    No    | `''`                         | Override the display name for this test job                       |
+| `slowest-tests`     |    No    | `10`                         | Number of slowest tests to show in CI summary (0 to disable)      |
+| `send-results`      |    No    | `true`                       | Send results to TestGlance API (`false` for local-only)           |
+| `github-token`      |    No    | `''`                         | GitHub token for PR comments and Check Runs                       |
+| `annotate-failures` |    No    | `false`                      | Annotate failed tests inline on the PR diff (creates a Check Run) |
+| `check-name`        |    No    | `Test Results`               | Name of the Check Run created by `annotate-failures`              |
 
 ## Permissions
 
-TestGlance's core functionality (CI summaries, auto-detection, API reporting) requires **no special permissions**. You only need to configure permissions when using PR comments or Check Runs via `github-token`.
+TestGlance's core functionality (CI summaries, auto-detection, API reporting) requires **no special permissions**. You only need to configure permissions when using PR comments or inline annotations via `github-token`.
 
-| Feature     | Permission Required    |
-| ----------- | ---------------------- |
-| CI Summary  | None                   |
-| PR Comments | `pull-requests: write` |
-| Check Runs  | `checks: write`        |
+| Feature            | Permission Required    |
+| ------------------ | ---------------------- |
+| CI Summary         | None                   |
+| PR Comments        | `pull-requests: write` |
+| Inline Annotations | `checks: write`        |
 
 ### Setting permissions
 
@@ -159,13 +159,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write # PR comments
-      checks: write # Check Runs
+      checks: write # Inline annotations
     steps:
       - uses: testglance/action@v1
         with:
           api-key: ${{ secrets.TESTGLANCE_API_KEY }}
           github-token: ${{ github.token }}
-          create-check: true
+          annotate-failures: true
 ```
 
 > **Important:** When you add a `permissions` block, GitHub removes all default permissions and grants **only** what you list. If your job needs other permissions (e.g., `contents: read` to check out code), you must include them explicitly.

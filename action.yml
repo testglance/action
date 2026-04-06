@@ -32,12 +32,17 @@ inputs:
   github-token:
     description: 'GitHub token for PR comments. Use github.token or a PAT with pull-requests: write scope.'
     required: false
-  create-check:
-    description: 'Create a GitHub Check Run with test results and inline annotations (requires checks: write permission)'
+  annotate-failures:
+    description: 'Annotate failed tests inline on the PR diff via a GitHub Check Run (requires checks: write permission)'
     required: false
     default: 'false'
+  create-check:
+    description: 'Deprecated — use annotate-failures instead'
+    required: false
+    default: 'false'
+    deprecationMessage: 'Use annotate-failures instead of create-check'
   check-name:
-    description: 'Name of the GitHub Check Run'
+    description: 'Name of the GitHub Check Run created by annotate-failures'
     required: false
     default: 'Test Results'
   flaky-threshold:

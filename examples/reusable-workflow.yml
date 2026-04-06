@@ -55,12 +55,12 @@ on:
         type: string
         required: false
         default: ''
-      # Create a GitHub Check Run with inline annotations on failed tests
-      create-check:
+      # Annotate failed tests inline on the PR diff
+      annotate-failures:
         type: string
         required: false
         default: 'false'
-      # Name of the Check Run (only used when create-check is true)
+      # Name of the Check Run (only used when annotate-failures is true)
       check-name:
         type: string
         required: false
@@ -94,5 +94,5 @@ jobs:
           slowest-tests: ${{ inputs.slowest-tests }}
           test-job-name: ${{ inputs.test-job-name }}
           github-token: ${{ secrets.github-token }}
-          create-check: ${{ inputs.create-check }}
+          annotate-failures: ${{ inputs.annotate-failures }}
           check-name: ${{ inputs.check-name }}
