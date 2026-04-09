@@ -27,10 +27,10 @@
     ]
   },
   "dependencies": {
-    "@actions/artifact": "^2.3.2",
+    "@actions/artifact": "^6.2.1",
     "@actions/cache": "^6.0.0",
-    "@actions/core": "^1.11.1",
-    "@actions/github": "^6.0.1",
+    "@actions/core": "^3.0.0",
+    "@actions/github": "^9.1.0",
     "fast-glob": "^3.3.3",
     "fast-xml-parser": "^5.5.11"
   },
