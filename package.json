@@ -35,7 +35,7 @@
   },
   "devDependencies": {
     "@commitlint/cli": "^20.4.4",
-    "@commitlint/config-conventional": "^20.4.4",
+    "@commitlint/config-conventional": "^20.5.0",
     "@types/node": "^20.17.19",
     "@vercel/ncc": "^0.38.3",
     "eslint": "^9.21.0",
