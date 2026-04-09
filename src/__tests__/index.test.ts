@@ -1928,4 +1928,62 @@ describe('run() integration', () => {
       expect(mockGenerateSummary).toHaveBeenCalled();
     });
   });
+
+  describe('local-only mode (no api-key)', () => {
+    it('does not call sendTestRun when api-key is empty', async () => {
+      setupInputs({ 'api-key': '' });
+      await run();
+
+      expect(mockSendTestRun).not.toHaveBeenCalled();
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    });
+
+    it('emits local-only info log when api-key is empty', async () => {
+      setupInputs({ 'api-key': '' });
+      await run();
+
+      expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('local-only mode'));
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    });
+
+    it('never calls setFailed when api-key is empty', async () => {
+      setupInputs({ 'api-key': '' });
+      await run();
+
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    });
+
+    it('calls sendTestRun when api-key is provided (regression guard)', async () => {
+      setupInputs({ 'api-key': 'tg_key_123' });
+      await run();
+
+      expect(mockSendTestRun).toHaveBeenCalled();
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    });
+
+    it('does not call sendTestRun even when send-results is explicitly true', async () => {
+      setupInputs({ 'api-key': '', 'send-results': 'true' });
+      await run();
+
+      expect(mockSendTestRun).not.toHaveBeenCalled();
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    });
+
+    it('posts PR comment in local-only mode when github-token is available', async () => {
+      setupInputs({ 'api-key': '', 'github-token': 'ghp_abc123' });
+      await run();
+
+      expect(mockPostPrComment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          githubToken: 'ghp_abc123',
+          section: expect.objectContaining({
+            highlights: [],
+            healthScore: undefined,
+            runUrl: undefined,
+          }),
+        }),
+      );
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -19,20 +19,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── Local-only mode: no api-key ──
+      - name: 'Local-only: no api-key'
+        uses: ./
+        with:
+          report-path: fixtures/junit-basic.xml
+
       # ── JUnit XML: auto-detect format from .xml extension ──
       - name: 'JUnit: auto-detect'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/junit-basic.xml
 
       # ── JUnit XML: explicit format ──
       - name: 'JUnit: explicit format'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/junit-basic.xml
           report-format: junit
 
@@ -40,16 +42,12 @@ jobs:
       - name: 'CTRF: auto-detect'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/ctrf-basic.json
 
       # ── CTRF JSON: explicit format ──
       - name: 'CTRF: explicit format'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/ctrf-basic.json
           report-format: ctrf
 
@@ -57,31 +55,23 @@ jobs:
       - name: 'JUnit: multi-suite'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/junit-multi-suite.xml
 
       # ── Reports with stack traces ──
       - name: 'JUnit: with stack traces'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/junit-with-stacktraces.xml
 
       - name: 'CTRF: with stack traces'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/ctrf-with-stacktraces.json
 
       # ── Custom inputs ──
       - name: 'Custom: test-job-name + slowest-tests disabled'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/junit-basic.xml
           test-job-name: my-custom-job
           slowest-tests: '0'
@@ -98,8 +88,6 @@ jobs:
       - name: 'History: seed baseline'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/e2e-history.xml
 
       - name: 'History: swap to changed fixture'
@@ -108,44 +96,32 @@ jobs:
       - name: 'History: delta + tests changed'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/e2e-history.xml
 
       # ── Edge cases: must warn but NOT fail ──
       - name: 'Edge: malformed XML (should warn, exit 0)'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/junit-malformed.xml
 
       - name: 'Edge: malformed JSON (should warn, exit 0)'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/ctrf-malformed.json
 
       - name: 'Edge: empty test suite (should warn, exit 0)'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/junit-empty.xml
 
       - name: 'Edge: no matching file (should warn, exit 0)'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/does-not-exist.xml
 
       - name: 'Edge: invalid CTRF schema (should warn, exit 0)'
         uses: ./
         with:
-          api-key: unused
-          send-results: false
           report-path: fixtures/ctrf-invalid-schema.json
 
       # ── Post results link on PR ──
