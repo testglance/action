@@ -116,12 +116,18 @@ export interface RunResult {
 export async function run(): Promise<RunResult> {
   try {
     const reportPath = core.getInput('report-path');
-    const apiKey = core.getInput('api-key', { required: true });
+    const apiKey = core.getInput('api-key');
+    const localOnly = !apiKey;
+    if (localOnly) {
+      core.info(
+        'TestGlance: no api-key provided, running in local-only mode — no data will be sent',
+      );
+    }
     const apiUrl = core.getInput('api-url') || 'https://www.testglance.dev';
     const reportFormat = core.getInput('report-format') || 'auto';
     const testJobName = core.getInput('test-job-name') || '';
     const githubToken = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
-    const sendResults = core.getInput('send-results') !== 'false';
+    const sendResults = localOnly ? false : core.getInput('send-results') !== 'false';
     const annotateFailures =
       core.getInput('annotate-failures') === 'true' || core.getInput('create-check') === 'true';
     const checkName = core.getInput('check-name') || 'Test Results';
@@ -409,7 +415,7 @@ export async function run(): Promise<RunResult> {
       }
     }
 
-    if (githubToken && result?.success) {
+    if (githubToken && (result?.success || localOnly)) {
       await postPrComment({
         githubToken,
         section: {
@@ -419,8 +425,8 @@ export async function run(): Promise<RunResult> {
           passed: parsed.summary.passed,
           failed: parsed.summary.failed,
           duration: parsed.summary.duration,
-          healthScore: result.healthScore,
-          highlights: result.highlights ?? [],
+          healthScore: result?.healthScore,
+          highlights: result?.highlights ?? [],
           runUrl: dashboardUrl,
           testsChanged,
           flaky,

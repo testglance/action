@@ -7,8 +7,9 @@ inputs:
     required: false
     default: ''
   api-key:
-    description: 'TestGlance project API key'
-    required: true
+    description: 'TestGlance project API key (omit for local-only mode)'
+    required: false
+    default: ''
   api-url:
     description: 'TestGlance API URL'
     required: false
