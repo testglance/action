@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "postinstall": "node scripts/patch-esm-exports.cjs"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
