@@ -127,6 +127,7 @@ jobs:
       # ── Post results link on PR ──
       - name: Comment E2E results on PR
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
