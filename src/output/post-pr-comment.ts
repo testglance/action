@@ -31,7 +31,9 @@ export async function postPrComment(options: PostPrCommentOptions): Promise<void
       per_page: 100,
     });
 
-    const existing = comments.find((c) => c.body?.includes(COMMENT_MARKER));
+    const existing = comments.find((c: { body?: string | null; id: number }) =>
+      c.body?.includes(COMMENT_MARKER),
+    );
 
     if (existing) {
       const updatedBody = mergeTestJobSection(existing.body!, section);
