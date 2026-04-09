@@ -14,10 +14,10 @@ Zero-config test reporting for GitHub Actions. Never breaks your CI.
 
 ## Quick Start
 
+No signup, no account, no outbound calls to TestGlance.
+
 ```yaml
 - uses: testglance/action@v1
-  with:
-    api-key: ${{ secrets.TESTGLANCE_API_KEY }}
 ```
 
 That's it. TestGlance auto-detects your test reports and generates a CI summary.
@@ -26,29 +26,26 @@ That's it. TestGlance auto-detects your test reports and generates a CI summary.
 
 ```yaml
 permissions:
+  contents: read
   pull-requests: write
 
 steps:
   - uses: testglance/action@v1
     with:
-      api-key: ${{ secrets.TESTGLANCE_API_KEY }}
       github-token: ${{ github.token }}
 ```
 
 Requires `pull-requests: write` permission. See [Permissions](#permissions) for details.
 
-### Standalone (No SaaS)
+### With TestGlance Platform
 
-Use TestGlance for CI summaries without sending data to the platform:
+Connect to the TestGlance dashboard for health scores, flaky test detection, and trend tracking:
 
 ```yaml
 - uses: testglance/action@v1
   with:
-    api-key: unused
-    send-results: false
+    api-key: ${{ secrets.TESTGLANCE_API_KEY }}
 ```
-
-> `api-key` is a required input. Pass any non-empty string (e.g., `unused`) when `send-results` is `false`.
 
 ## Features
 
@@ -83,8 +80,6 @@ Use TestGlance for CI summaries without sending data to the platform:
 
 ```yaml
 - uses: testglance/action@v1
-  with:
-    api-key: ${{ secrets.TESTGLANCE_API_KEY }}
 ```
 
 ### With PR Comments
@@ -92,7 +87,6 @@ Use TestGlance for CI summaries without sending data to the platform:
 ```yaml
 - uses: testglance/action@v1
   with:
-    api-key: ${{ secrets.TESTGLANCE_API_KEY }}
     github-token: ${{ github.token }}
 ```
 
@@ -105,19 +99,18 @@ permissions:
 steps:
   - uses: testglance/action@v1
     with:
-      api-key: ${{ secrets.TESTGLANCE_API_KEY }}
       github-token: ${{ github.token }}
       annotate-failures: true
       check-name: Unit Tests
 ```
 
-### Standalone (No SaaS)
+### With TestGlance Platform
 
 ```yaml
 - uses: testglance/action@v1
   with:
-    api-key: unused
-    send-results: false
+    api-key: ${{ secrets.TESTGLANCE_API_KEY }}
+    github-token: ${{ github.token }}
 ```
 
 ### Org-Wide Reusable Workflow
@@ -126,28 +119,44 @@ See [`examples/reusable-workflow.yml`](examples/reusable-workflow.yml) for a `wo
 
 ## Inputs
 
-| Input               | Required | Default                      | Description                                                       |
-| ------------------- | :------: | ---------------------------- | ----------------------------------------------------------------- |
-| `report-path`       |    No    | `''` (auto-detect)           | Path to test report file(s). Supports glob patterns.              |
-| `api-key`           | **Yes**  | —                            | TestGlance project API key                                        |
-| `api-url`           |    No    | `https://www.testglance.dev` | TestGlance API URL                                                |
-| `report-format`     |    No    | `auto`                       | Format: `junit`, `ctrf`, or `auto` (detect from extension)        |
-| `test-job-name`     |    No    | `''`                         | Override the display name for this test job                       |
-| `slowest-tests`     |    No    | `10`                         | Number of slowest tests to show in CI summary (0 to disable)      |
-| `send-results`      |    No    | `true`                       | Send results to TestGlance API (`false` for local-only)           |
-| `github-token`      |    No    | `''`                         | GitHub token for PR comments and Check Runs                       |
-| `annotate-failures` |    No    | `false`                      | Annotate failed tests inline on the PR diff (creates a Check Run) |
-| `check-name`        |    No    | `Test Results`               | Name of the Check Run created by `annotate-failures`              |
+| Input               | Required | Default                      | Description                                                                                    |
+| ------------------- | :------: | ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| `report-path`       |    No    | `''` (auto-detect)           | Path to test report file(s). Supports glob patterns.                                           |
+| `api-key`           |    No    | `''`                         | TestGlance project API key (optional, enables SaaS features)                                   |
+| `api-url`           |    No    | `https://www.testglance.dev` | TestGlance API URL                                                                             |
+| `report-format`     |    No    | `auto`                       | Format: `junit`, `ctrf`, or `auto` (detect from extension)                                     |
+| `test-job-name`     |    No    | `''`                         | Override the display name for this test job                                                    |
+| `slowest-tests`     |    No    | `10`                         | Number of slowest tests to show in CI summary (0 to disable)                                   |
+| `send-results`      |    No    | `true`                       | Send results to TestGlance API. Automatically forced to `false` when no `api-key` is provided. |
+| `github-token`      |    No    | `''`                         | GitHub token for PR comments and Check Runs                                                    |
+| `annotate-failures` |    No    | `false`                      | Annotate failed tests inline on the PR diff (creates a Check Run)                              |
+| `check-name`        |    No    | `Test Results`               | Name of the Check Run created by `annotate-failures`                                           |
 
 ## Permissions
 
-TestGlance's core functionality (CI summaries, auto-detection, API reporting) requires **no special permissions**. You only need to configure permissions when using PR comments or inline annotations via `github-token`.
+TestGlance's core functionality (CI summaries, auto-detection) requires **no special permissions**. Additional features degrade gracefully when permissions are missing — they log a warning and skip, never failing your build.
 
-| Feature            | Permission Required    |
-| ------------------ | ---------------------- |
-| CI Summary         | None                   |
-| PR Comments        | `pull-requests: write` |
-| Inline Annotations | `checks: write`        |
+| Permission             | Feature                         | Behavior if Missing                      |
+| ---------------------- | ------------------------------- | ---------------------------------------- |
+| `contents: read`       | Baseline (checkout code)        | Required for all modes                   |
+| `pull-requests: write` | PR comments                     | Skipped with warning log, CI stays green |
+| `checks: write`        | Check Runs + inline annotations | Skipped with warning log, CI stays green |
+
+### Minimum standalone permissions
+
+```yaml
+permissions:
+  contents: read
+```
+
+### Full feature permissions
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+```
 
 ### Setting permissions
 
@@ -158,21 +167,19 @@ jobs:
   test:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write # PR comments
-      checks: write # Inline annotations
+      contents: read
+      pull-requests: write
+      checks: write
     steps:
       - uses: testglance/action@v1
         with:
-          api-key: ${{ secrets.TESTGLANCE_API_KEY }}
           github-token: ${{ github.token }}
           annotate-failures: true
 ```
 
 > **Important:** When you add a `permissions` block, GitHub removes all default permissions and grants **only** what you list. If your job needs other permissions (e.g., `contents: read` to check out code), you must include them explicitly.
 
-### Missing permissions
-
-If `github-token` is provided but the required permissions are missing, TestGlance will log a warning and skip the PR comment or Check Run. It will **never fail your build** — the [non-blocking guarantee](#non-blocking-guarantee) still applies.
+For the full reference, see [`docs/permissions.md`](docs/permissions.md).
 
 ## Supported Formats
 
@@ -288,24 +295,21 @@ This Action **never fails your CI pipeline**. If anything goes wrong — file no
 
 ## Getting Started
 
+### Standalone (No Account Required)
+
+Add a single step to any workflow that produces test reports:
+
+```yaml
+- uses: testglance/action@v1
+```
+
 ### With TestGlance Platform
 
 1. Sign up at [testglance.dev](https://www.testglance.dev)
 2. Create a project and connect your repository
 3. Copy your project API key
 4. Add it as a repository secret: `Settings > Secrets > TESTGLANCE_API_KEY`
-5. Add the Action to your workflow (see [Quick Start](#quick-start))
-
-### Standalone (No Account Required)
-
-Use TestGlance for rich CI summaries without creating an account:
-
-```yaml
-- uses: testglance/action@v1
-  with:
-    api-key: unused
-    send-results: false
-```
+5. Add the Action to your workflow (see [Quick Start](#with-testglance-platform))
 
 ## License
 
