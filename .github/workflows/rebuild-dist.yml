@@ -1,0 +1,38 @@
+name: Rebuild dist/
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to rebuild dist/ on
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.branch }}
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Commit and push if changed
+        run: |
+          if [ -n "$(git diff --name-only dist/)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add dist/
+            git commit -m "chore: rebuild dist/"
+            git push
+          else
+            echo "dist/ is already up to date"
+          fi
