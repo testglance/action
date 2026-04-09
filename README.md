@@ -1,8 +1,6 @@
 # TestGlance
 
-[![CI](https://github.com/testglance/action/actions/workflows/ci.yml/badge.svg)](https://github.com/testglance/action/actions/workflows/ci.yml)
-[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-TestGlance-green?logo=github)](https://github.com/marketplace/actions/testglance)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/testglance/action/actions/workflows/ci.yml/badge.svg)](https://github.com/testglance/action/actions/workflows/ci.yml) [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-TestGlance-green?logo=github)](https://github.com/marketplace/actions/testglance) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)](https://github.com/testglance/action/actions/workflows/ci.yml)
 
 Zero-config test reporting for GitHub Actions. Never breaks your CI.
 
