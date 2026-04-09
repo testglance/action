@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockUploadArtifact = vi.fn();
 vi.mock('@actions/artifact', () => ({
-  DefaultArtifactClient: vi.fn().mockImplementation(() => ({
-    uploadArtifact: mockUploadArtifact,
-  })),
+  DefaultArtifactClient: vi.fn().mockImplementation(function () {
+    return { uploadArtifact: mockUploadArtifact };
+  }),
 }));
 
 const mockWriteFileSync = vi.fn();
