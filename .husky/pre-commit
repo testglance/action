@@ -1,1 +1,5 @@
+if [ ! -d node_modules ]; then
+  echo "node_modules missing — run pnpm install first" >&2
+  exit 1
+fi
 pnpm lint-staged
