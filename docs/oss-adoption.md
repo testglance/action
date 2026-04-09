@@ -23,10 +23,10 @@ An invariant test verifies the action never calls `core.setFailed`: [`src/__test
 
 ### What gets sent where
 
-| Mode | Destinations | Gated by |
-|---|---|---|
-| **Local-only** (no `api-key`) | GitHub API only — PR comments, Check Runs, cache | `permissions` block in workflow |
-| **SaaS mode** | Adds `www.testglance.dev/api/v1/runs` | `api-key` + `send-results` inputs |
+| Mode                          | Destinations                                     | Gated by                          |
+| ----------------------------- | ------------------------------------------------ | --------------------------------- |
+| **Local-only** (no `api-key`) | GitHub API only — PR comments, Check Runs, cache | `permissions` block in workflow   |
+| **SaaS mode**                 | Adds `www.testglance.dev/api/v1/runs`            | `api-key` + `send-results` inputs |
 
 Without `api-key`, the TestGlance origin is never contacted. There is no telemetry, analytics, or version-check traffic.
 
