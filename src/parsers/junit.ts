@@ -10,6 +10,12 @@ const xmlParser = new XMLParser({
   textNodeName: '#text',
   isArray: (tagName: string) => ['testsuite', 'testcase', 'property'].includes(tagName),
   trimValues: true,
+  processEntities: {
+    enabled: true,
+    maxTotalExpansions: 10_000_000,
+    maxExpandedLength: 100_000_000,
+    maxEntityCount: 100,
+  },
 });
 
 function resolveStatus(
