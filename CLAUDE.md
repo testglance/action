@@ -73,7 +73,7 @@ action.yml              # Action metadata (inputs, runtime)
 
 ## Release
 
-- After any source change: `pnpm build`, commit `dist/`, push, then `git tag -f v1 && git push origin v1 --force`
+- After any source change: `pnpm build`, commit `dist/`, push. The `release-v1` job in `.github/workflows/ci.yml` automatically force-retags `v1` to the latest `main` after all checks pass.
 - Action consumers reference `testglance/action@v1` — a floating major-version tag
 
 ## Parser Contract

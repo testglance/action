@@ -94,3 +94,17 @@ jobs:
             git diff --stat dist/
             exit 1
           fi
+
+  release-v1:
+    name: Release (retag v1)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint-format, typecheck, test, build, verify-dist]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Force-retag v1 to HEAD
+        run: |
+          git tag -f v1
+          git push origin v1 --force
