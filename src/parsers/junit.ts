@@ -12,8 +12,8 @@ const xmlParser = new XMLParser({
   trimValues: true,
   processEntities: {
     enabled: true,
-    maxTotalExpansions: 10_000_000,
-    maxExpandedLength: 100_000_000,
+    maxTotalExpansions: 1_000_000,
+    maxExpandedLength: 10_000_000,
     maxEntityCount: 100,
   },
 });
