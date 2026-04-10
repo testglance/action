@@ -92,6 +92,10 @@ jobs:
           if [ -n "$(git diff --name-only dist/)" ]; then
             echo "::error::dist/ is out of date. Run 'pnpm build' and commit the result."
             git diff --stat dist/
+            echo "===== dist/licenses.txt diff ====="
+            git diff dist/licenses.txt | head -120
+            echo "===== dist/index.js diff (first 200 lines) ====="
+            git diff dist/index.js | head -200
             exit 1
           fi
 
