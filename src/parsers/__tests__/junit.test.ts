@@ -224,6 +224,21 @@ describe('parseJunitXml', () => {
       expect(elapsed).toBeLessThan(5000);
       expect(result.summary.total).toBe(12_000);
     });
+
+    it('parses reports with >1000 built-in entity references (no XML-bomb false positive)', () => {
+      const testCount = 1200;
+      let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+      xml += `<testsuites name="entity-heavy" tests="${testCount}" time="1.0">\n`;
+      xml += `  <testsuite name="suite" tests="${testCount}" time="1.0">\n`;
+      for (let i = 0; i < testCount; i++) {
+        xml += `    <testcase name="describe &gt; nested &gt; case${i}" classname="suite" time="0"/>\n`;
+      }
+      xml += `  </testsuite>\n</testsuites>\n`;
+
+      const result = parseJunitXml(xml);
+      expect(result.summary.total).toBe(testCount);
+      expect(result.suites[0].tests[0].name).toBe('describe > nested > case0');
+    });
   });
 
   describe('status mapping edge cases', () => {
