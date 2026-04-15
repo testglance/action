@@ -111,6 +111,44 @@ steps:
     github-token: ${{ github.token }}
 ```
 
+### Multi-Job Workflows
+
+Each GitHub Actions job runs on its own runner with its own filesystem and Job Summary. Add the TestGlance step to **every job that produces test reports** — results are automatically merged into a single PR comment.
+
+```yaml
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: pnpm install && pnpm test
+      - uses: testglance/action@v1
+        if: always()
+        with:
+          github-token: ${{ github.token }}
+
+  e2e:
+    needs: unit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: pnpm install && pnpm test:e2e
+      - uses: testglance/action@v1
+        if: always()
+        with:
+          github-token: ${{ github.token }}
+```
+
+Use `if: always()` so results are reported even when tests fail. Use `test-job-name` to disambiguate jobs in the merged PR comment if the default job name isn't clear enough.
+
 ### Org-Wide Reusable Workflow
 
 See [`examples/reusable-workflow.yml`](examples/reusable-workflow.yml) for a `workflow_call` template you can deploy across your organization. More examples in the [`examples/`](examples/) directory.
