@@ -8,10 +8,18 @@ export function escapeHtml(value: string): string {
 }
 
 export function formatDuration(seconds: number): string {
+  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
   if (seconds < 60) return `${seconds.toFixed(1)}s`;
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}m ${secs.toFixed(1)}s`;
+}
+
+export function formatDurationPair(a: number, b: number): [string, string] {
+  const scale = Math.max(a, b);
+  if (scale < 1) return [formatDuration(a), formatDuration(b)];
+  if (scale < 60) return [`${a.toFixed(1)}s`, `${b.toFixed(1)}s`];
+  return [formatDuration(a), formatDuration(b)];
 }
 
 export function truncate(str: string, maxLen: number): string {

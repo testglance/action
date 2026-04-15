@@ -12,7 +12,13 @@ import type {
   PerfRegressionResult,
   TrendIndicators,
 } from '../history/types';
-import { escapeHtml, formatDuration, truncate, renderMetricsStrip } from './format';
+import {
+  escapeHtml,
+  formatDuration,
+  formatDurationPair,
+  truncate,
+  renderMetricsStrip,
+} from './format';
 
 export interface HtmlReportOptions {
   parsed: ParsedTestRun;
@@ -275,8 +281,9 @@ function renderDelta(delta: DeltaComparison): string {
   lines.push(
     `<p><strong>Pass rate:</strong> ${delta.passRatePrev.toFixed(1)}% &rarr; ${delta.passRateCurr.toFixed(1)}% (${sign(delta.passRateDelta)}${Math.abs(delta.passRateDelta).toFixed(1)}%)</p>`,
   );
+  const [prevDur, currDur] = formatDurationPair(delta.durationPrev, delta.durationCurr);
   lines.push(
-    `<p><strong>Duration:</strong> ${formatDuration(delta.durationPrev)} &rarr; ${formatDuration(delta.durationCurr)} (${sign(delta.durationDelta)}${formatDuration(Math.abs(delta.durationDelta))})</p>`,
+    `<p><strong>Duration:</strong> ${prevDur} &rarr; ${currDur} (${sign(delta.durationDelta)}${formatDuration(Math.abs(delta.durationDelta))})</p>`,
   );
 
   const DELTA_LABELS: Record<string, string> = {

@@ -1021,8 +1021,12 @@ describe('generateSummary suite breakdown integration', () => {
 });
 
 describe('formatDuration', () => {
-  it('formats 0 seconds', () => {
-    expect(formatDuration(0)).toBe('0.0s');
+  it('formats 0 seconds as 0ms', () => {
+    expect(formatDuration(0)).toBe('0ms');
+  });
+
+  it('formats sub-second values in ms', () => {
+    expect(formatDuration(0.236)).toBe('236ms');
   });
 
   it('formats seconds with one decimal', () => {
