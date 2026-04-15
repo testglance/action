@@ -16,6 +16,7 @@ import type {
 import {
   escapeHtml,
   formatDuration,
+  formatDurationPair,
   truncate,
   renderProgressBar,
   statusEmoji,
@@ -285,8 +286,9 @@ export function renderDeltaSection(delta: DeltaComparison): string {
   );
 
   const durSign = sign(delta.durationDelta);
+  const [prevDur, currDur] = formatDurationPair(delta.durationPrev, delta.durationCurr);
   lines.push(
-    `**Duration:** ${formatDuration(delta.durationPrev)} → ${formatDuration(delta.durationCurr)} (${durSign}${formatDuration(Math.abs(delta.durationDelta))}, ${durSign}${Math.abs(delta.durationDeltaPercent).toFixed(1)}%)\n\n`,
+    `**Duration:** ${prevDur} → ${currDur} (${durSign}${formatDuration(Math.abs(delta.durationDelta))}, ${durSign}${Math.abs(delta.durationDeltaPercent).toFixed(1)}%)\n\n`,
   );
 
   const categories: { key: string; tests: DeltaComparison[keyof DeltaComparison] }[] = [

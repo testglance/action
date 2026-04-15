@@ -6,7 +6,7 @@ import type {
   PerfRegressionResult,
   TrendIndicators,
 } from '../history/types';
-import { formatDuration, renderProgressBar } from './format';
+import { formatDuration, formatDurationPair, renderProgressBar } from './format';
 
 export interface PrCommentSection {
   testJobName: string;
@@ -112,11 +112,12 @@ export function renderBaseBranchSection(
 
   const passSign = baseDelta.passRateDelta >= 0 ? '+' : '';
   const durSign = baseDelta.durationDelta >= 0 ? '+' : '';
+  const [prevDur, currDur] = formatDurationPair(baseDelta.durationPrev, baseDelta.durationCurr);
   lines.push(
     `| Metric | ${baseBranch} | PR | Delta |`,
     '|--------|------|----|----|',
     `| Pass rate | ${baseDelta.passRatePrev.toFixed(1)}% | ${baseDelta.passRateCurr.toFixed(1)}% | ${passSign}${baseDelta.passRateDelta.toFixed(1)}% |`,
-    `| Duration | ${formatDuration(baseDelta.durationPrev)} | ${formatDuration(baseDelta.durationCurr)} | ${durSign}${baseDelta.durationDeltaPercent.toFixed(1)}% |`,
+    `| Duration | ${prevDur} | ${currDur} | ${durSign}${baseDelta.durationDeltaPercent.toFixed(1)}% |`,
   );
 
   if (baseDelta.newlyFailing.length > 0) {
