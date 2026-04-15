@@ -7,11 +7,11 @@ inputs:
     required: false
     default: ''
   api-key:
-    description: 'TestGlance project API key (omit for local-only mode)'
+    description: 'TestGlance project API key (reserved — SaaS dashboard coming soon; currently inactive)'
     required: false
     default: ''
   api-url:
-    description: 'TestGlance API URL'
+    description: 'TestGlance API URL (reserved — SaaS dashboard coming soon)'
     required: false
     default: 'https://www.testglance.dev'
   report-format:

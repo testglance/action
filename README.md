@@ -35,14 +35,14 @@ steps:
 
 Requires `pull-requests: write` permission. See [Permissions](#permissions) for details.
 
-### With TestGlance Platform
+### With TestGlance Platform _(coming soon)_
 
-Connect to the TestGlance dashboard for health scores, flaky test detection, and trend tracking:
+The hosted TestGlance dashboard — health scores, flaky test detection, and trend tracking — is in development. The `api-key` input is reserved for this integration but is not yet active.
 
 ```yaml
 - uses: testglance/action@v1
   with:
-    api-key: ${{ secrets.TESTGLANCE_API_KEY }}
+    api-key: ${{ secrets.TESTGLANCE_API_KEY }} # reserved — SaaS coming soon
 ```
 
 ## Features
@@ -54,7 +54,7 @@ Connect to the TestGlance dashboard for health scores, flaky test detection, and
 - **Multi-File Merge** — glob patterns merge multiple report files into a single summary
 - **Inline Annotations** — opt-in failure annotations on the PR diff at the exact file:line
 - **PR Comments** — multi-job summaries merged into a single comment, updated on re-runs
-- **SaaS Dashboard** — optional health scores, flaky test detection, and trend tracking
+- **SaaS Dashboard** _(coming soon)_ — optional health scores, flaky test detection, and trend tracking
 
 ## Feature Comparison
 
@@ -70,7 +70,7 @@ Connect to the TestGlance dashboard for health scores, flaky test detection, and
 | Never Fails CI      | :white_check_mark: |         :x:         |         Configurable         |         Configurable         |               Configurable               |
 | Multi-File Merge    | :white_check_mark: | :white_check_mark:  |             :x:              |      :white_check_mark:      |            :white_check_mark:            |
 | Auto-Detect Files   | :white_check_mark: |         :x:         |             :x:              |             :x:              |                   :x:                    |
-| SaaS Dashboard      |      Optional      |         :x:         |             :x:              |             :x:              |                   :x:                    |
+| SaaS Dashboard      |    Coming soon     |         :x:         |             :x:              |             :x:              |                   :x:                    |
 
 ## Usage Examples
 
@@ -102,12 +102,12 @@ steps:
       check-name: Unit Tests
 ```
 
-### With TestGlance Platform
+### With TestGlance Platform _(coming soon)_
 
 ```yaml
 - uses: testglance/action@v1
   with:
-    api-key: ${{ secrets.TESTGLANCE_API_KEY }}
+    api-key: ${{ secrets.TESTGLANCE_API_KEY }} # reserved — SaaS coming soon
     github-token: ${{ github.token }}
 ```
 
@@ -120,8 +120,8 @@ See [`examples/reusable-workflow.yml`](examples/reusable-workflow.yml) for a `wo
 | Input               | Required | Default                      | Description                                                                                    |
 | ------------------- | :------: | ---------------------------- | ---------------------------------------------------------------------------------------------- |
 | `report-path`       |    No    | `''` (auto-detect)           | Path to test report file(s). Supports glob patterns.                                           |
-| `api-key`           |    No    | `''`                         | TestGlance project API key (optional, enables SaaS features)                                   |
-| `api-url`           |    No    | `https://www.testglance.dev` | TestGlance API URL                                                                             |
+| `api-key`           |    No    | `''`                         | TestGlance project API key _(reserved — SaaS coming soon)_                                     |
+| `api-url`           |    No    | `https://www.testglance.dev` | TestGlance API URL _(reserved — SaaS coming soon)_                                             |
 | `report-format`     |    No    | `auto`                       | Format: `junit`, `ctrf`, or `auto` (detect from extension)                                     |
 | `test-job-name`     |    No    | `''`                         | Override the display name for this test job                                                    |
 | `slowest-tests`     |    No    | `10`                         | Number of slowest tests to show in CI summary (0 to disable)                                   |
@@ -301,13 +301,17 @@ Add a single step to any workflow that produces test reports:
 - uses: testglance/action@v1
 ```
 
-### With TestGlance Platform
+### With TestGlance Platform _(coming soon)_
+
+The hosted dashboard is in development. Once available, you'll be able to:
 
 1. Sign up at [testglance.dev](https://www.testglance.dev)
 2. Create a project and connect your repository
 3. Copy your project API key
 4. Add it as a repository secret: `Settings > Secrets > TESTGLANCE_API_KEY`
-5. Add the Action to your workflow (see [Quick Start](#with-testglance-platform))
+5. Add the Action to your workflow (see [Quick Start](#with-testglance-platform-coming-soon))
+
+Until then, the `api-key` input is accepted but inactive — all core features (CI summaries, PR comments, annotations) work without it.
 
 ## License
 
