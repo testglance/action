@@ -134334,40 +134334,41 @@ var lib_default = /*#__PURE__*/__nccwpck_require__.n(lib);
 
 
 const DEFAULT_SLOWEST_LIMIT = 10;
+const MAX_TEMPLATE_FILE_BYTES = 1024 * 1024;
+const handlebars = lib_default().create();
 const compileCache = new Map();
-let helpersRegistered = false;
-function registerHelpers() {
-    if (helpersRegistered)
-        return;
-    lib_default().registerHelper('formatDuration', (seconds) => {
-        if (typeof seconds !== 'number' || !Number.isFinite(seconds))
-            return '';
-        return formatDuration(seconds);
-    });
-    lib_default().registerHelper('truncate', (str, maxLen) => {
-        if (typeof str !== 'string')
-            return '';
-        const limit = typeof maxLen === 'number' && Number.isFinite(maxLen) ? maxLen : 100;
-        return truncate(str, limit);
-    });
-    lib_default().registerHelper('escapeHtml', (value) => {
-        if (typeof value !== 'string')
-            return '';
-        return escapeHtml(value);
-    });
-    lib_default().registerHelper('passRate', (passed, total) => {
-        if (typeof passed !== 'number' || typeof total !== 'number' || total <= 0) {
-            return '0.0';
-        }
-        return ((passed / total) * 100).toFixed(1);
-    });
-    helpersRegistered = true;
-}
 function computePassRate(passed, total) {
     if (total <= 0)
         return '0.0';
     return ((passed / total) * 100).toFixed(1);
 }
+handlebars.registerHelper('formatDuration', (seconds) => {
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds))
+        return '';
+    return formatDuration(seconds);
+});
+handlebars.registerHelper('truncate', (str, maxLen) => {
+    if (typeof str !== 'string')
+        return '';
+    const limit = typeof maxLen === 'number' && Number.isFinite(maxLen) ? maxLen : 100;
+    return truncate(str, limit);
+});
+handlebars.registerHelper('escapeHtml', (value) => {
+    if (typeof value !== 'string')
+        return '';
+    return escapeHtml(value);
+});
+handlebars.registerHelper('passRate', (passed, total) => {
+    if (typeof passed !== 'number' || typeof total !== 'number')
+        return '0.0';
+    return computePassRate(passed, total);
+});
+handlebars.registerHelper('limit', (arr, n) => {
+    if (!Array.isArray(arr))
+        return [];
+    const count = typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : arr.length;
+    return arr.slice(0, count);
+});
 function collectFailures(parsed) {
     const failed = [];
     for (const suite of parsed.suites) {
@@ -134414,6 +134415,16 @@ function flattenFlaky(flaky) {
         flakyRate: t.flakyRate,
     }));
 }
+function flattenHistory(history) {
+    if (!history || history.length === 0)
+        return undefined;
+    return history.map((entry) => ({
+        sha: entry.commitSha,
+        passRate: computePassRate(entry.summary.passed, entry.summary.total),
+        duration: entry.summary.duration,
+        timestamp: entry.timestamp,
+    }));
+}
 function buildTemplateContext(input) {
     const { parsed, meta, delta, flaky, trends, perfRegression, history } = input;
     const slowestLimit = input.slowestLimit ?? DEFAULT_SLOWEST_LIMIT;
@@ -134431,7 +134442,7 @@ function buildTemplateContext(input) {
         failures: collectFailures(parsed),
         slowest: collectSlowest(parsed, slowestLimit),
         suites: summariseSuites(parsed),
-        history,
+        history: flattenHistory(history),
         delta: delta ?? undefined,
         flaky: flattenFlaky(flaky),
         trends: trends ?? undefined,
@@ -134439,56 +134450,141 @@ function buildTemplateContext(input) {
         meta,
     };
 }
-function resolveTemplatePath(templatePath) {
-    if (external_node_path_.isAbsolute(templatePath))
-        return templatePath;
-    const base = process.env.GITHUB_WORKSPACE || process.cwd();
-    return external_node_path_.resolve(base, templatePath);
+function getWorkspace() {
+    const ws = process.env.GITHUB_WORKSPACE;
+    if (typeof ws !== 'string' || ws.length === 0)
+        return null;
+    return ws;
 }
-function loadAndCompile(absolutePath, label) {
-    const cached = compileCache.get(absolutePath);
-    if (cached)
-        return cached;
+function sanitizeForLog(value) {
+    return value.replace(/[\r\n]+/g, ' ');
+}
+function resolveTemplatePath(templatePath) {
+    // Kept for backwards compatibility with tests/callers that only need the lexical resolution.
+    if (path.isAbsolute(templatePath))
+        return templatePath;
+    const base = getWorkspace() ?? process.cwd();
+    return path.resolve(base, templatePath);
+}
+function resolveAndValidate(templatePath) {
+    if (/[\r\n]/.test(templatePath)) {
+        return { ok: false, reason: 'template path contains newline characters' };
+    }
+    const workspace = getWorkspace();
+    if (!workspace) {
+        return {
+            ok: false,
+            reason: 'GITHUB_WORKSPACE is not set; refusing to resolve template path',
+        };
+    }
+    const workspaceReal = (() => {
+        try {
+            return (0,external_node_fs_.realpathSync)(workspace);
+        }
+        catch {
+            return external_node_path_.resolve(workspace);
+        }
+    })();
+    const lexical = external_node_path_.isAbsolute(templatePath)
+        ? external_node_path_.resolve(templatePath)
+        : external_node_path_.resolve(workspaceReal, templatePath);
+    let real;
+    let stat;
+    try {
+        real = (0,external_node_fs_.realpathSync)(lexical);
+        stat = (0,external_node_fs_.statSync)(real);
+    }
+    catch (err) {
+        return {
+            ok: false,
+            reason: `cannot read ${sanitizeForLog(lexical)}: ${err instanceof Error ? err.message : String(err)}`,
+        };
+    }
+    const prefix = workspaceReal.endsWith(external_node_path_.sep) ? workspaceReal : workspaceReal + external_node_path_.sep;
+    if (real !== workspaceReal && !real.startsWith(prefix)) {
+        return {
+            ok: false,
+            reason: `template path resolves outside GITHUB_WORKSPACE (${sanitizeForLog(real)})`,
+        };
+    }
+    if (!stat.isFile()) {
+        return {
+            ok: false,
+            reason: `template path is not a regular file: ${sanitizeForLog(real)}`,
+        };
+    }
+    if (stat.size > MAX_TEMPLATE_FILE_BYTES) {
+        return {
+            ok: false,
+            reason: `template file exceeds ${MAX_TEMPLATE_FILE_BYTES} bytes (${stat.size}): ${sanitizeForLog(real)}`,
+        };
+    }
+    return { ok: true, path: real, mtimeMs: stat.mtimeMs, size: stat.size };
+}
+function loadAndCompile(resolved, label) {
+    const cached = compileCache.get(resolved.path);
+    if (cached && cached.mtimeMs === resolved.mtimeMs && cached.size === resolved.size) {
+        return cached.template;
+    }
     let source;
     try {
-        source = (0,external_node_fs_.readFileSync)(absolutePath, 'utf8');
+        source = (0,external_node_fs_.readFileSync)(resolved.path, 'utf8');
     }
     catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        warning(`Custom ${label} template failed: cannot read ${absolutePath}: ${reason}. Falling back to default ${label}.`);
+        warning(`Custom ${label} template failed: cannot read ${sanitizeForLog(resolved.path)}: ${reason}. Falling back to default ${label}.`);
         return null;
     }
+    if (source.charCodeAt(0) === 0xfeff) {
+        source = source.slice(1);
+    }
     try {
-        lib_default().parse(source);
-        const compiled = lib_default().compile(source, { strict: false, noEscape: false });
-        compileCache.set(absolutePath, compiled);
+        // Eagerly parse so syntax errors surface here (compile defers parsing until render time).
+        handlebars.parse(source);
+        const compiled = handlebars.compile(source, {
+            strict: false,
+            noEscape: false,
+        });
+        compileCache.set(resolved.path, {
+            mtimeMs: resolved.mtimeMs,
+            size: resolved.size,
+            template: compiled,
+        });
         return compiled;
     }
     catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        warning(`Custom ${label} template failed: parse error in ${absolutePath}: ${reason}. Falling back to default ${label}.`);
+        warning(`Custom ${label} template failed: parse error in ${sanitizeForLog(resolved.path)}: ${reason}. Falling back to default ${label}.`);
         return null;
     }
 }
 function renderTemplate(templatePath, context, options = {}) {
     const label = options.label ?? 'summary';
-    registerHelpers();
-    const absolutePath = resolveTemplatePath(templatePath);
-    const compiled = loadAndCompile(absolutePath, label);
+    const resolved = resolveAndValidate(templatePath);
+    if (!resolved.ok) {
+        warning(`Custom ${label} template failed: ${resolved.reason}. Falling back to default ${label}.`);
+        return null;
+    }
+    const compiled = loadAndCompile(resolved, label);
     if (!compiled)
         return null;
     try {
-        return compiled(context);
+        return compiled(context, {
+            allowProtoPropertiesByDefault: false,
+            allowProtoMethodsByDefault: false,
+        });
     }
     catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        warning(`Custom ${label} template failed: render error in ${absolutePath}: ${reason}. Falling back to default ${label}.`);
+        warning(`Custom ${label} template failed: render error in ${sanitizeForLog(resolved.path)}: ${reason}. Falling back to default ${label}.`);
         return null;
     }
 }
 function _resetTemplateRendererForTests() {
     compileCache.clear();
-    helpersRegistered = false;
+}
+function _getHandlebarsInstanceForTests() {
+    return handlebars;
 }
 
 ;// CONCATENATED MODULE: ./src/output/summary.ts
@@ -134496,11 +134592,12 @@ function _resetTemplateRendererForTests() {
 
 
 
+const MAX_RENDERED_SUMMARY_BYTES = 900_000;
 const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, trends, summaryTemplate, meta, } = options;
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, trends, history, summaryTemplate, meta, } = options;
     if (summaryTemplate && meta) {
         const context = buildTemplateContext({
             parsed,
@@ -134509,11 +134606,15 @@ async function generateSummary(options) {
             flaky,
             trends,
             perfRegression,
+            history,
             slowestLimit: slowestTests,
         });
         const rendered = renderTemplate(summaryTemplate, context, { label: 'summary' });
         if (rendered !== null) {
-            summary_summary.addRaw(rendered);
+            const capped = rendered.length > MAX_RENDERED_SUMMARY_BYTES
+                ? `${rendered.slice(0, MAX_RENDERED_SUMMARY_BYTES)}\n\n_…rendered summary truncated to ${MAX_RENDERED_SUMMARY_BYTES} chars to fit GitHub Job Summary limit._`
+                : rendered;
+            summary_summary.addRaw(capped);
             await summary_summary.write();
             return;
         }
@@ -139210,6 +139311,9 @@ function getOctokit(token, options, ...additionalPlugins) {
 ;// CONCATENATED MODULE: ./src/output/pr-comment.ts
 
 
+
+const MAX_RENDERED_COMMENT_BYTES = 60_000;
+const TJ_MARKER_PATTERN = /<!--\s*\/?\s*tj:[^>]*-->/g;
 const pr_comment_SEVERITY_EMOJI = {
     critical: '🔴',
     warning: '🟡',
@@ -139221,7 +139325,17 @@ const pr_comment_SEVERITY_ORDER = {
     info: 2,
 };
 function sanitizeMarkerName(name) {
-    return name.replace(/-->/g, '');
+    const stripped = name.replace(/-->/g, '').trim();
+    return stripped.length > 0 ? stripped : 'tests';
+}
+function stripTjMarkers(body) {
+    return body.replace(TJ_MARKER_PATTERN, '');
+}
+function capCommentBody(body, label) {
+    if (body.length <= MAX_RENDERED_COMMENT_BYTES)
+        return body;
+    const truncated = body.slice(0, MAX_RENDERED_COMMENT_BYTES);
+    return `${truncated}\n\n_…rendered ${label} truncated to ${MAX_RENDERED_COMMENT_BYTES} chars to fit GitHub PR comment limit._`;
 }
 function renderHighlightRow(h) {
     const emoji = pr_comment_SEVERITY_EMOJI[h.severity];
@@ -139322,18 +139436,26 @@ function renderTrendLine(trends) {
 }
 function renderTestJobSection(section) {
     const safeKey = sanitizeMarkerName(section.testJobName);
-    if (section.commentTemplate && section.parsed && section.meta) {
-        const context = buildTemplateContext({
-            parsed: section.parsed,
-            meta: section.meta,
-            delta: section.delta ?? null,
-            flaky: section.flaky ?? null,
-            trends: section.trends ?? null,
-            perfRegression: section.perfRegression ?? null,
-        });
-        const rendered = renderTemplate(section.commentTemplate, context, { label: 'comment' });
-        if (rendered !== null) {
-            return `<!-- tj:${safeKey} -->\n${rendered}\n<!-- /tj:${safeKey} -->`;
+    if (section.commentTemplate) {
+        if (!section.parsed || !section.meta) {
+            warning('Custom comment template provided but parsed/meta context is missing. Falling back to default comment.');
+        }
+        else {
+            const context = buildTemplateContext({
+                parsed: section.parsed,
+                meta: section.meta,
+                delta: section.delta ?? null,
+                flaky: section.flaky ?? null,
+                trends: section.trends ?? null,
+                perfRegression: section.perfRegression ?? null,
+                history: section.history ?? null,
+                slowestLimit: section.slowestLimit,
+            });
+            const rendered = renderTemplate(section.commentTemplate, context, { label: 'comment' });
+            if (rendered !== null) {
+                const safe = capCommentBody(stripTjMarkers(rendered), 'comment');
+                return `<!-- tj:${safeKey} -->\n${safe}\n<!-- /tj:${safeKey} -->`;
+            }
         }
     }
     const emoji = section.failed > 0 ? '❌' : '✅';
@@ -139473,8 +139595,8 @@ function mergeTestJobSection(existingBody, newSection) {
     const endMarker = `<!-- /tj:${safeKey} -->`;
     const newSectionContent = renderTestJobSection(newSection);
     const startIdx = existingBody.indexOf(startMarker);
-    const endIdx = existingBody.indexOf(endMarker);
-    if (startIdx !== -1 && endIdx !== -1) {
+    const endIdx = existingBody.lastIndexOf(endMarker);
+    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
         const before = existingBody.slice(0, startIdx);
         const after = existingBody.slice(endIdx + endMarker.length);
         const updatedFooter = after.replace(/\*Updated .*?\*/, `*Updated ${new Date().toISOString()}*`);
@@ -185615,8 +185737,8 @@ async function run() {
         const perfThreshold = parsePerfThreshold(getInput('perf-threshold'));
         const htmlReport = getInput('html-report') === 'true';
         const artifactName = getInput('artifact-name') || 'testglance-report';
-        const summaryTemplate = getInput('summary-template') || '';
-        const commentTemplate = getInput('comment-template') || '';
+        const summaryTemplate = getInput('summary-template').trim();
+        const commentTemplate = getInput('comment-template').trim();
         const historyEnabled = getInput('history') !== 'false';
         const historyLimitRaw = getInput('history-limit') || '20';
         const historyLimitParsed = parseInt(historyLimitRaw, 10);
@@ -185824,29 +185946,36 @@ async function run() {
         const summaryCommitSha = process.env.GITHUB_SHA || 'unknown';
         const summaryTimestamp = new Date().toISOString();
         const summaryJobName = testJobName || process.env.GITHUB_JOB || 'tests';
-        await generateSummary({
-            parsed,
-            apiSuccess: result?.success ?? false,
-            runId: result?.runId,
-            healthScore: result?.healthScore,
-            dashboardUrl,
-            highlights: result?.highlights ?? [],
-            slowestTests: slowestTestsCount,
-            delta,
-            testsChanged,
-            flaky,
-            perfRegression,
-            trends,
-            artifactUrl,
-            summaryTemplate: summaryTemplate || undefined,
-            meta: {
-                commitSha: summaryCommitSha,
-                branch: summaryBranch,
-                workflowRunUrl: runUrl,
-                timestamp: summaryTimestamp,
-                jobName: summaryJobName,
-            },
-        });
+        const historyEntries = loadedHistory?.entries;
+        try {
+            await generateSummary({
+                parsed,
+                apiSuccess: result?.success ?? false,
+                runId: result?.runId,
+                healthScore: result?.healthScore,
+                dashboardUrl,
+                highlights: result?.highlights ?? [],
+                slowestTests: slowestTestsCount,
+                delta,
+                testsChanged,
+                flaky,
+                perfRegression,
+                trends,
+                history: historyEntries,
+                artifactUrl,
+                summaryTemplate: summaryTemplate || undefined,
+                meta: {
+                    commitSha: summaryCommitSha,
+                    branch: summaryBranch,
+                    workflowRunUrl: runUrl,
+                    timestamp: summaryTimestamp,
+                    jobName: summaryJobName,
+                },
+            });
+        }
+        catch (err) {
+            warning(`CI summary generation failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
         if (annotateFailures) {
             if (githubToken) {
                 await createCheckRun({ githubToken, checkName, parsed });
@@ -185856,37 +185985,44 @@ async function run() {
             }
         }
         if (githubToken && (result?.success || localOnly)) {
-            await postPrComment({
-                githubToken,
-                section: {
-                    testJobName: summaryJobName,
-                    status: parsed.summary.failed > 0 ? 'failed' : 'passed',
-                    total: parsed.summary.total,
-                    passed: parsed.summary.passed,
-                    failed: parsed.summary.failed,
-                    duration: parsed.summary.duration,
-                    healthScore: result?.healthScore,
-                    highlights: result?.highlights ?? [],
-                    runUrl: dashboardUrl,
-                    testsChanged,
-                    flaky,
-                    perfRegression,
-                    trends,
-                    baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
-                    baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
-                    artifactUrl,
-                    parsed,
-                    delta,
-                    commentTemplate: commentTemplate || undefined,
-                    meta: {
-                        commitSha: summaryCommitSha,
-                        branch: summaryBranch,
-                        workflowRunUrl: runUrl,
-                        timestamp: summaryTimestamp,
-                        jobName: summaryJobName,
+            try {
+                await postPrComment({
+                    githubToken,
+                    section: {
+                        testJobName: summaryJobName,
+                        status: parsed.summary.failed > 0 ? 'failed' : 'passed',
+                        total: parsed.summary.total,
+                        passed: parsed.summary.passed,
+                        failed: parsed.summary.failed,
+                        duration: parsed.summary.duration,
+                        healthScore: result?.healthScore,
+                        highlights: result?.highlights ?? [],
+                        runUrl: dashboardUrl,
+                        testsChanged,
+                        flaky,
+                        perfRegression,
+                        trends,
+                        baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
+                        baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
+                        artifactUrl,
+                        parsed,
+                        delta,
+                        history: historyEntries,
+                        slowestLimit: slowestTestsCount,
+                        commentTemplate: commentTemplate || undefined,
+                        meta: {
+                            commitSha: summaryCommitSha,
+                            branch: summaryBranch,
+                            workflowRunUrl: runUrl,
+                            timestamp: summaryTimestamp,
+                            jobName: summaryJobName,
+                        },
                     },
-                },
-            });
+                });
+            }
+            catch (err) {
+                warning(`PR comment posting failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
         }
         return { history: loadedHistory };
     }
