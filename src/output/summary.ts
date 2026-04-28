@@ -8,6 +8,7 @@ import type {
 } from '../types';
 import type {
   DeltaComparison,
+  HistoryEntry,
   TestsChangedReport,
   FlakyDetectionResult,
   PerfRegressionResult,
@@ -44,11 +45,13 @@ export interface SummaryOptions {
   flaky?: FlakyDetectionResult | null;
   perfRegression?: PerfRegressionResult | null;
   trends?: TrendIndicators | null;
+  history?: HistoryEntry[] | null;
   artifactUrl?: string;
   summaryTemplate?: string;
   meta?: TemplateContextMeta;
 }
 
+const MAX_RENDERED_SUMMARY_BYTES = 900_000;
 const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
@@ -67,6 +70,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
     flaky,
     perfRegression,
     trends,
+    history,
     summaryTemplate,
     meta,
   } = options;
@@ -79,11 +83,16 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
       flaky,
       trends,
       perfRegression,
+      history,
       slowestLimit: slowestTests,
     });
     const rendered = renderTemplate(summaryTemplate, context, { label: 'summary' });
     if (rendered !== null) {
-      core.summary.addRaw(rendered);
+      const capped =
+        rendered.length > MAX_RENDERED_SUMMARY_BYTES
+          ? `${rendered.slice(0, MAX_RENDERED_SUMMARY_BYTES)}\n\n_…rendered summary truncated to ${MAX_RENDERED_SUMMARY_BYTES} chars to fit GitHub Job Summary limit._`
+          : rendered;
+      core.summary.addRaw(capped);
       await core.summary.write();
       return;
     }

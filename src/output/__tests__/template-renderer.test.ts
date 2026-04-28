@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import Handlebars from 'handlebars';
 
 const mockWarning = vi.hoisted(() => vi.fn());
 
@@ -14,12 +13,14 @@ import {
   buildTemplateContext,
   resolveTemplatePath,
   _resetTemplateRendererForTests,
+  _getHandlebarsInstanceForTests,
   type TemplateContext,
 } from '../template-renderer';
 import type { ParsedTestRun } from '../../types';
-import type { DeltaComparison, FlakyDetectionResult } from '../../history/types';
+import type { DeltaComparison, FlakyDetectionResult, HistoryEntry } from '../../history/types';
 
 const FIXTURES = path.resolve(__dirname, 'fixtures');
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 
 function makeParsed(): ParsedTestRun {
   return {
@@ -198,9 +199,18 @@ describe('resolveTemplatePath', () => {
 });
 
 describe('renderTemplate', () => {
+  let prevWorkspace: string | undefined;
+
   beforeEach(() => {
     _resetTemplateRendererForTests();
     mockWarning.mockClear();
+    prevWorkspace = process.env.GITHUB_WORKSPACE;
+    process.env.GITHUB_WORKSPACE = REPO_ROOT;
+  });
+
+  afterEach(() => {
+    if (prevWorkspace === undefined) delete process.env.GITHUB_WORKSPACE;
+    else process.env.GITHUB_WORKSPACE = prevWorkspace;
   });
 
   it('renders a valid template with all context fields', () => {
@@ -235,7 +245,8 @@ describe('renderTemplate', () => {
   });
 
   it('returns null and warns when render-time helper throws', () => {
-    Handlebars.registerHelper('crash', () => {
+    const handlebars = _getHandlebarsInstanceForTests();
+    handlebars.registerHelper('crash', () => {
       throw new Error('boom');
     });
     const tempPath = path.join(FIXTURES, '__tmp-crash.hbs');
@@ -249,7 +260,7 @@ describe('renderTemplate', () => {
       expect(msg).toContain('boom');
     } finally {
       fs.unlinkSync(tempPath);
-      Handlebars.unregisterHelper('crash');
+      handlebars.unregisterHelper('crash');
     }
   });
 
@@ -300,7 +311,8 @@ describe('renderTemplate', () => {
   });
 
   it('caches compiled templates by absolute path', () => {
-    const compileSpy = vi.spyOn(Handlebars, 'compile');
+    const handlebars = _getHandlebarsInstanceForTests();
+    const compileSpy = vi.spyOn(handlebars, 'compile');
     try {
       const tplPath = path.join(FIXTURES, 'sample-summary.hbs');
       renderTemplate(tplPath, makeContext(), { label: 'summary' });
@@ -309,5 +321,88 @@ describe('renderTemplate', () => {
     } finally {
       compileSpy.mockRestore();
     }
+  });
+
+  it('rejects template paths that resolve outside GITHUB_WORKSPACE', () => {
+    const outsideWorkspace = path.resolve(REPO_ROOT, '..');
+    const tempPath = path.join(outsideWorkspace, '__testglance-outside-tmpl.hbs');
+    fs.writeFileSync(tempPath, '{{results.total}}', 'utf8');
+    try {
+      const result = renderTemplate(tempPath, makeContext(), { label: 'summary' });
+      expect(result).toBeNull();
+      const msg = mockWarning.mock.calls.map((c) => c[0]).join('\n');
+      expect(msg).toContain('outside GITHUB_WORKSPACE');
+      expect(msg).toContain('Falling back to default summary');
+    } finally {
+      fs.unlinkSync(tempPath);
+    }
+  });
+
+  it('rejects template paths containing newline characters', () => {
+    const result = renderTemplate('foo\n::error::pwned.hbs', makeContext(), { label: 'summary' });
+    expect(result).toBeNull();
+    const msg = mockWarning.mock.calls.map((c) => c[0]).join('\n');
+    expect(msg).toContain('newline');
+  });
+
+  it('rejects symlinks pointing outside GITHUB_WORKSPACE', () => {
+    const target = path.resolve(REPO_ROOT, '..', '__testglance-outside-target.hbs');
+    const link = path.join(FIXTURES, '__tmp-symlink-out.hbs');
+    fs.writeFileSync(target, '{{results.total}}', 'utf8');
+    try {
+      try {
+        fs.symlinkSync(target, link);
+      } catch {
+        // Skip on systems where symlink creation is unsupported (e.g. some CI Windows runners)
+        return;
+      }
+      try {
+        const result = renderTemplate(link, makeContext(), { label: 'summary' });
+        expect(result).toBeNull();
+        const msg = mockWarning.mock.calls.map((c) => c[0]).join('\n');
+        expect(msg).toContain('outside GITHUB_WORKSPACE');
+      } finally {
+        fs.unlinkSync(link);
+      }
+    } finally {
+      fs.unlinkSync(target);
+    }
+  });
+
+  it('does not allow prototype property access in templates', () => {
+    const tempPath = path.join(FIXTURES, '__tmp-proto.hbs');
+    fs.writeFileSync(tempPath, 'X={{constructor.name}}|Y={{__proto__.toString}}|END', 'utf8');
+    try {
+      const result = renderTemplate(tempPath, makeContext(), { label: 'summary' });
+      expect(result).toBe('X=|Y=|END');
+    } finally {
+      fs.unlinkSync(tempPath);
+    }
+  });
+
+  it('flattens history into per-run rows for template context', () => {
+    const entries: HistoryEntry[] = [
+      {
+        timestamp: '2026-04-01T00:00:00Z',
+        commitSha: 'aaaa',
+        summary: { total: 10, passed: 9, failed: 1, skipped: 0, errored: 0, duration: 4.5 },
+        tests: [],
+      },
+      {
+        timestamp: '2026-04-02T00:00:00Z',
+        commitSha: 'bbbb',
+        summary: { total: 10, passed: 10, failed: 0, skipped: 0, errored: 0, duration: 4.0 },
+        tests: [],
+      },
+    ];
+    const ctx = buildTemplateContext({
+      parsed: makeParsed(),
+      meta: makeContext().meta,
+      history: entries,
+    });
+    expect(ctx.history).toEqual([
+      { sha: 'aaaa', passRate: '90.0', duration: 4.5, timestamp: '2026-04-01T00:00:00Z' },
+      { sha: 'bbbb', passRate: '100.0', duration: 4.0, timestamp: '2026-04-02T00:00:00Z' },
+    ]);
   });
 });

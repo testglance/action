@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ParsedTestRun } from '../../types';
 
 const mockSummary = vi.hoisted(() => ({
@@ -1679,6 +1679,7 @@ import * as path from 'node:path';
 
 describe('generateSummary with summary-template', () => {
   const tplDir = path.resolve(__dirname, 'fixtures');
+  const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 
   const meta = {
     commitSha: 'abc1234',
@@ -1688,10 +1689,19 @@ describe('generateSummary with summary-template', () => {
     jobName: 'tests',
   };
 
+  let prevWorkspace: string | undefined;
+
   beforeEach(async () => {
     vi.clearAllMocks();
     const mod = await import('../template-renderer');
     mod._resetTemplateRendererForTests();
+    prevWorkspace = process.env.GITHUB_WORKSPACE;
+    process.env.GITHUB_WORKSPACE = REPO_ROOT;
+  });
+
+  afterEach(() => {
+    if (prevWorkspace === undefined) delete process.env.GITHUB_WORKSPACE;
+    else process.env.GITHUB_WORKSPACE = prevWorkspace;
   });
 
   it('renders custom template and skips default sections when summaryTemplate is valid', async () => {

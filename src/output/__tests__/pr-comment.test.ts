@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -753,6 +753,7 @@ describe('renderTestJobSection with trends', () => {
 
 describe('renderTestJobSection with comment-template', () => {
   const FIXTURES = path.resolve(__dirname, 'fixtures');
+  const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 
   function makeParsed(): ParsedTestRun {
     return {
@@ -784,10 +785,19 @@ describe('renderTestJobSection with comment-template', () => {
     jobName: 'ci/test',
   };
 
+  let prevWorkspace: string | undefined;
+
   beforeEach(async () => {
     mockCoreWarning.mockClear();
     const mod = await import('../template-renderer');
     mod._resetTemplateRendererForTests();
+    prevWorkspace = process.env.GITHUB_WORKSPACE;
+    process.env.GITHUB_WORKSPACE = REPO_ROOT;
+  });
+
+  afterEach(() => {
+    if (prevWorkspace === undefined) delete process.env.GITHUB_WORKSPACE;
+    else process.env.GITHUB_WORKSPACE = prevWorkspace;
   });
 
   it('renders custom comment body wrapped in job-section markers', () => {
@@ -862,6 +872,56 @@ describe('renderTestJobSection with comment-template', () => {
       const reMerged = mergeTestJobSection(merged, replacedSectionA);
       expect(reMerged).toContain('<!-- tj:job-a -->\nCUSTOM-job-a-v2\n<!-- /tj:job-a -->');
       expect(reMerged).toContain('<!-- tj:job-b -->\nCUSTOM-job-b\n<!-- /tj:job-b -->');
+    } finally {
+      fs.unlinkSync(tplPath);
+    }
+  });
+
+  it('strips embedded job-section markers from rendered comment body', () => {
+    const tplPath = path.join(FIXTURES, '__tmp-marker-inject.hbs');
+    fs.writeFileSync(tplPath, 'before<!-- tj:evil -->mid<!-- /tj:evil -->after', 'utf8');
+    try {
+      const sectionA = makeSection({
+        testJobName: 'job-a',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'job-a' },
+      });
+      const sectionB = makeSection({
+        testJobName: 'job-b',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'job-b' },
+      });
+
+      const body = renderPrComment([sectionA]);
+      expect(body).not.toContain('<!-- tj:evil -->');
+      expect(body).not.toContain('<!-- /tj:evil -->');
+      expect(body).toContain('beforemidafter');
+
+      const merged = mergeTestJobSection(body, sectionB);
+      expect(merged).toContain('<!-- tj:job-a -->');
+      expect(merged).toContain('<!-- /tj:job-a -->');
+      expect(merged).toContain('<!-- tj:job-b -->');
+      expect(merged).toContain('<!-- /tj:job-b -->');
+    } finally {
+      fs.unlinkSync(tplPath);
+    }
+  });
+
+  it('falls back to "tests" marker when sanitized job name is empty', () => {
+    const tplPath = path.join(FIXTURES, '__tmp-empty-job.hbs');
+    fs.writeFileSync(tplPath, 'BODY', 'utf8');
+    try {
+      const section = makeSection({
+        testJobName: '-->',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'whatever' },
+      });
+      const result = renderTestJobSection(section);
+      expect(result.startsWith('<!-- tj:tests -->')).toBe(true);
+      expect(result.endsWith('<!-- /tj:tests -->')).toBe(true);
     } finally {
       fs.unlinkSync(tplPath);
     }

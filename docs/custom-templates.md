@@ -98,8 +98,9 @@ The following Handlebars helpers are pre-registered:
 | `truncate`       | `(str: string, maxLen: number) => string`   | `{{truncate failures.0.errorMessage 80}}`            |
 | `escapeHtml`     | `(value: string) => string`                 | `{{escapeHtml suite.name}}`                          |
 | `passRate`       | `(passed: number, total: number) => string` | `{{passRate results.passed results.total}}` → `97.2` |
+| `limit`          | `(arr: any[], n: number) => any[]`          | `{{#each (limit failures 25)}}…{{/each}}`            |
 
-Handlebars HTML-escapes interpolations by default (`{{ }}`). Use the triple-stash form (`{{{ }}}`) when you intentionally want raw markup.
+Handlebars HTML-escapes interpolations by default (`{{ }}`). The triple-stash form (`{{{ }}}`) renders raw markup — **avoid it on `failures.*.name`, `failures.*.errorMessage`, `failures.*.stackTrace`**, since test names and error messages can contain attacker-controlled markup (e.g. a test named `<img src=x onerror=…>` from a fork PR). Use `{{ }}` (the default) or `{{escapeHtml …}}` for these fields.
 
 ## Example: minimal summary template
 
@@ -153,16 +154,21 @@ TestGlance never breaks your CI. If your template:
 - fails to parse, or
 - throws at render time,
 
-the Action logs a `core.warning` describing the problem and falls back to the default rendering for that surface. Other outputs (PR comments, HTML report, API submission, annotations) continue unaffected.
+the Action logs a `core.warning` describing the problem and falls back to the default rendering for that surface. The other surface (summary or PR comment) and all unrelated outputs continue unaffected.
 
 ## Output size
 
-When you take over rendering, you also take responsibility for output size. GitHub limits Job Summaries to ~1 MB and PR comments to 65,536 characters. If you iterate over `failures` or `slowest`, cap the loop yourself, e.g.:
+When you take over rendering, you also take responsibility for output size. GitHub limits Job Summaries to ~1 MB and PR comments to 65,536 characters. TestGlance applies a defensive cap on rendered output (≈900 KB for summaries, ≈60 KB for PR comments) and appends a truncation notice if the cap is hit, but you should size your output yourself. Use the built-in `limit` helper to cap a list:
 
+<!-- prettier-ignore -->
 ```handlebars
-{{#each failures}}
-  {{#if @index_lt_25}}- `{{name}}`{{/if}}
+{{#each (limit failures 25)}}
+- `{{name}}`
 {{/each}}
 ```
 
-(`@index` is built in to Handlebars; for conditionals on it, register custom helpers in your own pre-build step or rely on slicing the data before rendering.)
+For ordinal logic (e.g. "first failure only"), use Handlebars' built-in `@first` / `@last` block helpers.
+
+## Resolution & sandboxing
+
+Template paths must resolve inside `GITHUB_WORKSPACE`. Absolute paths or `..` segments that escape the workspace are rejected with a warning, and the default rendering is used instead. Symlinks pointing outside the workspace are also rejected. Files larger than 1 MB are not loaded.
