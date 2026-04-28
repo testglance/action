@@ -70,6 +70,14 @@ inputs:
     description: 'Name of the uploaded HTML report artifact'
     required: false
     default: 'testglance-report'
+  summary-template:
+    description: 'Path to a Handlebars template file for the CI job summary. When set, replaces the default summary rendering. Path is resolved relative to GITHUB_WORKSPACE.'
+    required: false
+    default: ''
+  comment-template:
+    description: 'Path to a Handlebars template file for PR comments. When set, replaces the default per-job comment body. Path is resolved relative to GITHUB_WORKSPACE.'
+    required: false
+    default: ''
 runs:
   using: 'node24'
   main: 'dist/index.js'

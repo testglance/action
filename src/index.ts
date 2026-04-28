@@ -136,6 +136,8 @@ export async function run(): Promise<RunResult> {
     const perfThreshold = parsePerfThreshold(core.getInput('perf-threshold'));
     const htmlReport = core.getInput('html-report') === 'true';
     const artifactName = core.getInput('artifact-name') || 'testglance-report';
+    const summaryTemplate = core.getInput('summary-template') || '';
+    const commentTemplate = core.getInput('comment-template') || '';
     const historyEnabled = core.getInput('history') !== 'false';
     const historyLimitRaw = core.getInput('history-limit') || '20';
     const historyLimitParsed = parseInt(historyLimitRaw, 10);
@@ -391,6 +393,11 @@ export async function run(): Promise<RunResult> {
       }
     }
 
+    const summaryBranch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'unknown';
+    const summaryCommitSha = process.env.GITHUB_SHA || 'unknown';
+    const summaryTimestamp = new Date().toISOString();
+    const summaryJobName = testJobName || process.env.GITHUB_JOB || 'tests';
+
     await generateSummary({
       parsed,
       apiSuccess: result?.success ?? false,
@@ -405,6 +412,14 @@ export async function run(): Promise<RunResult> {
       perfRegression,
       trends,
       artifactUrl,
+      summaryTemplate: summaryTemplate || undefined,
+      meta: {
+        commitSha: summaryCommitSha,
+        branch: summaryBranch,
+        workflowRunUrl: runUrl,
+        timestamp: summaryTimestamp,
+        jobName: summaryJobName,
+      },
     });
 
     if (annotateFailures) {
@@ -419,7 +434,7 @@ export async function run(): Promise<RunResult> {
       await postPrComment({
         githubToken,
         section: {
-          testJobName: testJobName || process.env.GITHUB_JOB || 'tests',
+          testJobName: summaryJobName,
           status: parsed.summary.failed > 0 ? 'failed' : 'passed',
           total: parsed.summary.total,
           passed: parsed.summary.passed,
@@ -435,6 +450,16 @@ export async function run(): Promise<RunResult> {
           baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
           baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
           artifactUrl,
+          parsed,
+          delta,
+          commentTemplate: commentTemplate || undefined,
+          meta: {
+            commitSha: summaryCommitSha,
+            branch: summaryBranch,
+            workflowRunUrl: runUrl,
+            timestamp: summaryTimestamp,
+            jobName: summaryJobName,
+          },
         },
       });
     }

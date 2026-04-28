@@ -32,7 +32,8 @@
     "@actions/core": "^3.0.0",
     "@actions/github": "^9.1.0",
     "fast-glob": "^3.3.3",
-    "fast-xml-parser": "^5.7.2"
+    "fast-xml-parser": "^5.7.2",
+    "handlebars": "^4.7.9"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.2",

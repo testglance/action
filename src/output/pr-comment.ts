@@ -1,4 +1,4 @@
-import type { Highlight, HighlightSeverity } from '../types';
+import type { Highlight, HighlightSeverity, ParsedTestRun } from '../types';
 import type {
   DeltaComparison,
   TestsChangedReport,
@@ -7,6 +7,11 @@ import type {
   TrendIndicators,
 } from '../history/types';
 import { formatDuration, formatDurationPair, renderProgressBar } from './format';
+import {
+  renderTemplate,
+  buildTemplateContext,
+  type TemplateContextMeta,
+} from './template-renderer';
 
 export interface PrCommentSection {
   testJobName: string;
@@ -25,6 +30,10 @@ export interface PrCommentSection {
   perfRegression?: PerfRegressionResult | null;
   trends?: TrendIndicators | null;
   artifactUrl?: string;
+  parsed?: ParsedTestRun;
+  delta?: DeltaComparison | null;
+  commentTemplate?: string;
+  meta?: TemplateContextMeta;
 }
 
 const SEVERITY_EMOJI: Record<HighlightSeverity, string> = {
@@ -166,6 +175,22 @@ export function renderTrendLine(trends: TrendIndicators): string {
 
 export function renderTestJobSection(section: PrCommentSection): string {
   const safeKey = sanitizeMarkerName(section.testJobName);
+
+  if (section.commentTemplate && section.parsed && section.meta) {
+    const context = buildTemplateContext({
+      parsed: section.parsed,
+      meta: section.meta,
+      delta: section.delta ?? null,
+      flaky: section.flaky ?? null,
+      trends: section.trends ?? null,
+      perfRegression: section.perfRegression ?? null,
+    });
+    const rendered = renderTemplate(section.commentTemplate, context, { label: 'comment' });
+    if (rendered !== null) {
+      return `<!-- tj:${safeKey} -->\n${rendered}\n<!-- /tj:${safeKey} -->`;
+    }
+  }
+
   const emoji = section.failed > 0 ? '❌' : '✅';
   const passRate = section.total > 0 ? ((section.passed / section.total) * 100).toFixed(1) : '0.0';
 

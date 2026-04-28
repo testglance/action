@@ -9,8 +9,11 @@ const mockSummary = vi.hoisted(() => ({
   write: vi.fn().mockResolvedValue(undefined),
 }));
 
+const mockCoreWarning = vi.hoisted(() => vi.fn());
+
 vi.mock('@actions/core', () => ({
   summary: mockSummary,
+  warning: mockCoreWarning,
 }));
 
 import {
@@ -1668,5 +1671,65 @@ describe('renderTrendsSection', () => {
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
     const hasTrends = rawCalls.some((c: string) => c.includes('### 📈 Trends'));
     expect(hasTrends).toBe(false);
+  });
+});
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+describe('generateSummary with summary-template', () => {
+  const tplDir = path.resolve(__dirname, 'fixtures');
+
+  const meta = {
+    commitSha: 'abc1234',
+    branch: 'feat/x',
+    workflowRunUrl: 'https://github.com/o/r/actions/runs/1',
+    timestamp: '2026-04-27T10:00:00Z',
+    jobName: 'tests',
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const mod = await import('../template-renderer');
+    mod._resetTemplateRendererForTests();
+  });
+
+  it('renders custom template and skips default sections when summaryTemplate is valid', async () => {
+    const tplPath = path.join(tplDir, '__tmp-valid-summary.hbs');
+    fs.writeFileSync(tplPath, 'CUSTOM:{{results.passRate}}%', 'utf8');
+    try {
+      await generateSummary({
+        parsed: makeParsed(),
+        apiSuccess: true,
+        summaryTemplate: tplPath,
+        meta,
+      });
+
+      const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+      expect(rawCalls).toEqual(['CUSTOM:97.2%']);
+      expect(mockSummary.write).toHaveBeenCalledTimes(1);
+    } finally {
+      fs.unlinkSync(tplPath);
+    }
+  });
+
+  it('falls back to default rendering when template file is missing', async () => {
+    await generateSummary({
+      parsed: makeParsed(),
+      apiSuccess: true,
+      summaryTemplate: '/no/such/file.hbs',
+      meta,
+    });
+
+    expect(mockCoreWarning).toHaveBeenCalledWith(
+      expect.stringContaining('Custom summary template failed'),
+    );
+    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('TestGlance Results'));
+  });
+
+  it('uses default rendering when summaryTemplate is not provided (regression)', async () => {
+    await generateSummary({ parsed: makeParsed(), apiSuccess: true });
+    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('TestGlance Results'));
+    expect(mockCoreWarning).not.toHaveBeenCalled();
   });
 });

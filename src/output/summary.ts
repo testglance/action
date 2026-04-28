@@ -22,6 +22,11 @@ import {
   statusEmoji,
   renderMetricsStrip,
 } from './format';
+import {
+  renderTemplate,
+  buildTemplateContext,
+  type TemplateContextMeta,
+} from './template-renderer';
 
 export { formatDuration, truncate } from './format';
 
@@ -40,6 +45,8 @@ export interface SummaryOptions {
   perfRegression?: PerfRegressionResult | null;
   trends?: TrendIndicators | null;
   artifactUrl?: string;
+  summaryTemplate?: string;
+  meta?: TemplateContextMeta;
 }
 
 const MAX_FAILED_TESTS_SHOWN = 25;
@@ -60,7 +67,28 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
     flaky,
     perfRegression,
     trends,
+    summaryTemplate,
+    meta,
   } = options;
+
+  if (summaryTemplate && meta) {
+    const context = buildTemplateContext({
+      parsed,
+      meta,
+      delta,
+      flaky,
+      trends,
+      perfRegression,
+      slowestLimit: slowestTests,
+    });
+    const rendered = renderTemplate(summaryTemplate, context, { label: 'summary' });
+    if (rendered !== null) {
+      core.summary.addRaw(rendered);
+      await core.summary.write();
+      return;
+    }
+  }
+
   const { summary } = parsed;
   const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
 

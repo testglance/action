@@ -155,18 +155,20 @@ See [`examples/reusable-workflow.yml`](examples/reusable-workflow.yml) for a `wo
 
 ## Inputs
 
-| Input               | Required | Default                      | Description                                                                                    |
-| ------------------- | :------: | ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| `report-path`       |    No    | `''` (auto-detect)           | Path to test report file(s). Supports glob patterns.                                           |
-| `api-key`           |    No    | `''`                         | TestGlance project API key _(reserved — SaaS coming soon)_                                     |
-| `api-url`           |    No    | `https://www.testglance.dev` | TestGlance API URL _(reserved — SaaS coming soon)_                                             |
-| `report-format`     |    No    | `auto`                       | Format: `junit`, `ctrf`, or `auto` (detect from extension)                                     |
-| `test-job-name`     |    No    | `''`                         | Override the display name for this test job                                                    |
-| `slowest-tests`     |    No    | `10`                         | Number of slowest tests to show in CI summary (0 to disable)                                   |
-| `send-results`      |    No    | `true`                       | Send results to TestGlance API. Automatically forced to `false` when no `api-key` is provided. |
-| `github-token`      |    No    | `''`                         | GitHub token for PR comments and Check Runs                                                    |
-| `annotate-failures` |    No    | `false`                      | Annotate failed tests inline on the PR diff (creates a Check Run)                              |
-| `check-name`        |    No    | `Test Results`               | Name of the Check Run created by `annotate-failures`                                           |
+| Input               | Required | Default                      | Description                                                                                                                |
+| ------------------- | :------: | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `report-path`       |    No    | `''` (auto-detect)           | Path to test report file(s). Supports glob patterns.                                                                       |
+| `api-key`           |    No    | `''`                         | TestGlance project API key _(reserved — SaaS coming soon)_                                                                 |
+| `api-url`           |    No    | `https://www.testglance.dev` | TestGlance API URL _(reserved — SaaS coming soon)_                                                                         |
+| `report-format`     |    No    | `auto`                       | Format: `junit`, `ctrf`, or `auto` (detect from extension)                                                                 |
+| `test-job-name`     |    No    | `''`                         | Override the display name for this test job                                                                                |
+| `slowest-tests`     |    No    | `10`                         | Number of slowest tests to show in CI summary (0 to disable)                                                               |
+| `send-results`      |    No    | `true`                       | Send results to TestGlance API. Automatically forced to `false` when no `api-key` is provided.                             |
+| `github-token`      |    No    | `''`                         | GitHub token for PR comments and Check Runs                                                                                |
+| `annotate-failures` |    No    | `false`                      | Annotate failed tests inline on the PR diff (creates a Check Run)                                                          |
+| `check-name`        |    No    | `Test Results`               | Name of the Check Run created by `annotate-failures`                                                                       |
+| `summary-template`  |    No    | `''`                         | Path to a Handlebars template that replaces the default CI summary. See [Custom Templates](docs/custom-templates.md).      |
+| `comment-template`  |    No    | `''`                         | Path to a Handlebars template that replaces the default PR comment body. See [Custom Templates](docs/custom-templates.md). |
 
 ## Permissions
 
