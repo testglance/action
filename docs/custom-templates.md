@@ -103,50 +103,43 @@ Handlebars HTML-escapes interpolations by default (`{{ }}`). Use the triple-stas
 
 ## Example: minimal summary template
 
+<!-- prettier-ignore -->
 ```handlebars
-## Tests:
-{{results.passed}}/{{results.total}}
-({{results.passRate}}%) Duration:
-{{formatDuration results.duration}}
+## Tests: {{results.passed}}/{{results.total}} ({{results.passRate}}%)
+
+Duration: {{formatDuration results.duration}}
 Branch: `{{meta.branch}}` · Commit: `{{meta.commitSha}}`
 
 {{#if failures.length}}
-  ### Failures
+### Failures
 
-  {{#each failures}}
-    - **{{name}}** in `{{suite}}` —
-    {{truncate errorMessage 100}}
-  {{/each}}
+{{#each failures}}
+- **{{name}}** in `{{suite}}` — {{truncate errorMessage 100}}
+{{/each}}
 {{/if}}
 
 {{#if delta}}
-  Pass rate change:
-  {{delta.passRateDelta}}%
+Pass rate change: {{delta.passRateDelta}}%
 {{/if}}
 ```
 
 ## Example: minimal comment template
 
+<!-- prettier-ignore -->
 ```handlebars
-###
-{{meta.jobName}}:
-{{passRate results.passed results.total}}% pass rate
+### {{meta.jobName}}: {{passRate results.passed results.total}}% pass rate
 
-{{results.passed}}/{{results.total}}
-passing in
-{{formatDuration results.duration}}
+{{results.passed}}/{{results.total}} passing in {{formatDuration results.duration}}
 
 {{#if failures.length}}
-  **{{failures.length}}
-  failing tests:**
-  {{#each failures}}
-    - `{{name}}` ({{suite}})
-  {{/each}}
+**{{failures.length}} failing tests:**
+{{#each failures}}
+- `{{name}}` ({{suite}})
+{{/each}}
 {{/if}}
 
 {{#if flaky.length}}
-  **Flaky tests:**
-  {{flaky.length}}
+**Flaky tests:** {{flaky.length}}
 {{/if}}
 ```
 
