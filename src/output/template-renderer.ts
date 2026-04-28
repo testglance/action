@@ -334,6 +334,8 @@ function loadAndCompile(resolved: ResolvedPath, label: string): HandlebarsTempla
   }
 
   try {
+    // Eagerly parse so syntax errors surface here (compile defers parsing until render time).
+    handlebars.parse(source);
     const compiled = handlebars.compile(source, {
       strict: false,
       noEscape: false,
