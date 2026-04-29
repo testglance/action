@@ -1,12 +1,19 @@
-import type { Highlight, HighlightSeverity } from '../types';
+import * as core from '@actions/core';
+import type { Highlight, HighlightSeverity, ParsedTestRun } from '../types';
 import type {
   DeltaComparison,
+  HistoryEntry,
   TestsChangedReport,
   FlakyDetectionResult,
   PerfRegressionResult,
   TrendIndicators,
 } from '../history/types';
 import { formatDuration, formatDurationPair, renderProgressBar } from './format';
+import {
+  renderTemplate,
+  buildTemplateContext,
+  type TemplateContextMeta,
+} from './template-renderer';
 
 export interface PrCommentSection {
   testJobName: string;
@@ -25,7 +32,16 @@ export interface PrCommentSection {
   perfRegression?: PerfRegressionResult | null;
   trends?: TrendIndicators | null;
   artifactUrl?: string;
+  parsed?: ParsedTestRun;
+  delta?: DeltaComparison | null;
+  history?: HistoryEntry[] | null;
+  slowestLimit?: number;
+  commentTemplate?: string;
+  meta?: TemplateContextMeta;
 }
+
+const MAX_RENDERED_COMMENT_BYTES = 60_000;
+const TJ_MARKER_PATTERN = /<!--\s*\/?\s*tj:[^>]*-->/g;
 
 const SEVERITY_EMOJI: Record<HighlightSeverity, string> = {
   critical: '🔴',
@@ -40,7 +56,18 @@ const SEVERITY_ORDER: Record<HighlightSeverity, number> = {
 };
 
 function sanitizeMarkerName(name: string): string {
-  return name.replace(/-->/g, '');
+  const stripped = name.replace(/-->/g, '').trim();
+  return stripped.length > 0 ? stripped : 'tests';
+}
+
+function stripTjMarkers(body: string): string {
+  return body.replace(TJ_MARKER_PATTERN, '');
+}
+
+function capCommentBody(body: string, label: string): string {
+  if (body.length <= MAX_RENDERED_COMMENT_BYTES) return body;
+  const truncated = body.slice(0, MAX_RENDERED_COMMENT_BYTES);
+  return `${truncated}\n\n_…rendered ${label} truncated to ${MAX_RENDERED_COMMENT_BYTES} chars to fit GitHub PR comment limit._`;
 }
 
 function renderHighlightRow(h: Highlight): string {
@@ -166,6 +193,31 @@ export function renderTrendLine(trends: TrendIndicators): string {
 
 export function renderTestJobSection(section: PrCommentSection): string {
   const safeKey = sanitizeMarkerName(section.testJobName);
+
+  if (section.commentTemplate) {
+    if (!section.parsed || !section.meta) {
+      core.warning(
+        'Custom comment template provided but parsed/meta context is missing. Falling back to default comment.',
+      );
+    } else {
+      const context = buildTemplateContext({
+        parsed: section.parsed,
+        meta: section.meta,
+        delta: section.delta ?? null,
+        flaky: section.flaky ?? null,
+        trends: section.trends ?? null,
+        perfRegression: section.perfRegression ?? null,
+        history: section.history ?? null,
+        slowestLimit: section.slowestLimit,
+      });
+      const rendered = renderTemplate(section.commentTemplate, context, { label: 'comment' });
+      if (rendered !== null) {
+        const safe = capCommentBody(stripTjMarkers(rendered), 'comment');
+        return `<!-- tj:${safeKey} -->\n${safe}\n<!-- /tj:${safeKey} -->`;
+      }
+    }
+  }
+
   const emoji = section.failed > 0 ? '❌' : '✅';
   const passRate = section.total > 0 ? ((section.passed / section.total) * 100).toFixed(1) : '0.0';
 
@@ -332,9 +384,9 @@ export function mergeTestJobSection(existingBody: string, newSection: PrCommentS
   const newSectionContent = renderTestJobSection(newSection);
 
   const startIdx = existingBody.indexOf(startMarker);
-  const endIdx = existingBody.indexOf(endMarker);
+  const endIdx = existingBody.lastIndexOf(endMarker);
 
-  if (startIdx !== -1 && endIdx !== -1) {
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
     const before = existingBody.slice(0, startIdx);
     const after = existingBody.slice(endIdx + endMarker.length);
 

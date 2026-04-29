@@ -8,6 +8,7 @@ import type {
 } from '../types';
 import type {
   DeltaComparison,
+  HistoryEntry,
   TestsChangedReport,
   FlakyDetectionResult,
   PerfRegressionResult,
@@ -22,6 +23,11 @@ import {
   statusEmoji,
   renderMetricsStrip,
 } from './format';
+import {
+  renderTemplate,
+  buildTemplateContext,
+  type TemplateContextMeta,
+} from './template-renderer';
 
 export { formatDuration, truncate } from './format';
 
@@ -39,9 +45,13 @@ export interface SummaryOptions {
   flaky?: FlakyDetectionResult | null;
   perfRegression?: PerfRegressionResult | null;
   trends?: TrendIndicators | null;
+  history?: HistoryEntry[] | null;
   artifactUrl?: string;
+  summaryTemplate?: string;
+  meta?: TemplateContextMeta;
 }
 
+const MAX_RENDERED_SUMMARY_BYTES = 900_000;
 const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
@@ -60,7 +70,34 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
     flaky,
     perfRegression,
     trends,
+    history,
+    summaryTemplate,
+    meta,
   } = options;
+
+  if (summaryTemplate && meta) {
+    const context = buildTemplateContext({
+      parsed,
+      meta,
+      delta,
+      flaky,
+      trends,
+      perfRegression,
+      history,
+      slowestLimit: slowestTests,
+    });
+    const rendered = renderTemplate(summaryTemplate, context, { label: 'summary' });
+    if (rendered !== null) {
+      const capped =
+        rendered.length > MAX_RENDERED_SUMMARY_BYTES
+          ? `${rendered.slice(0, MAX_RENDERED_SUMMARY_BYTES)}\n\n_…rendered summary truncated to ${MAX_RENDERED_SUMMARY_BYTES} chars to fit GitHub Job Summary limit._`
+          : rendered;
+      core.summary.addRaw(capped);
+      await core.summary.write();
+      return;
+    }
+  }
+
   const { summary } = parsed;
   const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
 

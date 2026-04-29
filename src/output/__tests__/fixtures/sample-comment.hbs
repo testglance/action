@@ -1,0 +1,14 @@
+### Custom Comment for {{meta.jobName}}
+
+{{passRate results.passed results.total}}% — {{results.passed}}/{{results.total}} passing in {{formatDuration results.duration}}
+
+{{#if failures.length}}
+**{{failures.length}} failing tests:**
+{{#each failures}}
+- `{{name}}` ({{suite}})
+{{/each}}
+{{/if}}
+
+{{#if flaky.length}}
+**Flaky:** {{flaky.length}}
+{{/if}}

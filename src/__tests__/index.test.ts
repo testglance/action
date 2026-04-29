@@ -148,6 +148,8 @@ function setupInputs(overrides: Record<string, string> = {}) {
     'history-limit': '20',
     'html-report': '',
     'artifact-name': '',
+    'summary-template': '',
+    'comment-template': '',
   };
   const inputs = { ...defaults, ...overrides };
   mockGetInput.mockImplementation((name: string) => inputs[name] ?? '');
@@ -457,20 +459,22 @@ describe('run() integration', () => {
     it('calls generateSummary with correct args on API success', async () => {
       await run();
 
-      expect(mockGenerateSummary).toHaveBeenCalledWith({
-        parsed: VALID_PARSED_RUN,
-        apiSuccess: true,
-        runId: 'run-1',
-        healthScore: 85,
-        dashboardUrl: 'https://www.testglance.dev/runs/run-1',
-        highlights: [],
-        slowestTests: 10,
-        delta: null,
-        testsChanged: null,
-        flaky: null,
-        perfRegression: null,
-        trends: null,
-      });
+      expect(mockGenerateSummary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parsed: VALID_PARSED_RUN,
+          apiSuccess: true,
+          runId: 'run-1',
+          healthScore: 85,
+          dashboardUrl: 'https://www.testglance.dev/runs/run-1',
+          highlights: [],
+          slowestTests: 10,
+          delta: null,
+          testsChanged: null,
+          flaky: null,
+          perfRegression: null,
+          trends: null,
+        }),
+      );
     });
 
     it('calls generateSummary with apiSuccess=false on API failure', async () => {
@@ -482,20 +486,22 @@ describe('run() integration', () => {
 
       await run();
 
-      expect(mockGenerateSummary).toHaveBeenCalledWith({
-        parsed: VALID_PARSED_RUN,
-        apiSuccess: false,
-        runId: undefined,
-        healthScore: undefined,
-        dashboardUrl: undefined,
-        highlights: [],
-        slowestTests: 10,
-        delta: null,
-        testsChanged: null,
-        flaky: null,
-        perfRegression: null,
-        trends: null,
-      });
+      expect(mockGenerateSummary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parsed: VALID_PARSED_RUN,
+          apiSuccess: false,
+          runId: undefined,
+          healthScore: undefined,
+          dashboardUrl: undefined,
+          highlights: [],
+          slowestTests: 10,
+          delta: null,
+          testsChanged: null,
+          flaky: null,
+          perfRegression: null,
+          trends: null,
+        }),
+      );
     });
 
     it('does not call generateSummary when no files found', async () => {
@@ -1926,6 +1932,73 @@ describe('run() integration', () => {
         expect.stringContaining('HTML report generation failed'),
       );
       expect(mockGenerateSummary).toHaveBeenCalled();
+    });
+  });
+
+  describe('custom report templates', () => {
+    it('passes summary-template and meta to generateSummary', async () => {
+      setupInputs({ 'summary-template': 'tpl/summary.hbs' });
+      process.env.GITHUB_HEAD_REF = '';
+      process.env.GITHUB_REF_NAME = 'feat/custom-tpl';
+      process.env.GITHUB_SHA = 'abc1234';
+
+      await run();
+
+      const call = mockGenerateSummary.mock.calls[0]?.[0];
+      expect(call).toBeDefined();
+      expect(call.summaryTemplate).toBe('tpl/summary.hbs');
+      expect(call.meta).toEqual(
+        expect.objectContaining({
+          commitSha: 'abc1234',
+          branch: 'feat/custom-tpl',
+          jobName: expect.any(String),
+          timestamp: expect.any(String),
+          workflowRunUrl: expect.any(String),
+        }),
+      );
+    });
+
+    it('passes comment-template, parsed, delta, and meta to postPrComment', async () => {
+      setupInputs({
+        'comment-template': 'tpl/comment.hbs',
+        'github-token': 'ghp_abc123',
+      });
+
+      await run();
+
+      const call = mockPostPrComment.mock.calls[0]?.[0];
+      expect(call).toBeDefined();
+      expect(call.section.commentTemplate).toBe('tpl/comment.hbs');
+      expect(call.section.parsed).toBe(VALID_PARSED_RUN);
+      expect(call.section.meta).toEqual(
+        expect.objectContaining({
+          commitSha: expect.any(String),
+          branch: expect.any(String),
+          jobName: expect.any(String),
+          timestamp: expect.any(String),
+          workflowRunUrl: expect.any(String),
+        }),
+      );
+    });
+
+    it('does not pass template fields when inputs are absent (regression)', async () => {
+      setupInputs({ 'github-token': 'ghp_abc123' });
+
+      await run();
+
+      const summaryCall = mockGenerateSummary.mock.calls[0]?.[0];
+      expect(summaryCall.summaryTemplate).toBeUndefined();
+
+      const prCall = mockPostPrComment.mock.calls[0]?.[0];
+      expect(prCall.section.commentTemplate).toBeUndefined();
+    });
+
+    it('does not call setFailed even when summary-template input is provided', async () => {
+      setupInputs({ 'summary-template': 'invalid/path.hbs' });
+
+      await run();
+
+      expect(mockSetFailed).not.toHaveBeenCalled();
     });
   });
 

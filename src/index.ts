@@ -136,6 +136,8 @@ export async function run(): Promise<RunResult> {
     const perfThreshold = parsePerfThreshold(core.getInput('perf-threshold'));
     const htmlReport = core.getInput('html-report') === 'true';
     const artifactName = core.getInput('artifact-name') || 'testglance-report';
+    const summaryTemplate = core.getInput('summary-template').trim();
+    const commentTemplate = core.getInput('comment-template').trim();
     const historyEnabled = core.getInput('history') !== 'false';
     const historyLimitRaw = core.getInput('history-limit') || '20';
     const historyLimitParsed = parseInt(historyLimitRaw, 10);
@@ -391,21 +393,42 @@ export async function run(): Promise<RunResult> {
       }
     }
 
-    await generateSummary({
-      parsed,
-      apiSuccess: result?.success ?? false,
-      runId: result?.runId,
-      healthScore: result?.healthScore,
-      dashboardUrl,
-      highlights: result?.highlights ?? [],
-      slowestTests: slowestTestsCount,
-      delta,
-      testsChanged,
-      flaky,
-      perfRegression,
-      trends,
-      artifactUrl,
-    });
+    const summaryBranch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'unknown';
+    const summaryCommitSha = process.env.GITHUB_SHA || 'unknown';
+    const summaryTimestamp = new Date().toISOString();
+    const summaryJobName = testJobName || process.env.GITHUB_JOB || 'tests';
+    const historyEntries = loadedHistory?.entries;
+
+    try {
+      await generateSummary({
+        parsed,
+        apiSuccess: result?.success ?? false,
+        runId: result?.runId,
+        healthScore: result?.healthScore,
+        dashboardUrl,
+        highlights: result?.highlights ?? [],
+        slowestTests: slowestTestsCount,
+        delta,
+        testsChanged,
+        flaky,
+        perfRegression,
+        trends,
+        history: historyEntries,
+        artifactUrl,
+        summaryTemplate: summaryTemplate || undefined,
+        meta: {
+          commitSha: summaryCommitSha,
+          branch: summaryBranch,
+          workflowRunUrl: runUrl,
+          timestamp: summaryTimestamp,
+          jobName: summaryJobName,
+        },
+      });
+    } catch (err) {
+      core.warning(
+        `CI summary generation failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     if (annotateFailures) {
       if (githubToken) {
@@ -416,27 +439,45 @@ export async function run(): Promise<RunResult> {
     }
 
     if (githubToken && (result?.success || localOnly)) {
-      await postPrComment({
-        githubToken,
-        section: {
-          testJobName: testJobName || process.env.GITHUB_JOB || 'tests',
-          status: parsed.summary.failed > 0 ? 'failed' : 'passed',
-          total: parsed.summary.total,
-          passed: parsed.summary.passed,
-          failed: parsed.summary.failed,
-          duration: parsed.summary.duration,
-          healthScore: result?.healthScore,
-          highlights: result?.highlights ?? [],
-          runUrl: dashboardUrl,
-          testsChanged,
-          flaky,
-          perfRegression,
-          trends,
-          baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
-          baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
-          artifactUrl,
-        },
-      });
+      try {
+        await postPrComment({
+          githubToken,
+          section: {
+            testJobName: summaryJobName,
+            status: parsed.summary.failed > 0 ? 'failed' : 'passed',
+            total: parsed.summary.total,
+            passed: parsed.summary.passed,
+            failed: parsed.summary.failed,
+            duration: parsed.summary.duration,
+            healthScore: result?.healthScore,
+            highlights: result?.highlights ?? [],
+            runUrl: dashboardUrl,
+            testsChanged,
+            flaky,
+            perfRegression,
+            trends,
+            baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
+            baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
+            artifactUrl,
+            parsed,
+            delta,
+            history: historyEntries,
+            slowestLimit: slowestTestsCount,
+            commentTemplate: commentTemplate || undefined,
+            meta: {
+              commitSha: summaryCommitSha,
+              branch: summaryBranch,
+              workflowRunUrl: runUrl,
+              timestamp: summaryTimestamp,
+              jobName: summaryJobName,
+            },
+          },
+        });
+      } catch (err) {
+        core.warning(
+          `PR comment posting failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
 
     return { history: loadedHistory };

@@ -1,4 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+const mockCoreWarning = vi.hoisted(() => vi.fn());
+
+vi.mock('@actions/core', () => ({
+  warning: mockCoreWarning,
+}));
+
 import type { PrCommentSection } from '../pr-comment';
 import {
   renderTestJobSection,
@@ -9,7 +18,7 @@ import {
   renderPerfRegressionCompact,
   renderTrendLine,
 } from '../pr-comment';
-import type { Highlight } from '../../types';
+import type { Highlight, ParsedTestRun } from '../../types';
 import type {
   DeltaComparison,
   TestsChangedReport,
@@ -739,5 +748,182 @@ describe('renderTestJobSection with trends', () => {
     const highlightIdx = result.indexOf('| Signal |');
     expect(trendIdx).toBeGreaterThan(0);
     expect(trendIdx).toBeLessThan(highlightIdx);
+  });
+});
+
+describe('renderTestJobSection with comment-template', () => {
+  const FIXTURES = path.resolve(__dirname, 'fixtures');
+  const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
+
+  function makeParsed(): ParsedTestRun {
+    return {
+      summary: { total: 100, passed: 95, failed: 5, skipped: 0, errored: 0, duration: 10 },
+      suites: [
+        {
+          name: 'all',
+          duration: 10,
+          tests: [
+            { name: 'pass-one', suite: 'all', status: 'passed', duration: 0.1 },
+            {
+              name: 'fail-one',
+              suite: 'all',
+              status: 'failed',
+              duration: 0.2,
+              errorMessage: 'oops',
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  const meta = {
+    commitSha: 'abc1234',
+    branch: 'feat/x',
+    workflowRunUrl: 'https://github.com/o/r/actions/runs/1',
+    timestamp: '2026-04-27T10:00:00Z',
+    jobName: 'ci/test',
+  };
+
+  let prevWorkspace: string | undefined;
+
+  beforeEach(async () => {
+    mockCoreWarning.mockClear();
+    const mod = await import('../template-renderer');
+    mod._resetTemplateRendererForTests();
+    prevWorkspace = process.env.GITHUB_WORKSPACE;
+    process.env.GITHUB_WORKSPACE = REPO_ROOT;
+  });
+
+  afterEach(() => {
+    if (prevWorkspace === undefined) delete process.env.GITHUB_WORKSPACE;
+    else process.env.GITHUB_WORKSPACE = prevWorkspace;
+  });
+
+  it('renders custom comment body wrapped in job-section markers', () => {
+    const tplPath = path.join(FIXTURES, '__tmp-comment.hbs');
+    fs.writeFileSync(tplPath, 'CUSTOM BODY for {{meta.jobName}}: {{results.passRate}}%', 'utf8');
+    try {
+      const section = makeSection({
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta,
+      });
+      const result = renderTestJobSection(section);
+      expect(result.startsWith('<!-- tj:ci/test -->')).toBe(true);
+      expect(result.endsWith('<!-- /tj:ci/test -->')).toBe(true);
+      expect(result).toContain('CUSTOM BODY for ci/test: 95.0%');
+      expect(result).not.toContain('### ✅');
+      expect(mockCoreWarning).not.toHaveBeenCalled();
+    } finally {
+      fs.unlinkSync(tplPath);
+    }
+  });
+
+  it('falls back to default rendering when template is invalid', () => {
+    const section = makeSection({
+      commentTemplate: '/no/such/comment.hbs',
+      parsed: makeParsed(),
+      meta,
+    });
+    const result = renderTestJobSection(section);
+    expect(result).toContain('### ✅ ci/test');
+    expect(mockCoreWarning).toHaveBeenCalledWith(
+      expect.stringContaining('Custom comment template failed'),
+    );
+  });
+
+  it('does not invoke template renderer when commentTemplate is absent', () => {
+    const result = renderTestJobSection(makeSection({ parsed: makeParsed(), meta }));
+    expect(result).toContain('### ✅ ci/test');
+    expect(mockCoreWarning).not.toHaveBeenCalled();
+  });
+
+  it('mergeTestJobSection swaps custom-rendered section between markers', () => {
+    const tplPath = path.join(FIXTURES, '__tmp-comment-merge.hbs');
+    fs.writeFileSync(tplPath, 'CUSTOM-{{meta.jobName}}', 'utf8');
+    try {
+      const sectionA = makeSection({
+        testJobName: 'job-a',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'job-a' },
+      });
+      const sectionB = makeSection({
+        testJobName: 'job-b',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'job-b' },
+      });
+
+      const initialBody = renderPrComment([sectionA]);
+      expect(initialBody).toContain('<!-- tj:job-a -->\nCUSTOM-job-a\n<!-- /tj:job-a -->');
+
+      const merged = mergeTestJobSection(initialBody, sectionB);
+      expect(merged).toContain('<!-- tj:job-a -->\nCUSTOM-job-a\n<!-- /tj:job-a -->');
+      expect(merged).toContain('<!-- tj:job-b -->\nCUSTOM-job-b\n<!-- /tj:job-b -->');
+
+      const replacedSectionA = makeSection({
+        testJobName: 'job-a',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'job-a-v2' },
+      });
+      const reMerged = mergeTestJobSection(merged, replacedSectionA);
+      expect(reMerged).toContain('<!-- tj:job-a -->\nCUSTOM-job-a-v2\n<!-- /tj:job-a -->');
+      expect(reMerged).toContain('<!-- tj:job-b -->\nCUSTOM-job-b\n<!-- /tj:job-b -->');
+    } finally {
+      fs.unlinkSync(tplPath);
+    }
+  });
+
+  it('strips embedded job-section markers from rendered comment body', () => {
+    const tplPath = path.join(FIXTURES, '__tmp-marker-inject.hbs');
+    fs.writeFileSync(tplPath, 'before<!-- tj:evil -->mid<!-- /tj:evil -->after', 'utf8');
+    try {
+      const sectionA = makeSection({
+        testJobName: 'job-a',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'job-a' },
+      });
+      const sectionB = makeSection({
+        testJobName: 'job-b',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'job-b' },
+      });
+
+      const body = renderPrComment([sectionA]);
+      expect(body).not.toContain('<!-- tj:evil -->');
+      expect(body).not.toContain('<!-- /tj:evil -->');
+      expect(body).toContain('beforemidafter');
+
+      const merged = mergeTestJobSection(body, sectionB);
+      expect(merged).toContain('<!-- tj:job-a -->');
+      expect(merged).toContain('<!-- /tj:job-a -->');
+      expect(merged).toContain('<!-- tj:job-b -->');
+      expect(merged).toContain('<!-- /tj:job-b -->');
+    } finally {
+      fs.unlinkSync(tplPath);
+    }
+  });
+
+  it('falls back to "tests" marker when sanitized job name is empty', () => {
+    const tplPath = path.join(FIXTURES, '__tmp-empty-job.hbs');
+    fs.writeFileSync(tplPath, 'BODY', 'utf8');
+    try {
+      const section = makeSection({
+        testJobName: '-->',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'whatever' },
+      });
+      const result = renderTestJobSection(section);
+      expect(result.startsWith('<!-- tj:tests -->')).toBe(true);
+      expect(result.endsWith('<!-- /tj:tests -->')).toBe(true);
+    } finally {
+      fs.unlinkSync(tplPath);
+    }
   });
 });

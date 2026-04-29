@@ -1,0 +1,16 @@
+## Custom: {{results.passRate}}% pass rate ({{results.passed}}/{{results.total}})
+
+Duration: {{formatDuration results.duration}}
+Branch: {{meta.branch}}
+Job: {{meta.jobName}}
+
+{{#if failures.length}}
+### Failures ({{failures.length}})
+{{#each failures}}
+- {{name}} in {{suite}}: {{truncate errorMessage 80}}
+{{/each}}
+{{/if}}
+
+{{#if delta}}
+Pass rate change: {{delta.passRateDelta}}%
+{{/if}}
