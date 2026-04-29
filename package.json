@@ -29,7 +29,7 @@
   "dependencies": {
     "@actions/artifact": "^6.2.1",
     "@actions/cache": "^6.0.0",
-    "@actions/core": "^3.0.0",
+    "@actions/core": "^3.0.1",
     "@actions/github": "^9.1.0",
     "fast-glob": "^3.3.3",
     "fast-xml-parser": "^5.5.11"
