@@ -7,6 +7,11 @@ on:
         description: Branch to rebuild dist/ on
         required: true
         type: string
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - package.json
+      - pnpm-lock.yaml
 
 permissions:
   contents: write
@@ -14,10 +19,15 @@ permissions:
 jobs:
   rebuild:
     runs-on: ubuntu-latest
+    env:
+      TARGET_BRANCH: ${{ inputs.branch || github.event.pull_request.head.ref }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.pull_request.head.ref, 'renovate/')
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.branch }}
+          ref: ${{ env.TARGET_BRANCH }}
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
