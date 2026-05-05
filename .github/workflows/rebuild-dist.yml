@@ -26,7 +26,7 @@ jobs:
       startsWith(github.event.pull_request.head.ref, 'renovate/')
     steps:
       # App token (instead of GITHUB_TOKEN) so the resulting push retriggers downstream workflows like CI.
-      - uses: actions/create-github-app-token@v2
+      - uses: actions/create-github-app-token@v3
         id: app-token
         with:
           app-id: ${{ secrets.REBUILD_BOT_APP_ID }}
