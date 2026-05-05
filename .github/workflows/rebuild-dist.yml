@@ -14,7 +14,7 @@ on:
       - pnpm-lock.yaml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   rebuild:
@@ -25,9 +25,17 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       startsWith(github.event.pull_request.head.ref, 'renovate/')
     steps:
+      # App token (instead of GITHUB_TOKEN) so the resulting push retriggers downstream workflows like CI.
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.REBUILD_BOT_APP_ID }}
+          private-key: ${{ secrets.REBUILD_BOT_PRIVATE_KEY }}
       - uses: actions/checkout@v6
         with:
           ref: ${{ env.TARGET_BRANCH }}
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -36,10 +44,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Commit and push if changed
+        env:
+          GH_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
         run: |
           if [ -n "$(git diff --name-only dist/)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git config user.name "${GH_APP_SLUG}[bot]"
+            git config user.email "${GH_APP_SLUG}[bot]@users.noreply.github.com"
             git add dist/
             git commit -m "chore: rebuild dist/"
             git push
