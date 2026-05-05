@@ -17518,7 +17518,7 @@ function expand(str, isTop) {
 
 /***/ }),
 
-/***/ 31186:
+/***/ 59884:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 var balanced = __nccwpck_require__(90870);
@@ -17584,12 +17584,9 @@ function parseCommaParts(str) {
   return parts;
 }
 
-function expandTop(str, options) {
+function expandTop(str) {
   if (!str)
     return [];
-
-  options = options || {};
-  var max = options.max == null ? Infinity : options.max;
 
   // I don't know why Bash 4.3 does this, but it does.
   // Anything starting with {} will have the first two bytes preserved
@@ -17601,7 +17598,7 @@ function expandTop(str, options) {
     str = '\\{\\}' + str.substr(2);
   }
 
-  return expand(escapeBraces(str), max, true).map(unescapeBraces);
+  return expand(escapeBraces(str), true).map(unescapeBraces);
 }
 
 function embrace(str) {
@@ -17618,7 +17615,7 @@ function gte(i, y) {
   return i >= y;
 }
 
-function expand(str, max, isTop) {
+function expand(str, isTop) {
   var expansions = [];
 
   var m = balanced('{', '}', str);
@@ -17627,11 +17624,11 @@ function expand(str, max, isTop) {
   // no need to expand pre, since it is guaranteed to be free of brace-sets
   var pre = m.pre;
   var post = m.post.length
-    ? expand(m.post, max, false)
+    ? expand(m.post, false)
     : [''];
 
   if (/\$$/.test(m.pre)) {    
-    for (var k = 0; k < post.length && k < max; k++) {
+    for (var k = 0; k < post.length; k++) {
       var expansion = pre+ '{' + m.body + '}' + post[k];
       expansions.push(expansion);
     }
@@ -17644,7 +17641,7 @@ function expand(str, max, isTop) {
       // {a},b}
       if (m.post.match(/,(?!,).*\}/)) {
         str = m.pre + '{' + m.body + escClose + m.post;
-        return expand(str, max, true);
+        return expand(str);
       }
       return [str];
     }
@@ -17656,7 +17653,7 @@ function expand(str, max, isTop) {
       n = parseCommaParts(m.body);
       if (n.length === 1) {
         // x{{a,b}}y ==> x{a}y x{b}y
-        n = expand(n[0], max, false).map(embrace);
+        n = expand(n[0], false).map(embrace);
         if (n.length === 1) {
           return post.map(function(p) {
             return m.pre + n[0] + p;
@@ -17711,12 +17708,12 @@ function expand(str, max, isTop) {
       N = [];
 
       for (var j = 0; j < n.length; j++) {
-        N.push.apply(N, expand(n[j], max, false));
+        N.push.apply(N, expand(n[j], false));
       }
     }
 
     for (var j = 0; j < N.length; j++) {
-      for (var k = 0; k < post.length && expansions.length < max; k++) {
+      for (var k = 0; k < post.length; k++) {
         var expansion = pre + N[j] + post[k];
         if (!isTop || isSequence || expansion)
           expansions.push(expansion);
@@ -36191,7 +36188,7 @@ minimatch.sep = path.sep
 
 const GLOBSTAR = Symbol('globstar **')
 minimatch.GLOBSTAR = GLOBSTAR
-const expand = __nccwpck_require__(31186)
+const expand = __nccwpck_require__(59884)
 
 const plTypes = {
   '!': { open: '(?:(?!(?:', close: '))[^/]*?)'},
@@ -120952,7 +120949,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.unescape = exports.escape = exports.AST = exports.Minimatch = exports.match = exports.makeRe = exports.braceExpand = exports.defaults = exports.filter = exports.GLOBSTAR = exports.sep = exports.minimatch = void 0;
-const brace_expansion_1 = __importDefault(__nccwpck_require__(31186));
+const brace_expansion_1 = __importDefault(__nccwpck_require__(59884));
 const assert_valid_pattern_js_1 = __nccwpck_require__(37382);
 const ast_js_1 = __nccwpck_require__(20174);
 const escape_js_1 = __nccwpck_require__(73839);
