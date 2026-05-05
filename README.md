@@ -20,6 +20,14 @@ No signup, no account, no outbound calls to TestGlance.
 
 That's it. TestGlance auto-detects your test reports and generates a CI summary.
 
+### Have your AI agent install it
+
+Most agents (Claude Code, Cursor, Windsurf, ...) will set this up end-to-end if you point them at the install prompt:
+
+> Install TestGlance in this project — instructions and per-framework guides at <https://www.testglance.dev/install/index.md>
+
+The agent fetches the matching `https://www.testglance.dev/install/<framework>.md` page (vitest, jest, playwright, mocha, cypress, pytest, go, rspec, phpunit, junit5, dotnet, or `other`), wires up the JUnit reporter, and adds the workflow step. The copy-pasteable prompt is on the [TestGlance landing page](https://www.testglance.dev).
+
 ### With PR Comments
 
 ```yaml
@@ -312,15 +320,20 @@ See the [`examples/`](examples/) directory for more usage patterns.
 
 ## Framework Guides
 
-- [Jest](docs/guides/jest.md)
-- [Vitest](docs/guides/vitest.md)
-- [pytest](docs/guides/pytest.md)
-- [JUnit 5 (Maven & Gradle)](docs/guides/junit.md)
-- [Go](docs/guides/go.md)
-- [.NET (xUnit / NUnit / MSTest)](docs/guides/dotnet.md)
-- [RSpec](docs/guides/rspec.md)
-- [PHPUnit](docs/guides/phpunit.md)
-- [Playwright](docs/guides/playwright.md)
+Per-framework install instructions are hosted at <https://www.testglance.dev/install/index.md> — also served as agent-friendly markdown so any AI coding agent can fetch them directly.
+
+- [Vitest](https://www.testglance.dev/install/vitest)
+- [Jest](https://www.testglance.dev/install/jest)
+- [Playwright](https://www.testglance.dev/install/playwright)
+- [Mocha](https://www.testglance.dev/install/mocha)
+- [Cypress](https://www.testglance.dev/install/cypress)
+- [pytest](https://www.testglance.dev/install/pytest)
+- [Go](https://www.testglance.dev/install/go)
+- [RSpec](https://www.testglance.dev/install/rspec)
+- [PHPUnit](https://www.testglance.dev/install/phpunit)
+- [JUnit 5 (Maven & Gradle)](https://www.testglance.dev/install/junit5)
+- [.NET (xUnit / NUnit / MSTest)](https://www.testglance.dev/install/dotnet)
+- [Other / generic JUnit XML](https://www.testglance.dev/install/other)
 
 ## Non-Blocking Guarantee
 
