@@ -9,7 +9,7 @@ GitHub Action that parses test reports (JUnit XML, CTRF JSON) and sends results 
 - **Language:** TypeScript (strict mode)
 - **Package manager:** pnpm (not npm or yarn)
 - **Test runner:** Vitest
-- **Build:** `@vercel/ncc` bundles to `dist/index.js` (committed to repo — required by GitHub Actions)
+- **Build:** `@vercel/ncc` bundles to `dist/index.js`. `dist/` is **gitignored** and built by CI on every push to `main` (and by the `test` job on PRs so the self-test can run `uses: ./`). Never commit `dist/` from a feature branch.
 
 ## Commands
 
@@ -68,13 +68,13 @@ action.yml              # Action metadata (inputs, runtime)
 2. **Always exit 0** — non-blocking by design (product requirement FR5).
 3. **Use `fast-xml-parser`** for XML — not xml2js, not cheerio.
 4. **Recount test results from `<testcase>` elements** — never trust suite-level count attributes.
-5. **`dist/` must be rebuilt and committed** after any source change (`pnpm build`).
+5. **Never commit `dist/`.** It's gitignored and produced by CI. Run `pnpm build` locally only to verify the bundle compiles.
 6. **Tests use real fixture files** from `fixtures/`. Large fixtures are generated at test time, not committed.
 
 ## Release
 
-- After any source change: `pnpm build`, commit `dist/`, push. The `release-v1` job in `.github/workflows/ci.yml` automatically force-retags `v1` to the latest `main` after all checks pass.
-- Action consumers reference `testglance/action@v1` — a floating major-version tag
+- Push source-only commits to `main` (via PR). The `release-v1` job in `.github/workflows/ci.yml` rebuilds `dist/`, commits it back to `main` as `chore: rebuild dist [skip ci]`, then force-retags `v1` to that commit.
+- Action consumers reference `testglance/action@v1` — a floating major-version tag that always points at the latest dist-bearing commit on `main`.
 
 ## Parser Contract
 

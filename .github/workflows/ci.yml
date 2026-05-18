@@ -54,6 +54,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vitest run --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
+      - run: pnpm build
+        if: always()
       - uses: ./
         if: always()
         with:
@@ -75,11 +77,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-  verify-dist:
-    name: Verify dist/
+  release-v1:
+    name: Release (build dist, retag v1)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint-format, typecheck, test, build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -87,27 +96,17 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Check dist/ is up to date
+      - name: Commit dist/ if changed
         run: |
-          if [ -n "$(git diff --name-only dist/)" ]; then
-            echo "::error::dist/ is out of date. Run 'pnpm build' and commit the result."
-            git diff --stat dist/
-            echo "===== dist/licenses.txt diff ====="
-            git diff dist/licenses.txt | head -120
-            echo "===== dist/index.js diff (first 200 lines) ====="
-            git diff dist/index.js | head -200
-            exit 1
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/
+          if git diff --cached --quiet; then
+            echo "dist/ unchanged — nothing to commit."
+          else
+            git commit -m "chore: rebuild dist [skip ci]"
+            git push origin HEAD:main
           fi
-
-  release-v1:
-    name: Release (retag v1)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint-format, typecheck, test, build, verify-dist]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
       - name: Force-retag v1 to HEAD
         run: |
           git tag -f v1
