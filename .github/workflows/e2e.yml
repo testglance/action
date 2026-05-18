@@ -18,6 +18,13 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
 
       # ── Local-only mode: no api-key ──
       - name: 'Local-only: no api-key'
