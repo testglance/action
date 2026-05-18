@@ -17311,7 +17311,7 @@ module.exports = function (store) {
 
 /***/ }),
 
-/***/ 77078:
+/***/ 32949:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 var concatMap = __nccwpck_require__(51196);
@@ -17378,12 +17378,9 @@ function parseCommaParts(str) {
   return parts;
 }
 
-function expandTop(str, options) {
+function expandTop(str) {
   if (!str)
     return [];
-
-  options = options || {};
-  var max = options.max == null ? Infinity : options.max;
 
   // I don't know why Bash 4.3 does this, but it does.
   // Anything starting with {} will have the first two bytes preserved
@@ -17395,7 +17392,7 @@ function expandTop(str, options) {
     str = '\\{\\}' + str.substr(2);
   }
 
-  return expand(escapeBraces(str), max, true).map(unescapeBraces);
+  return expand(escapeBraces(str), true).map(unescapeBraces);
 }
 
 function identity(e) {
@@ -17416,7 +17413,7 @@ function gte(i, y) {
   return i >= y;
 }
 
-function expand(str, max, isTop) {
+function expand(str, isTop) {
   var expansions = [];
 
   var m = balanced('{', '}', str);
@@ -17430,7 +17427,7 @@ function expand(str, max, isTop) {
     // {a},b}
     if (m.post.match(/,(?!,).*\}/)) {
       str = m.pre + '{' + m.body + escClose + m.post;
-      return expand(str, max, true);
+      return expand(str);
     }
     return [str];
   }
@@ -17442,10 +17439,10 @@ function expand(str, max, isTop) {
     n = parseCommaParts(m.body);
     if (n.length === 1) {
       // x{{a,b}}y ==> x{a}y x{b}y
-      n = expand(n[0], max, false).map(embrace);
+      n = expand(n[0], false).map(embrace);
       if (n.length === 1) {
         var post = m.post.length
-          ? expand(m.post, max, false)
+          ? expand(m.post, false)
           : [''];
         return post.map(function(p) {
           return m.pre + n[0] + p;
@@ -17460,7 +17457,7 @@ function expand(str, max, isTop) {
   // no need to expand pre, since it is guaranteed to be free of brace-sets
   var pre = m.pre;
   var post = m.post.length
-    ? expand(m.post, max, false)
+    ? expand(m.post, false)
     : [''];
 
   var N;
@@ -17504,11 +17501,11 @@ function expand(str, max, isTop) {
       N.push(c);
     }
   } else {
-    N = concatMap(n, function(el) { return expand(el, max, false) });
+    N = concatMap(n, function(el) { return expand(el, false) });
   }
 
   for (var j = 0; j < N.length; j++) {
-    for (var k = 0; k < post.length && expansions.length < max; k++) {
+    for (var k = 0; k < post.length; k++) {
       var expansion = pre + N[j] + post[k];
       if (!isTop || isSequence || expansion)
         expansions.push(expansion);
@@ -17521,7 +17518,7 @@ function expand(str, max, isTop) {
 
 /***/ }),
 
-/***/ 31186:
+/***/ 59884:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 var balanced = __nccwpck_require__(90870);
@@ -17587,12 +17584,9 @@ function parseCommaParts(str) {
   return parts;
 }
 
-function expandTop(str, options) {
+function expandTop(str) {
   if (!str)
     return [];
-
-  options = options || {};
-  var max = options.max == null ? Infinity : options.max;
 
   // I don't know why Bash 4.3 does this, but it does.
   // Anything starting with {} will have the first two bytes preserved
@@ -17604,7 +17598,7 @@ function expandTop(str, options) {
     str = '\\{\\}' + str.substr(2);
   }
 
-  return expand(escapeBraces(str), max, true).map(unescapeBraces);
+  return expand(escapeBraces(str), true).map(unescapeBraces);
 }
 
 function embrace(str) {
@@ -17621,7 +17615,7 @@ function gte(i, y) {
   return i >= y;
 }
 
-function expand(str, max, isTop) {
+function expand(str, isTop) {
   var expansions = [];
 
   var m = balanced('{', '}', str);
@@ -17630,11 +17624,11 @@ function expand(str, max, isTop) {
   // no need to expand pre, since it is guaranteed to be free of brace-sets
   var pre = m.pre;
   var post = m.post.length
-    ? expand(m.post, max, false)
+    ? expand(m.post, false)
     : [''];
 
   if (/\$$/.test(m.pre)) {    
-    for (var k = 0; k < post.length && k < max; k++) {
+    for (var k = 0; k < post.length; k++) {
       var expansion = pre+ '{' + m.body + '}' + post[k];
       expansions.push(expansion);
     }
@@ -17647,7 +17641,7 @@ function expand(str, max, isTop) {
       // {a},b}
       if (m.post.match(/,(?!,).*\}/)) {
         str = m.pre + '{' + m.body + escClose + m.post;
-        return expand(str, max, true);
+        return expand(str);
       }
       return [str];
     }
@@ -17659,7 +17653,7 @@ function expand(str, max, isTop) {
       n = parseCommaParts(m.body);
       if (n.length === 1) {
         // x{{a,b}}y ==> x{a}y x{b}y
-        n = expand(n[0], max, false).map(embrace);
+        n = expand(n[0], false).map(embrace);
         if (n.length === 1) {
           return post.map(function(p) {
             return m.pre + n[0] + p;
@@ -17714,12 +17708,12 @@ function expand(str, max, isTop) {
       N = [];
 
       for (var j = 0; j < n.length; j++) {
-        N.push.apply(N, expand(n[j], max, false));
+        N.push.apply(N, expand(n[j], false));
       }
     }
 
     for (var j = 0; j < N.length; j++) {
-      for (var k = 0; k < post.length && expansions.length < max; k++) {
+      for (var k = 0; k < post.length; k++) {
         var expansion = pre + N[j] + post[k];
         if (!isTop || isSequence || expansion)
           expansions.push(expansion);
@@ -35162,7 +35156,7 @@ var path = (function () { try { return __nccwpck_require__(16928) } catch (e) {}
 minimatch.sep = path.sep
 
 var GLOBSTAR = minimatch.GLOBSTAR = Minimatch.GLOBSTAR = {}
-var expand = __nccwpck_require__(77078)
+var expand = __nccwpck_require__(32949)
 
 var plTypes = {
   '!': { open: '(?:(?!(?:', close: '))[^/]*?)'},
@@ -36194,7 +36188,7 @@ minimatch.sep = path.sep
 
 const GLOBSTAR = Symbol('globstar **')
 minimatch.GLOBSTAR = GLOBSTAR
-const expand = __nccwpck_require__(31186)
+const expand = __nccwpck_require__(59884)
 
 const plTypes = {
   '!': { open: '(?:(?!(?:', close: '))[^/]*?)'},
@@ -120955,7 +120949,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.unescape = exports.escape = exports.AST = exports.Minimatch = exports.match = exports.makeRe = exports.braceExpand = exports.defaults = exports.filter = exports.GLOBSTAR = exports.sep = exports.minimatch = void 0;
-const brace_expansion_1 = __importDefault(__nccwpck_require__(31186));
+const brace_expansion_1 = __importDefault(__nccwpck_require__(59884));
 const assert_valid_pattern_js_1 = __nccwpck_require__(37382);
 const ast_js_1 = __nccwpck_require__(20174);
 const escape_js_1 = __nccwpck_require__(73839);
@@ -128698,7 +128692,7 @@ function getIDToken(aud) {
 var external_node_crypto_ = __nccwpck_require__(77598);
 // EXTERNAL MODULE: external "node:fs"
 var external_node_fs_ = __nccwpck_require__(73024);
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/util.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/util.js
 
 
 const nameStartChar = ':A-Za-z_\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD';
@@ -128760,7 +128754,7 @@ const DANGEROUS_PROPERTY_NAMES = [
 ];
 
 const criticalProperties = ["__proto__", "constructor", "prototype"];
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/xmlparser/OptionsBuilder.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/xmlparser/OptionsBuilder.js
 
 
 
@@ -128924,7 +128918,7 @@ const buildOptions = function (options) {
   //console.debug(built.processEntities)
   return built;
 };
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/xmlparser/xmlNode.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/xmlparser/xmlNode.js
 
 
 let METADATA_SYMBOL;
@@ -128966,7 +128960,7 @@ class XmlNode {
   }
 }
 
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/xmlparser/DocTypeReader.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/xmlparser/DocTypeReader.js
 
 
 class DocTypeReader {
@@ -129536,7 +129530,7 @@ function handleInfinity(str, num, options) {
             return str; // Return original string like "1e1000"
     }
 }
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/ignoreAttributes.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/ignoreAttributes.js
 function getIgnoreAttributesFn(ignoreAttributes) {
     if (typeof ignoreAttributes === 'function') {
         return ignoreAttributes
@@ -132292,7 +132286,7 @@ class EntityDecoder {
     return this._applyNCRAction(effective, token, cp);
   }
 }
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/xmlparser/OrderedObjParser.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/xmlparser/OrderedObjParser.js
 
 ///@ts-check
 
@@ -133071,7 +133065,7 @@ function readStopNodeData(xmlData, tagName, i) {
         const closeIndex = findClosingIndex(xmlData, "]]>", i, "StopNode is not closed.") - 2;
         i = closeIndex;
       } else {
-        const tagData = readTagExp(xmlData, i, false)
+        const tagData = readTagExp(xmlData, i, '>')
 
         if (tagData) {
           const openTagName = tagData && tagData.tagName;
@@ -133133,7 +133127,7 @@ function sanitizeName(name, options) {
   }
   return name;
 }
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/xmlparser/node2json.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/xmlparser/node2json.js
 
 
 
@@ -133206,10 +133200,6 @@ function compress(arr, options, matcher, readonlyMatcher) {
 
       let val = compress(tagObj[property], options, matcher, readonlyMatcher);
       const isLeaf = isLeafTag(val, options);
-
-      if (Object.keys(val).length === 0 && options.alwaysCreateTextNode) {
-        val[options.textNodeName] = "";
-      }
 
       if (tagObj[":@"]) {
         assignAttributes(val, tagObj[":@"], readonlyMatcher, options);
@@ -133311,7 +133301,7 @@ function isLeafTag(obj, options) {
 
   return false;
 }
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/validator.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/validator.js
 
 
 
@@ -133738,7 +133728,7 @@ function getPositionFromMatch(match) {
   return match.startIndex + match[1].length;
 }
 
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/xmlparser/XMLParser.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/xmlparser/XMLParser.js
 
 
 
@@ -151640,25 +151630,7 @@ function convertHttpClient(requestPolicyClient) {
 
 
 //# sourceMappingURL=index.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-builder@1.1.8/node_modules/fast-xml-builder/src/util.js
-
-
-function safeComment(val) {
-  return String(val)
-    .replace(/--/g, '- -')   // -- is illegal anywhere in comment content
-    .replace(/--/g, '- -')   // handle the scenario when 2 consiucative dashes appears 
-    .replace(/-$/, '- ');    // trailing - would form -- with the closing -->
-}
-
-function safeCdata(val) {
-  return String(val).replace(/\]\]>/g, ']]]]><![CDATA[>')
-}
-
-function escapeAttribute(val) {
-  return String(val).replace(/"/g, '&quot;').replace(/'/g, '&apos;')
-}
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-builder@1.1.8/node_modules/fast-xml-builder/src/orderedJs2Xml.js
-
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-builder@1.1.5/node_modules/fast-xml-builder/src/orderedJs2Xml.js
 
 
 const EOL = "\n";
@@ -151744,14 +151716,16 @@ function arrToStr(arr, options, indentation, matcher, stopNodeExpressions) {
                 xmlStr += indentation;
             }
             const val = tagObj[tagName][0][options.textNodeName];
-            const safeVal = safeCdata(val);
+            const safeVal = String(val).replace(/\]\]>/g, ']]]]><![CDATA[>');
             xmlStr += `<![CDATA[${safeVal}]]>`;
             isPreviousElementTag = false;
             matcher.pop();
             continue;
         } else if (tagName === options.commentPropName) {
             const val = tagObj[tagName][0][options.textNodeName]
-            const safeVal = safeComment(val)
+            const safeVal = String(val)
+                .replace(/--/g, '- -')   // -- is illegal anywhere in comment content
+                .replace(/-$/, '- ');    // trailing - would form -- with the closing -->
             xmlStr += indentation + `<!--${safeVal}-->`;
             isPreviousElementTag = true;
             matcher.pop();
@@ -151759,9 +151733,9 @@ function arrToStr(arr, options, indentation, matcher, stopNodeExpressions) {
         } else if (tagName[0] === "?") {
             const attStr = attr_to_str(tagObj[":@"], options, isStopNode);
             const tempInd = tagName === "?xml" ? "" : indentation;
-            // Text node content on PI/XML declaration tags is intentionally ignored.
-            // Only attributes are valid on these tags per the XML spec.
-            xmlStr += tempInd + `<${tagName}${attStr}?>`;
+            let piTextNodeName = tagObj[tagName][0][options.textNodeName];
+            piTextNodeName = piTextNodeName.length !== 0 ? " " + piTextNodeName : ""; //remove extra spacing
+            xmlStr += tempInd + `<${tagName}${piTextNodeName}${attStr}?>`;
             isPreviousElementTag = true;
             matcher.pop();
             continue;
@@ -151826,7 +151800,7 @@ function extractAttributeValues(attrMap, options) {
         const cleanAttrName = attr.startsWith(options.attributeNamePrefix)
             ? attr.substr(options.attributeNamePrefix.length)
             : attr;
-        attrValues[cleanAttrName] = escapeAttribute(attrMap[attr]);
+        attrValues[cleanAttrName] = attrMap[attr];
         hasAttrs = true;
     }
 
@@ -151893,7 +151867,7 @@ function attr_to_str_raw(attrMap, options) {
             if (attrVal === true && options.suppressBooleanAttributes) {
                 attrStr += ` ${attr.substr(options.attributeNamePrefix.length)}`;
             } else {
-                attrStr += ` ${attr.substr(options.attributeNamePrefix.length)}="${escapeAttribute(attrVal)}"`;
+                attrStr += ` ${attr.substr(options.attributeNamePrefix.length)}="${attrVal}"`;
             }
         }
     }
@@ -151928,7 +151902,7 @@ function attr_to_str(attrMap, options, isStopNode) {
             if (attrVal === true && options.suppressBooleanAttributes) {
                 attrStr += ` ${attr.substr(options.attributeNamePrefix.length)}`;
             } else {
-                attrStr += ` ${attr.substr(options.attributeNamePrefix.length)}="${escapeAttribute(attrVal)}"`;
+                attrStr += ` ${attr.substr(options.attributeNamePrefix.length)}="${attrVal}"`;
             }
         }
     }
@@ -151963,7 +151937,7 @@ function cdataVal(val) {
 function commentVal(val) {
 
 }
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-builder@1.1.8/node_modules/fast-xml-builder/src/ignoreAttributes.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-builder@1.1.5/node_modules/fast-xml-builder/src/ignoreAttributes.js
 function ignoreAttributes_getIgnoreAttributesFn(ignoreAttributes) {
     if (typeof ignoreAttributes === 'function') {
         return ignoreAttributes
@@ -151982,10 +151956,9 @@ function ignoreAttributes_getIgnoreAttributesFn(ignoreAttributes) {
     }
     return () => false
 }
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-builder@1.1.8/node_modules/fast-xml-builder/src/fxb.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-builder@1.1.5/node_modules/fast-xml-builder/src/fxb.js
 
 //parse Empty Node as self closing node
-
 
 
 
@@ -152118,7 +152091,7 @@ Builder.prototype.j2x = function (jObj, level, matcher) {
       // null attribute should be ignored by the attribute list, but should not cause the tag closing
       if (this.isAttribute(key)) {
         val += '';
-      } else if (key === this.options.cdataPropName || key === this.options.commentPropName) {
+      } else if (key === this.options.cdataPropName) {
         val += '';
       } else if (key[0] === '?') {
         val += this.indentate(level) + '<' + key + '?' + this.tagEndChar;
@@ -152237,7 +152210,7 @@ Builder.prototype.buildAttrPairStr = function (attrName, val, isStopNode) {
   }
   if (this.options.suppressBooleanAttributes && val === "true") {
     return ' ' + attrName;
-  } else return ' ' + attrName + '="' + escapeAttribute(val) + '"';
+  } else return ' ' + attrName + '="' + val + '"';
 }
 
 function processTextOrObjNode(object, key, level, matcher) {
@@ -152262,11 +152235,7 @@ function processTextOrObjNode(object, key, level, matcher) {
   // Pop tag from matcher after recursion
   matcher.pop();
 
-  // PI/XML-declaration tags must never emit text content — route through
-  // buildTextValNode which correctly ignores the text node for "?" tags.
-  if (key[0] === '?') {
-    return this.buildTextValNode('', key, result.attrStr, level, matcher);
-  } else if (object[this.options.textNodeName] !== undefined && Object.keys(object).length === 1) {
+  if (object[this.options.textNodeName] !== undefined && Object.keys(object).length === 1) {
     return this.buildTextValNode(object[this.options.textNodeName], key, result.attrStr, level, matcher);
   } else {
     return this.buildObjectNode(result.val, key, result.attrStr, level);
@@ -152289,7 +152258,7 @@ Builder.prototype.extractAttributes = function (obj) {
       const cleanKey = attrKey.startsWith(this.options.attributeNamePrefix)
         ? attrKey.substring(this.options.attributeNamePrefix.length)
         : attrKey;
-      attrValues[cleanKey] = escapeAttribute(attrGroup[attrKey]);
+      attrValues[cleanKey] = attrGroup[attrKey];
       hasAttrs = true;
     }
   } else {
@@ -152298,7 +152267,7 @@ Builder.prototype.extractAttributes = function (obj) {
       if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
       const attr = this.isAttribute(key);
       if (attr) {
-        attrValues[attr] = escapeAttribute(obj[key]);
+        attrValues[attr] = obj[key];
         hasAttrs = true;
       }
     }
@@ -152415,10 +152384,8 @@ Builder.prototype.buildObjectNode = function (val, key, attrStr, level) {
     else {
       return this.indentate(level) + '<' + key + attrStr + this.closeTag(key) + this.tagEndChar;
     }
-  } else if (key[0] === "?") {
-    // PI/XML-declaration tags never have body content — treat them like empty.
-    return this.indentate(level) + '<' + key + attrStr + '?' + this.tagEndChar;
   } else {
+
     let tagEndExp = '</' + key + this.tagEndChar;
     let piClosingChar = "";
 
@@ -152478,10 +152445,12 @@ function buildEmptyObjNode(val, key, attrStr, level) {
 
 Builder.prototype.buildTextValNode = function (val, key, attrStr, level, matcher) {
   if (this.options.cdataPropName !== false && key === this.options.cdataPropName) {
-    const safeVal = safeCdata(val);
+    const safeVal = String(val).replace(/\]\]>/g, ']]]]><![CDATA[>');
     return this.indentate(level) + `<![CDATA[${safeVal}]]>` + this.newLine;
   } else if (this.options.commentPropName !== false && key === this.options.commentPropName) {
-    const safeVal = safeComment(val);
+    const safeVal = String(val)
+      .replace(/--/g, '- -')   // -- is illegal anywhere in comment content
+      .replace(/-$/, '- ');    // trailing - would form -- with the closing -->
     return this.indentate(level) + `<!--${safeVal}-->` + this.newLine;
   } else if (key[0] === "?") {//PI tag
     return this.indentate(level) + '<' + key + attrStr + '?' + this.tagEndChar;
@@ -152521,14 +152490,14 @@ function isAttribute(name /*, options*/) {
     return false;
   }
 }
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/xmlbuilder/json2xml.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/xmlbuilder/json2xml.js
 // Re-export from fast-xml-builder for backward compatibility
 
 /* harmony default export */ const json2xml = (Builder);
 
 // If there are any named exports you also want to re-export:
 
-;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.3/node_modules/fast-xml-parser/src/fxp.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/fast-xml-parser@5.7.2/node_modules/fast-xml-parser/src/fxp.js
 
 
 
