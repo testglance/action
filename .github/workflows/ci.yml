@@ -82,13 +82,16 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [lint-format, typecheck, test, build]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.REBUILD_BOT_APP_ID }}
+          private-key: ${{ secrets.REBUILD_BOT_PRIVATE_KEY }}
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -98,8 +101,8 @@ jobs:
       - run: pnpm build
       - name: Commit dist/ if changed
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "testglance-rebuild-bot[bot]"
+          git config user.email "282057382+testglance-rebuild-bot[bot]@users.noreply.github.com"
           git add -f dist/
           if git diff --cached --quiet; then
             echo "dist/ unchanged — nothing to commit."
