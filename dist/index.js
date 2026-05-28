@@ -107468,7 +107468,7 @@ const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, trends, history, summaryTemplate, meta, } = options;
+    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, trends, history, summaryTemplate, meta, reportFileCount, } = options;
     if (summaryTemplate && meta) {
         const context = buildTemplateContext({
             parsed,
@@ -107492,12 +107492,15 @@ async function generateSummary(options) {
     }
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
-    summary_summary.addRaw(`## ${statusEmoji(summary.failed)} TestGlance Results — ${passRate}% pass rate\n\n`);
+    summary_summary.addRaw(`## ${renderMetricsStrip(summary)} — ${passRate}%\n\n`);
     if (!apiSuccess) {
         summary_summary.addRaw('> ⚠️ **API submission failed** — dashboard data not updated\n\n');
     }
     summary_summary.addRaw(`${renderProgressBar(Number(passRate))}\n\n`);
-    let metricsLine = `${renderMetricsStrip(summary)} · ⏱️ ${formatDuration(summary.duration)}`;
+    let metricsLine = `⏱️ ${formatDuration(summary.duration)}`;
+    if (reportFileCount && reportFileCount > 1) {
+        metricsLine += ` · 📄 ${reportFileCount} reports merged`;
+    }
     if (apiSuccess && healthScore !== null && healthScore !== undefined) {
         metricsLine += ` · 🏥 ${healthScore}/100`;
     }
@@ -107528,9 +107531,7 @@ async function generateSummary(options) {
         summary_summary.addRaw(renderPerfRegressionSection(perfRegression));
     }
     try {
-        if (parsed.suites.length > 1) {
-            renderSuiteBreakdown(parsed.suites);
-        }
+        renderSuiteBreakdown(parsed.suites);
         const failedTests = collectFailedTests(parsed).sort((a, b) => a.suite.localeCompare(b.suite));
         if (failedTests.length > 0) {
             summary_summary.addRaw('---\n\n');
@@ -107591,6 +107592,8 @@ function collectFailedTests(parsed) {
     return parsed.suites.flatMap((suite) => suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'));
 }
 function renderSuiteBreakdown(suites) {
+    if (suites.length === 0)
+        return;
     const rows = suites
         .map((s) => {
         const total = s.tests.length;
@@ -107607,14 +107610,24 @@ function renderSuiteBreakdown(suites) {
             return -1;
         return a.passRate - b.passRate;
     });
+    const cell = (n) => (n > 0 ? `${n}` : '');
+    const suiteIcon = (r) => {
+        if (r.total === 0)
+            return '➖';
+        if (r.failed > 0)
+            return '❌';
+        if (r.skipped > 0)
+            return '⚠️';
+        return '✅';
+    };
     const tableRows = rows
-        .map((r) => `<tr><td>${escapeHtml(r.name)}</td><td>${r.total}</td><td>${r.passed}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${r.total > 0 ? `${r.passRate.toFixed(1)}%` : 'N/A'}</td><td>${formatDuration(r.duration)}</td></tr>`)
+        .map((r) => `<tr><td>${suiteIcon(r)}</td><td>${escapeHtml(r.name)}</td><td>${cell(r.passed)}</td><td>${cell(r.failed)}</td><td>${cell(r.skipped)}</td><td>${formatDuration(r.duration)}</td></tr>`)
         .join('\n');
-    summary_summary.addRaw(`<details><summary><strong>Suite Breakdown</strong> (${suites.length} suites)</summary>\n\n` +
+    summary_summary.addRaw('### 📋 Suite Breakdown\n\n' +
         '<table>\n' +
-        '<tr><th>Suite</th><th>Total</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Pass Rate</th><th>Duration</th></tr>\n' +
+        '<tr><th></th><th>Suite</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Duration</th></tr>\n' +
         tableRows +
-        '\n</table>\n\n</details>\n\n');
+        '\n</table>\n\n');
 }
 const MAX_HIGHLIGHTS_SHOWN = 3;
 const MAX_TEST_NAMES_SHOWN = 3;
@@ -158969,6 +158982,7 @@ async function run() {
                 history: historyEntries,
                 artifactUrl,
                 summaryTemplate: summaryTemplate || undefined,
+                reportFileCount: successful.length,
                 meta: {
                     commitSha: summaryCommitSha,
                     branch: summaryBranch,
