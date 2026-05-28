@@ -23,6 +23,7 @@ import {
   collectFailedTests,
   renderHighlights,
   renderSuiteBreakdown,
+  renderAllTests,
   renderDeltaSection,
   renderTestsChangedSection,
   renderFlakySection,
@@ -1032,6 +1033,112 @@ describe('renderSuiteBreakdown', () => {
   });
 });
 
+describe('renderAllTests', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders a details block per suite, sorted with failing suites first', () => {
+    renderAllTests([
+      {
+        name: 'all-green',
+        duration: 1.0,
+        tests: [{ name: 'ok', suite: 'all-green', status: 'passed', duration: 0.5 }],
+      },
+      {
+        name: 'has-failure',
+        duration: 1.0,
+        tests: [
+          { name: 'good', suite: 'has-failure', status: 'passed', duration: 0.3 },
+          { name: 'bad', suite: 'has-failure', status: 'failed', duration: 0.7 },
+        ],
+      },
+    ]);
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    expect(html).toContain('### 🔬 All Tests');
+    const failingIdx = html.indexOf('has-failure');
+    const passingIdx = html.indexOf('all-green');
+    expect(failingIdx).toBeLessThan(passingIdx);
+    expect(html).toContain('<details><summary>❌ <strong>has-failure</strong> (2 tests, 1 failed)');
+    expect(html).toContain('<details><summary>✅ <strong>all-green</strong> (1 tests)');
+  });
+
+  it('lists each test name with status emoji and formatted duration', () => {
+    renderAllTests([
+      {
+        name: 'suite',
+        duration: 1.0,
+        tests: [
+          { name: 'pass-case', suite: 'suite', status: 'passed', duration: 0.5 },
+          { name: 'skip-case', suite: 'suite', status: 'skipped', duration: 0 },
+          { name: 'err-case', suite: 'suite', status: 'errored', duration: 1.2 },
+        ],
+      },
+    ]);
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    expect(html).toContain('<td>✅</td><td>pass-case</td>');
+    expect(html).toContain('<td>⏭️</td><td>skip-case</td>');
+    expect(html).toContain('<td>💥</td><td>err-case</td>');
+    expect(html).toContain('500ms');
+    expect(html).toContain('1.2s');
+  });
+
+  it('emits nothing when there are no suites', () => {
+    renderAllTests([]);
+    expect(mockSummary.addRaw).not.toHaveBeenCalled();
+  });
+
+  it('renders empty-test suites with a placeholder', () => {
+    renderAllTests([
+      {
+        name: 'empty',
+        duration: 0,
+        tests: [],
+      },
+    ]);
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    expect(html).toContain('<details><summary>➖ <strong>empty</strong>');
+    expect(html).toContain('_(no tests)_');
+  });
+
+  it('elides suites once the size budget is exceeded', () => {
+    const longName = 'x'.repeat(2000);
+    const bigSuite = (idx: number) => ({
+      name: `suite-${idx}`,
+      duration: 1.0,
+      tests: Array.from({ length: 200 }, (_, i) => ({
+        name: `${longName}-${i}`,
+        suite: `suite-${idx}`,
+        status: 'passed' as const,
+        duration: 0.1,
+      })),
+    });
+
+    renderAllTests(Array.from({ length: 5 }, (_, i) => bigSuite(i)));
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    expect(html).toMatch(/and \d+ more suite\(s\) elided/);
+  });
+
+  it('escapes HTML in suite names and test names', () => {
+    renderAllTests([
+      {
+        name: '<bad>',
+        duration: 1.0,
+        tests: [{ name: '<evil>', suite: '<bad>', status: 'passed', duration: 0.1 }],
+      },
+    ]);
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    expect(html).not.toContain('<strong><bad></strong>');
+    expect(html).toContain('&lt;bad&gt;');
+    expect(html).toContain('&lt;evil&gt;');
+  });
+});
+
 describe('generateSummary suite breakdown integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1097,6 +1204,53 @@ describe('generateSummary suite breakdown integration', () => {
       c[0].includes('Suite Breakdown'),
     );
     expect(breakdownCall).toBeUndefined();
+  });
+
+  it('omits the All Tests section by default', async () => {
+    const parsed = makeParsed({ total: 2, passed: 2, failed: 0 }, [
+      {
+        name: 'suite-a',
+        duration: 1.0,
+        tests: [
+          { name: 't1', suite: 'suite-a', status: 'passed', duration: 0.5 },
+          { name: 't2', suite: 'suite-a', status: 'passed', duration: 0.5 },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
+    const allTestsCall = mockSummary.addRaw.mock.calls.find((c: string[]) =>
+      c[0].includes('### 🔬 All Tests'),
+    );
+    expect(allTestsCall).toBeUndefined();
+  });
+
+  it('renders the All Tests section when showAllTests is true', async () => {
+    const parsed = makeParsed({ total: 2, passed: 1, failed: 1 }, [
+      {
+        name: 'auth.test.ts',
+        duration: 1.0,
+        tests: [
+          { name: 'should login', suite: 'auth.test.ts', status: 'passed', duration: 0.5 },
+          {
+            name: 'should reject',
+            suite: 'auth.test.ts',
+            status: 'failed',
+            duration: 0.5,
+          },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true, showAllTests: true });
+
+    const allTestsCall = mockSummary.addRaw.mock.calls.find((c: string[]) =>
+      c[0].includes('### 🔬 All Tests'),
+    );
+    expect(allTestsCall).toBeDefined();
+    expect(allTestsCall![0]).toContain('should login');
+    expect(allTestsCall![0]).toContain('should reject');
   });
 });
 

@@ -132,6 +132,7 @@ export async function run(): Promise<RunResult> {
       core.getInput('annotate-failures') === 'true' || core.getInput('create-check') === 'true';
     const checkName = core.getInput('check-name') || 'Test Results';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
+    const showAllTests = core.getInput('show-all-tests') === 'true';
     const flakyThreshold = parseFlakyThreshold(core.getInput('flaky-threshold'));
     const perfThreshold = parsePerfThreshold(core.getInput('perf-threshold'));
     const htmlReport = core.getInput('html-report') === 'true';
@@ -417,6 +418,7 @@ export async function run(): Promise<RunResult> {
         artifactUrl,
         summaryTemplate: summaryTemplate || undefined,
         reportFileCount: successful.length,
+        showAllTests,
         meta: {
           commitSha: summaryCommitSha,
           branch: summaryBranch,

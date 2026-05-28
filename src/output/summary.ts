@@ -49,12 +49,14 @@ export interface SummaryOptions {
   summaryTemplate?: string;
   meta?: TemplateContextMeta;
   reportFileCount?: number;
+  showAllTests?: boolean;
 }
 
 const MAX_RENDERED_SUMMARY_BYTES = 900_000;
 const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
+const MAX_ALL_TESTS_BYTES = 400_000;
 
 export async function generateSummary(options: SummaryOptions): Promise<void> {
   const {
@@ -74,6 +76,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
     summaryTemplate,
     meta,
     reportFileCount,
+    showAllTests,
   } = options;
 
   if (summaryTemplate && meta) {
@@ -153,6 +156,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
   try {
     renderSuiteBreakdown(parsed.suites);
+
+    if (showAllTests) {
+      renderAllTests(parsed.suites);
+    }
 
     const failedTests = collectFailedTests(parsed).sort((a, b) => a.suite.localeCompare(b.suite));
     if (failedTests.length > 0) {
@@ -274,6 +281,75 @@ export function renderSuiteBreakdown(suites: ParsedSuite[]): void {
       tableRows +
       '\n</table>\n\n',
   );
+}
+
+const TEST_STATUS_EMOJI: Record<string, string> = {
+  passed: '✅',
+  failed: '❌',
+  errored: '💥',
+  skipped: '⏭️',
+};
+
+export function renderAllTests(suites: ParsedSuite[]): void {
+  if (suites.length === 0) return;
+
+  const ranked = suites
+    .map((s) => {
+      const total = s.tests.length;
+      const failed = s.tests.filter((t) => t.status === 'failed' || t.status === 'errored').length;
+      const skipped = s.tests.filter((t) => t.status === 'skipped').length;
+      const passed = s.tests.filter((t) => t.status === 'passed').length;
+      const passRate = total > 0 ? (passed / total) * 100 : -1;
+      return { suite: s, total, failed, skipped, passRate };
+    })
+    .sort((a, b) => {
+      if (a.passRate < 0) return 1;
+      if (b.passRate < 0) return -1;
+      return a.passRate - b.passRate;
+    });
+
+  let body = '### 🔬 All Tests\n\n';
+  let elided = 0;
+  let budgetExceeded = false;
+
+  for (const { suite, total, failed, skipped } of ranked) {
+    if (budgetExceeded) {
+      elided++;
+      continue;
+    }
+
+    const icon = failed > 0 ? '❌' : skipped > 0 ? '⚠️' : total === 0 ? '➖' : '✅';
+    const meta = failed > 0 ? `${total} tests, ${failed} failed` : `${total} tests`;
+    let block = `<details><summary>${icon} <strong>${escapeHtml(suite.name)}</strong> (${meta})</summary>\n\n`;
+
+    if (total === 0) {
+      block += '_(no tests)_\n\n</details>\n\n';
+    } else {
+      const rows = suite.tests
+        .map(
+          (t) =>
+            `<tr><td>${TEST_STATUS_EMOJI[t.status] ?? '•'}</td><td>${escapeHtml(t.name)}</td><td>${formatDuration(t.duration)}</td></tr>`,
+        )
+        .join('\n');
+      block +=
+        '<table>\n<tr><th></th><th>Test</th><th>Duration</th></tr>\n' +
+        rows +
+        '\n</table>\n\n</details>\n\n';
+    }
+
+    if (body.length + block.length > MAX_ALL_TESTS_BYTES) {
+      budgetExceeded = true;
+      elided++;
+      continue;
+    }
+    body += block;
+  }
+
+  if (elided > 0) {
+    body += `_…and ${elided} more suite(s) elided to fit GitHub summary size limit._\n\n`;
+  }
+
+  core.summary.addRaw(body);
 }
 
 const MAX_HIGHLIGHTS_SHOWN = 3;
