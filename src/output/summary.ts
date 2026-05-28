@@ -243,6 +243,22 @@ export function collectFailedTests(parsed: ParsedTestRun): ParsedTestCase[] {
   );
 }
 
+interface SuiteHealth {
+  passRate: number;
+  failed: number;
+  skipped: number;
+  duration: number;
+}
+
+function compareSuitesByHealth(a: SuiteHealth, b: SuiteHealth): number {
+  if (a.passRate < 0 && b.passRate >= 0) return 1;
+  if (b.passRate < 0 && a.passRate >= 0) return -1;
+  if (a.passRate !== b.passRate) return a.passRate - b.passRate;
+  if (a.failed !== b.failed) return b.failed - a.failed;
+  if (a.skipped !== b.skipped) return b.skipped - a.skipped;
+  return b.duration - a.duration;
+}
+
 export function renderSuiteBreakdown(suites: ParsedSuite[]): void {
   if (suites.length === 0) return;
 
@@ -255,14 +271,7 @@ export function renderSuiteBreakdown(suites: ParsedSuite[]): void {
       const passRate = total > 0 ? (passed / total) * 100 : -1;
       return { name: s.name, total, passed, failed, skipped, passRate, duration: s.duration };
     })
-    .sort((a, b) => {
-      if (a.passRate < 0 && b.passRate >= 0) return 1;
-      if (b.passRate < 0 && a.passRate >= 0) return -1;
-      if (a.passRate !== b.passRate) return a.passRate - b.passRate;
-      if (a.failed !== b.failed) return b.failed - a.failed;
-      if (a.skipped !== b.skipped) return b.skipped - a.skipped;
-      return b.duration - a.duration;
-    });
+    .sort(compareSuitesByHealth);
 
   const cell = (n: number): string => (n > 0 ? `${n}` : '');
   const suiteIcon = (r: { total: number; failed: number; skipped: number }): string => {
@@ -305,13 +314,9 @@ export function renderAllTests(suites: ParsedSuite[]): void {
       const skipped = s.tests.filter((t) => t.status === 'skipped').length;
       const passed = s.tests.filter((t) => t.status === 'passed').length;
       const passRate = total > 0 ? (passed / total) * 100 : -1;
-      return { suite: s, total, failed, skipped, passRate };
+      return { suite: s, total, failed, skipped, passRate, duration: s.duration };
     })
-    .sort((a, b) => {
-      if (a.passRate < 0) return 1;
-      if (b.passRate < 0) return -1;
-      return a.passRate - b.passRate;
-    });
+    .sort(compareSuitesByHealth);
 
   let body = '### 🔬 All Tests\n\n';
   let elided = 0;
