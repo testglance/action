@@ -20,7 +20,6 @@ import {
   formatDurationPair,
   truncate,
   renderProgressBar,
-  statusEmoji,
   renderMetricsStrip,
 } from './format';
 import {
@@ -49,6 +48,7 @@ export interface SummaryOptions {
   artifactUrl?: string;
   summaryTemplate?: string;
   meta?: TemplateContextMeta;
+  reportFileCount?: number;
 }
 
 const MAX_RENDERED_SUMMARY_BYTES = 900_000;
@@ -73,6 +73,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
     history,
     summaryTemplate,
     meta,
+    reportFileCount,
   } = options;
 
   if (summaryTemplate && meta) {
@@ -101,9 +102,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   const { summary } = parsed;
   const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
 
-  core.summary.addRaw(
-    `## ${statusEmoji(summary.failed)} TestGlance Results — ${passRate}% pass rate\n\n`,
-  );
+  core.summary.addRaw(`## ${renderMetricsStrip(summary)} — ${passRate}%\n\n`);
 
   if (!apiSuccess) {
     core.summary.addRaw('> ⚠️ **API submission failed** — dashboard data not updated\n\n');
@@ -111,7 +110,10 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
   core.summary.addRaw(`${renderProgressBar(Number(passRate))}\n\n`);
 
-  let metricsLine = `${renderMetricsStrip(summary)} · ⏱️ ${formatDuration(summary.duration)}`;
+  let metricsLine = `⏱️ ${formatDuration(summary.duration)}`;
+  if (reportFileCount && reportFileCount > 1) {
+    metricsLine += ` · 📄 ${reportFileCount} reports merged`;
+  }
   if (apiSuccess && healthScore !== null && healthScore !== undefined) {
     metricsLine += ` · 🏥 ${healthScore}/100`;
   } else if (apiSuccess) {
@@ -150,9 +152,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   }
 
   try {
-    if (parsed.suites.length > 1) {
-      renderSuiteBreakdown(parsed.suites);
-    }
+    renderSuiteBreakdown(parsed.suites);
 
     const failedTests = collectFailedTests(parsed).sort((a, b) => a.suite.localeCompare(b.suite));
     if (failedTests.length > 0) {
@@ -235,6 +235,8 @@ export function collectFailedTests(parsed: ParsedTestRun): ParsedTestCase[] {
 }
 
 export function renderSuiteBreakdown(suites: ParsedSuite[]): void {
+  if (suites.length === 0) return;
+
   const rows = suites
     .map((s) => {
       const total = s.tests.length;
@@ -250,19 +252,27 @@ export function renderSuiteBreakdown(suites: ParsedSuite[]): void {
       return a.passRate - b.passRate;
     });
 
+  const cell = (n: number): string => (n > 0 ? `${n}` : '');
+  const suiteIcon = (r: { total: number; failed: number; skipped: number }): string => {
+    if (r.total === 0) return '➖';
+    if (r.failed > 0) return '❌';
+    if (r.skipped > 0) return '⚠️';
+    return '✅';
+  };
+
   const tableRows = rows
     .map(
       (r) =>
-        `<tr><td>${escapeHtml(r.name)}</td><td>${r.total}</td><td>${r.passed}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${r.total > 0 ? `${r.passRate.toFixed(1)}%` : 'N/A'}</td><td>${formatDuration(r.duration)}</td></tr>`,
+        `<tr><td>${suiteIcon(r)}</td><td>${escapeHtml(r.name)}</td><td>${cell(r.passed)}</td><td>${cell(r.failed)}</td><td>${cell(r.skipped)}</td><td>${formatDuration(r.duration)}</td></tr>`,
     )
     .join('\n');
 
   core.summary.addRaw(
-    `<details><summary><strong>Suite Breakdown</strong> (${suites.length} suites)</summary>\n\n` +
+    '### 📋 Suite Breakdown\n\n' +
       '<table>\n' +
-      '<tr><th>Suite</th><th>Total</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Pass Rate</th><th>Duration</th></tr>\n' +
+      '<tr><th></th><th>Suite</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Duration</th></tr>\n' +
       tableRows +
-      '\n</table>\n\n</details>\n\n',
+      '\n</table>\n\n',
   );
 }
 
