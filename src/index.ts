@@ -448,6 +448,8 @@ export async function run(): Promise<RunResult> {
             total: parsed.summary.total,
             passed: parsed.summary.passed,
             failed: parsed.summary.failed,
+            skipped: parsed.summary.skipped,
+            errored: parsed.summary.errored,
             duration: parsed.summary.duration,
             healthScore: result?.healthScore,
             highlights: result?.highlights ?? [],

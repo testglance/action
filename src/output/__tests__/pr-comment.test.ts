@@ -43,20 +43,31 @@ function makeSection(overrides: Partial<PrCommentSection> = {}): PrCommentSectio
 }
 
 describe('renderTestJobSection', () => {
-  it('renders passed section with correct emoji and stats', () => {
+  it('renders counts-first headline with job name, strip, and pass rate', () => {
     const result = renderTestJobSection(makeSection());
     expect(result).toContain('<!-- tj:ci/test -->');
     expect(result).toContain('<!-- /tj:ci/test -->');
-    expect(result).toContain('### ✅ ci/test —');
-    expect(result).toContain('✅ 313 passed');
+    expect(result).toContain('### ci/test · ✅ 313 passed — 100.0%');
     expect(result).not.toContain('❌ 0 failed');
     expect(result).toContain('11.2s');
     expect(result).toContain('🏥 94/100');
   });
 
-  it('renders failed section with failure emoji', () => {
-    const result = renderTestJobSection(makeSection({ status: 'failed', failed: 2 }));
-    expect(result).toContain('### ❌ ci/test —');
+  it('renders failed count in headline strip when present', () => {
+    const result = renderTestJobSection(
+      makeSection({ status: 'failed', total: 315, passed: 313, failed: 2 }),
+    );
+    expect(result).toContain('### ci/test · ✅ 313 passed · ❌ 2 failed');
+  });
+
+  it('renders skipped count in headline strip when present', () => {
+    const result = renderTestJobSection(makeSection({ total: 315, passed: 313, skipped: 2 }));
+    expect(result).toContain('⏭️ 2 skipped');
+  });
+
+  it('renders errored count in headline strip when present', () => {
+    const result = renderTestJobSection(makeSection({ total: 315, passed: 313, errored: 2 }));
+    expect(result).toContain('💥 2 errored');
   });
 
   it('omits health score when null', () => {
@@ -827,7 +838,7 @@ describe('renderTestJobSection with comment-template', () => {
       meta,
     });
     const result = renderTestJobSection(section);
-    expect(result).toContain('### ✅ ci/test');
+    expect(result).toContain('### ci/test ·');
     expect(mockCoreWarning).toHaveBeenCalledWith(
       expect.stringContaining('Custom comment template failed'),
     );
@@ -835,7 +846,7 @@ describe('renderTestJobSection with comment-template', () => {
 
   it('does not invoke template renderer when commentTemplate is absent', () => {
     const result = renderTestJobSection(makeSection({ parsed: makeParsed(), meta }));
-    expect(result).toContain('### ✅ ci/test');
+    expect(result).toContain('### ci/test ·');
     expect(mockCoreWarning).not.toHaveBeenCalled();
   });
 
