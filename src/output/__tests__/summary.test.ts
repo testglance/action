@@ -61,11 +61,11 @@ describe('generateSummary', () => {
     vi.clearAllMocks();
   });
 
-  it('outputs hero header with status emoji and pass rate', async () => {
+  it('leads the headline with plain-English counts then pass rate', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true });
 
     expect(mockSummary.addRaw).toHaveBeenCalledWith(
-      expect.stringContaining('## 🔴 TestGlance Results — 97.2% pass rate'),
+      expect.stringContaining('## ✅ 138 passed · ❌ 3 failed · ⏭️ 1 skipped — 97.2%'),
     );
   });
 
@@ -85,7 +85,7 @@ describe('generateSummary', () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true, healthScore: 94 });
 
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const metricsLine = rawCalls.find((c: string) => c.includes('✅ 138 passed'));
+    const metricsLine = rawCalls.find((c: string) => c.includes('⏱️') && !c.startsWith('## '));
     expect(metricsLine).toContain('🏥 94/100');
   });
 
@@ -93,7 +93,7 @@ describe('generateSummary', () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true, healthScore: null });
 
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const metricsLine = rawCalls.find((c: string) => c.includes('✅ 138 passed'));
+    const metricsLine = rawCalls.find((c: string) => c.includes('⏱️') && !c.startsWith('## '));
     expect(metricsLine).toContain('🏥 available after 5 runs');
   });
 
@@ -101,8 +101,40 @@ describe('generateSummary', () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true });
 
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const metricsLine = rawCalls.find((c: string) => c.includes('✅ 138 passed'));
+    const metricsLine = rawCalls.find((c: string) => c.includes('⏱️') && !c.startsWith('## '));
     expect(metricsLine).toContain('🏥 available after 5 runs');
+  });
+
+  it('shows merged report count in strip when more than one file was parsed', async () => {
+    await generateSummary({
+      parsed: makeParsed(),
+      apiSuccess: true,
+      reportFileCount: 4,
+    });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const stripLine = rawCalls.find((c: string) => c.includes('⏱️') && !c.startsWith('## '));
+    expect(stripLine).toContain('📄 4 reports merged');
+  });
+
+  it('omits merged report count when only one file was parsed', async () => {
+    await generateSummary({
+      parsed: makeParsed(),
+      apiSuccess: true,
+      reportFileCount: 1,
+    });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasMerged = rawCalls.some((c: string) => c.includes('reports merged'));
+    expect(hasMerged).toBe(false);
+  });
+
+  it('omits merged report count when reportFileCount is not provided', async () => {
+    await generateSummary({ parsed: makeParsed(), apiSuccess: true });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasMerged = rawCalls.some((c: string) => c.includes('reports merged'));
+    expect(hasMerged).toBe(false);
   });
 
   it('shows API failure warning when apiSuccess is false', async () => {
@@ -401,7 +433,7 @@ describe('generateSummary', () => {
       apiSuccess: true,
     });
 
-    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('0.0% pass rate'));
+    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('— 0.0%'));
   });
 
   it('uses "No error message" when errorMessage is undefined', async () => {
@@ -869,7 +901,7 @@ describe('renderSuiteBreakdown', () => {
     vi.clearAllMocks();
   });
 
-  it('renders collapsible details with suite stats sorted by pass rate ascending', () => {
+  it('renders heading + table with status-icon column, sorted by pass rate ascending', () => {
     renderSuiteBreakdown([
       {
         name: 'auth.test.ts',
@@ -890,16 +922,17 @@ describe('renderSuiteBreakdown', () => {
     ]);
 
     const html = mockSummary.addRaw.mock.calls[0][0] as string;
-    expect(html).toContain('<details>');
-    expect(html).toContain('<strong>Suite Breakdown</strong> (2 suites)');
+    expect(html).toContain('### 📋 Suite Breakdown');
+    expect(html).not.toContain('<details>');
+    expect(html).not.toContain('Pass Rate');
     const authIdx = html.indexOf('auth.test.ts');
     const apiIdx = html.indexOf('api.test.ts');
     expect(authIdx).toBeLessThan(apiIdx);
-    expect(html).toContain('50.0%');
-    expect(html).toContain('100.0%');
+    expect(html).toContain('<td>❌</td><td>auth.test.ts</td>');
+    expect(html).toContain('<td>✅</td><td>api.test.ts</td>');
   });
 
-  it('places zero-test suites at the bottom', () => {
+  it('renders empty-test suites with ➖ icon at the bottom', () => {
     renderSuiteBreakdown([
       {
         name: 'empty-suite',
@@ -917,10 +950,10 @@ describe('renderSuiteBreakdown', () => {
     const realIdx = html.indexOf('real-suite');
     const emptyIdx = html.indexOf('empty-suite');
     expect(realIdx).toBeLessThan(emptyIdx);
-    expect(html).toContain('N/A');
+    expect(html).toContain('<td>➖</td><td>empty-suite</td>');
   });
 
-  it('counts all status types correctly', () => {
+  it('counts all status types correctly with blank zero cells', () => {
     renderSuiteBreakdown([
       {
         name: 'mixed',
@@ -935,9 +968,40 @@ describe('renderSuiteBreakdown', () => {
     ]);
 
     const html = mockSummary.addRaw.mock.calls[0][0] as string;
-    expect(html).toContain('<td>4</td>');
+    expect(html).not.toContain('Pass Rate');
     expect(html).toContain('<td>1</td><td>2</td><td>1</td>');
-    expect(html).toContain('25.0%');
+  });
+
+  it('renders zero counts as blank cells', () => {
+    renderSuiteBreakdown([
+      {
+        name: 'all-green',
+        duration: 1.0,
+        tests: [
+          { name: 't1', suite: 'all-green', status: 'passed', duration: 0.5 },
+          { name: 't2', suite: 'all-green', status: 'passed', duration: 0.5 },
+        ],
+      },
+    ]);
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    expect(html).toContain('<td>✅</td><td>all-green</td><td>2</td><td></td><td></td>');
+  });
+
+  it('uses ⚠️ icon when suite has skipped tests but no failures', () => {
+    renderSuiteBreakdown([
+      {
+        name: 'skipping',
+        duration: 1.0,
+        tests: [
+          { name: 't1', suite: 'skipping', status: 'passed', duration: 0.5 },
+          { name: 't2', suite: 'skipping', status: 'skipped', duration: 0 },
+        ],
+      },
+    ]);
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    expect(html).toContain('<td>⚠️</td><td>skipping</td>');
   });
 
   it('includes formatted duration', () => {
@@ -999,10 +1063,11 @@ describe('generateSummary suite breakdown integration', () => {
       c[0].includes('Suite Breakdown'),
     );
     expect(breakdownCall).toBeDefined();
-    expect(breakdownCall![0]).toContain('<details>');
+    expect(breakdownCall![0]).toContain('### 📋 Suite Breakdown');
+    expect(breakdownCall![0]).not.toContain('<details>');
   });
 
-  it('skips suite breakdown for single-suite reports', async () => {
+  it('renders suite breakdown for single-suite reports', async () => {
     const parsed = makeParsed({ total: 2, passed: 2, failed: 0 }, [
       {
         name: 'only-suite',
@@ -1013,6 +1078,18 @@ describe('generateSummary suite breakdown integration', () => {
         ],
       },
     ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
+    const breakdownCall = mockSummary.addRaw.mock.calls.find((c: string[]) =>
+      c[0].includes('Suite Breakdown'),
+    );
+    expect(breakdownCall).toBeDefined();
+    expect(breakdownCall![0]).toContain('only-suite');
+  });
+
+  it('omits suite breakdown when there are zero suites', async () => {
+    const parsed = makeParsed({ total: 0, passed: 0, failed: 0, skipped: 0, errored: 0 }, []);
 
     await generateSummary({ parsed, apiSuccess: true });
 
@@ -1734,12 +1811,12 @@ describe('generateSummary with summary-template', () => {
     expect(mockCoreWarning).toHaveBeenCalledWith(
       expect.stringContaining('Custom summary template failed'),
     );
-    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('TestGlance Results'));
+    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('138 passed'));
   });
 
   it('uses default rendering when summaryTemplate is not provided (regression)', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true });
-    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('TestGlance Results'));
+    expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('138 passed'));
     expect(mockCoreWarning).not.toHaveBeenCalled();
   });
 });

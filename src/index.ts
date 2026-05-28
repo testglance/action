@@ -416,6 +416,7 @@ export async function run(): Promise<RunResult> {
         history: historyEntries,
         artifactUrl,
         summaryTemplate: summaryTemplate || undefined,
+        reportFileCount: successful.length,
         meta: {
           commitSha: summaryCommitSha,
           branch: summaryBranch,
