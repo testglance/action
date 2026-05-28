@@ -112340,17 +112340,18 @@ function renderTestJobSection(section) {
             }
         }
     }
-    const emoji = section.failed > 0 ? '❌' : '✅';
     const passRate = section.total > 0 ? ((section.passed / section.total) * 100).toFixed(1) : '0.0';
+    const counts = {
+        passed: section.passed,
+        failed: section.failed,
+        skipped: section.skipped ?? 0,
+        errored: section.errored ?? 0,
+    };
     const lines = [];
     lines.push(`<!-- tj:${safeKey} -->`);
-    lines.push(`### ${emoji} ${section.testJobName} — ${passRate}% pass rate`);
+    lines.push(`### ${section.testJobName} · ${renderMetricsStrip(counts)} — ${passRate}%`);
     lines.push(renderProgressBar(Number(passRate)));
-    const statsParts = [`✅ ${section.passed} passed`];
-    if (section.failed > 0)
-        statsParts.push(`❌ ${section.failed} failed`);
-    statsParts.push(`⏱️ ${formatDuration(section.duration)}`);
-    let statsLine = statsParts.join(' · ');
+    let statsLine = `⏱️ ${formatDuration(section.duration)}`;
     if (section.healthScore !== null && section.healthScore !== undefined) {
         statsLine += ` · 🏥 ${section.healthScore}/100`;
     }
@@ -159013,6 +159014,8 @@ async function run() {
                         total: parsed.summary.total,
                         passed: parsed.summary.passed,
                         failed: parsed.summary.failed,
+                        skipped: parsed.summary.skipped,
+                        errored: parsed.summary.errored,
                         duration: parsed.summary.duration,
                         healthScore: result?.healthScore,
                         highlights: result?.highlights ?? [],
