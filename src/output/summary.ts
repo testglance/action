@@ -256,9 +256,12 @@ export function renderSuiteBreakdown(suites: ParsedSuite[]): void {
       return { name: s.name, total, passed, failed, skipped, passRate, duration: s.duration };
     })
     .sort((a, b) => {
-      if (a.passRate < 0) return 1;
-      if (b.passRate < 0) return -1;
-      return a.passRate - b.passRate;
+      if (a.passRate < 0 && b.passRate >= 0) return 1;
+      if (b.passRate < 0 && a.passRate >= 0) return -1;
+      if (a.passRate !== b.passRate) return a.passRate - b.passRate;
+      if (a.failed !== b.failed) return b.failed - a.failed;
+      if (a.skipped !== b.skipped) return b.skipped - a.skipped;
+      return b.duration - a.duration;
     });
 
   const cell = (n: number): string => (n > 0 ? `${n}` : '');
