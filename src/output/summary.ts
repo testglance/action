@@ -163,7 +163,9 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
       for (const t of shown) {
         const error = truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH);
         core.summary.addRaw(
-          `🔴 **\`${escapeHtml(t.name)}\`** · \`${escapeHtml(t.suite)}\`\n` +
+          `> [!CAUTION]\n` +
+            `> **\`${escapeHtml(t.name)}\`** · \`${escapeHtml(t.suite)}\`\n` +
+            `>\n` +
             `> ${escapeHtml(error)}\n\n`,
         );
         if (t.stackTrace) {
