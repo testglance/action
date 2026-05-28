@@ -26,6 +26,10 @@ inputs:
     description: 'Number of slowest tests to show in the CI summary (0 to disable)'
     required: false
     default: '10'
+  show-all-tests:
+    description: 'Expand every test name under each suite in the CI summary. Off by default — opt in for small suites where full transparency is useful. Large monorepos should leave this off.'
+    required: false
+    default: 'false'
   send-results:
     description: 'Send parsed results to TestGlance API (set to false for dry-run testing)'
     required: false
