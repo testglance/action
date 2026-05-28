@@ -107543,7 +107543,9 @@ async function generateSummary(options) {
             const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
             for (const t of shown) {
                 const error = truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH);
-                summary_summary.addRaw(`🔴 **\`${escapeHtml(t.name)}\`** · \`${escapeHtml(t.suite)}\`\n` +
+                summary_summary.addRaw(`> [!CAUTION]\n` +
+                    `> **\`${escapeHtml(t.name)}\`** · \`${escapeHtml(t.suite)}\`\n` +
+                    `>\n` +
                     `> ${escapeHtml(error)}\n\n`);
                 if (t.stackTrace) {
                     summary_summary.addRaw(renderStackTrace(t.name, t.stackTrace));
@@ -107608,11 +107610,17 @@ function renderSuiteBreakdown(suites) {
         return { name: s.name, total, passed, failed, skipped, passRate, duration: s.duration };
     })
         .sort((a, b) => {
-        if (a.passRate < 0)
+        if (a.passRate < 0 && b.passRate >= 0)
             return 1;
-        if (b.passRate < 0)
+        if (b.passRate < 0 && a.passRate >= 0)
             return -1;
-        return a.passRate - b.passRate;
+        if (a.passRate !== b.passRate)
+            return a.passRate - b.passRate;
+        if (a.failed !== b.failed)
+            return b.failed - a.failed;
+        if (a.skipped !== b.skipped)
+            return b.skipped - a.skipped;
+        return b.duration - a.duration;
     });
     const cell = (n) => (n > 0 ? `${n}` : '');
     const suiteIcon = (r) => {
