@@ -177,7 +177,7 @@ describe('generateSummary', () => {
     expect(flakyCalls).toHaveLength(0);
   });
 
-  it('shows failed test details in consolidated HTML table', async () => {
+  it('wraps each failed test in a GitHub CAUTION admonition with name, suite, and error', async () => {
     const parsed = makeParsed({ failed: 1 }, [
       {
         name: 'auth.login',
@@ -201,8 +201,12 @@ describe('generateSummary', () => {
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
     const failureBlock = rawCalls.find((c: string) => c.includes('should reject expired token'));
     expect(failureBlock).toBeDefined();
+    expect(failureBlock).toContain('> [!CAUTION]');
     expect(failureBlock).toContain('`auth.login`');
     expect(failureBlock).toContain('Expected 401 but received 200');
+    expect(failureBlock).toMatch(
+      /> \[!CAUTION\]\n> \*\*`should reject expired token`\*\* · `auth\.login`\n>\n> Expected 401 but received 200/,
+    );
   });
 
   it('truncates error messages longer than 200 characters', async () => {
