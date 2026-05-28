@@ -988,6 +988,64 @@ describe('renderSuiteBreakdown', () => {
     expect(html).toContain('<td>✅</td><td>all-green</td><td>2</td><td></td><td></td>');
   });
 
+  it('breaks pass-rate ties on failed desc, then skipped desc, then duration desc', () => {
+    renderSuiteBreakdown([
+      {
+        name: 'green-fast',
+        duration: 0.5,
+        tests: [{ name: 't1', suite: 'green-fast', status: 'passed', duration: 0.5 }],
+      },
+      {
+        name: 'green-with-skip',
+        duration: 0.5,
+        tests: [
+          { name: 't1', suite: 'green-with-skip', status: 'passed', duration: 0.3 },
+          { name: 't2', suite: 'green-with-skip', status: 'skipped', duration: 0 },
+        ],
+      },
+      {
+        name: 'green-slow',
+        duration: 5.0,
+        tests: [{ name: 't1', suite: 'green-slow', status: 'passed', duration: 5.0 }],
+      },
+    ]);
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    const withSkipIdx = html.indexOf('green-with-skip');
+    const slowIdx = html.indexOf('green-slow');
+    const fastIdx = html.indexOf('green-fast');
+    expect(withSkipIdx).toBeLessThan(slowIdx);
+    expect(slowIdx).toBeLessThan(fastIdx);
+  });
+
+  it('breaks ties on failed count desc when pass rates are equal', () => {
+    renderSuiteBreakdown([
+      {
+        name: 'one-fail',
+        duration: 1.0,
+        tests: [
+          { name: 't1', suite: 'one-fail', status: 'passed', duration: 0.5 },
+          { name: 't2', suite: 'one-fail', status: 'failed', duration: 0.5 },
+        ],
+      },
+      {
+        name: 'two-fails',
+        duration: 1.0,
+        tests: [
+          { name: 't1', suite: 'two-fails', status: 'passed', duration: 0.3 },
+          { name: 't2', suite: 'two-fails', status: 'passed', duration: 0.3 },
+          { name: 't3', suite: 'two-fails', status: 'failed', duration: 0.2 },
+          { name: 't4', suite: 'two-fails', status: 'failed', duration: 0.2 },
+        ],
+      },
+    ]);
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    const twoIdx = html.indexOf('two-fails');
+    const oneIdx = html.indexOf('one-fail');
+    expect(twoIdx).toBeLessThan(oneIdx);
+  });
+
   it('uses ⚠️ icon when suite has skipped tests but no failures', () => {
     renderSuiteBreakdown([
       {
