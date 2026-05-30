@@ -21,6 +21,7 @@ import {
   truncate,
   renderProgressBar,
   renderMetricsStrip,
+  compareSuitesByHealth,
 } from './format';
 import {
   renderTemplate,
@@ -241,22 +242,6 @@ export function collectFailedTests(parsed: ParsedTestRun): ParsedTestCase[] {
   return parsed.suites.flatMap((suite) =>
     suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'),
   );
-}
-
-interface SuiteHealth {
-  passRate: number;
-  failed: number;
-  skipped: number;
-  duration: number;
-}
-
-function compareSuitesByHealth(a: SuiteHealth, b: SuiteHealth): number {
-  if (a.passRate < 0 && b.passRate >= 0) return 1;
-  if (b.passRate < 0 && a.passRate >= 0) return -1;
-  if (a.passRate !== b.passRate) return a.passRate - b.passRate;
-  if (a.failed !== b.failed) return b.failed - a.failed;
-  if (a.skipped !== b.skipped) return b.skipped - a.skipped;
-  return b.duration - a.duration;
 }
 
 export function renderSuiteBreakdown(suites: ParsedSuite[]): void {
