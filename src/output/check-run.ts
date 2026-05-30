@@ -1,6 +1,7 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { parseFileLocation } from '../utils/parse-stack-trace';
+import { formatDuration, renderMetricsStrip } from './format';
 import type { ParsedTestRun } from '../types';
 
 const MAX_ANNOTATIONS = 50;
@@ -24,15 +25,11 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
     const { summary } = parsed;
     const conclusion = summary.failed > 0 ? 'failure' : 'success';
 
-    const titleParts: string[] = [];
-    if (summary.passed > 0) titleParts.push(`${summary.passed} passed`);
-    if (summary.failed > 0) titleParts.push(`${summary.failed} failed`);
-    if (summary.skipped > 0) titleParts.push(`${summary.skipped} skipped`);
-    const title = `Tests: ${titleParts.join(', ')}`;
-
     const passRate =
       summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
-    const summaryText = `**Pass rate:** ${passRate}%\n**Duration:** ${summary.duration.toFixed(1)}s\n**Total:** ${summary.total} tests`;
+    const metricsStrip = renderMetricsStrip(summary);
+    const title = `Tests: ${metricsStrip} — ${passRate}%`;
+    const summaryText = `**${metricsStrip} — ${passRate}%**\n\n⏱️ ${formatDuration(summary.duration)} · 📊 ${summary.total} tests`;
 
     const annotations: Array<{
       path: string;
