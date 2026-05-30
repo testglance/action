@@ -107194,6 +107194,19 @@ function renderMetricsStrip(summary) {
         parts.push(`💥 ${summary.errored} errored`);
     return parts.join(' · ');
 }
+function compareSuitesByHealth(a, b) {
+    if (a.passRate < 0 && b.passRate >= 0)
+        return 1;
+    if (b.passRate < 0 && a.passRate >= 0)
+        return -1;
+    if (a.passRate !== b.passRate)
+        return a.passRate - b.passRate;
+    if (a.failed !== b.failed)
+        return b.failed - a.failed;
+    if (a.skipped !== b.skipped)
+        return b.skipped - a.skipped;
+    return b.duration - a.duration;
+}
 
 // EXTERNAL MODULE: ./node_modules/.pnpm/handlebars@4.7.9/node_modules/handlebars/lib/index.js
 var lib = __nccwpck_require__(50149);
@@ -107596,19 +107609,6 @@ function renderStackTrace(testName, stackTrace) {
 }
 function collectFailedTests(parsed) {
     return parsed.suites.flatMap((suite) => suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'));
-}
-function compareSuitesByHealth(a, b) {
-    if (a.passRate < 0 && b.passRate >= 0)
-        return 1;
-    if (b.passRate < 0 && a.passRate >= 0)
-        return -1;
-    if (a.passRate !== b.passRate)
-        return a.passRate - b.passRate;
-    if (a.failed !== b.failed)
-        return b.failed - a.failed;
-    if (a.skipped !== b.skipped)
-        return b.skipped - a.skipped;
-    return b.duration - a.duration;
 }
 function renderSuiteBreakdown(suites) {
     if (suites.length === 0)
@@ -112687,6 +112687,7 @@ function parseFileLocation(stackTrace) {
 
 
 
+
 const MAX_ANNOTATIONS = 50;
 async function createCheckRun(options) {
     const { githubToken, checkName, parsed } = options;
@@ -112697,16 +112698,10 @@ async function createCheckRun(options) {
         const headSha = pr?.head?.sha ?? github_context.sha;
         const { summary } = parsed;
         const conclusion = summary.failed > 0 ? 'failure' : 'success';
-        const titleParts = [];
-        if (summary.passed > 0)
-            titleParts.push(`${summary.passed} passed`);
-        if (summary.failed > 0)
-            titleParts.push(`${summary.failed} failed`);
-        if (summary.skipped > 0)
-            titleParts.push(`${summary.skipped} skipped`);
-        const title = `Tests: ${titleParts.join(', ')}`;
         const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
-        const summaryText = `**Pass rate:** ${passRate}%\n**Duration:** ${summary.duration.toFixed(1)}s\n**Total:** ${summary.total} tests`;
+        const metricsStrip = renderMetricsStrip(summary);
+        const title = `Tests: ${metricsStrip} — ${passRate}%`;
+        const summaryText = `**${metricsStrip} — ${passRate}%**\n\n⏱️ ${formatDuration(summary.duration)} · 📊 ${summary.total} tests`;
         const annotations = [];
         for (const suite of parsed.suites) {
             for (const test of suite.tests) {
@@ -112846,16 +112841,17 @@ ${sections.join('\n')}
 function renderHeader(summary, passRate, statusClass, apiSuccess, healthScore) {
     const metricsStrip = escapeHtml(renderMetricsStrip(summary));
     const duration = formatDuration(summary.duration);
-    let healthHtml = '';
+    const statusIcon = statusClass === 'fail' ? '&#x1F534;' : '&#x2705;';
+    const metaParts = [`&#x23F1;&#xFE0F; ${duration}`];
     if (apiSuccess && healthScore !== null && healthScore !== undefined) {
-        healthHtml = ` &middot; &#x1F3E5; ${healthScore}/100`;
+        metaParts.push(`&#x1F3E5; ${healthScore}/100`);
     }
     const pct = passRate.toFixed(1);
     const barFilled = passRate === 100 ? 100 : Math.floor(passRate);
     return `<header>
-  <h1 class="${statusClass}">${statusClass === 'fail' ? '&#x1F534;' : '&#x2705;'} TestGlance Results &mdash; ${pct}% pass rate</h1>
+  <h1 class="${statusClass}">${statusIcon} ${metricsStrip} &mdash; ${pct}%</h1>
   <div class="progress-bar"><div class="progress-fill ${statusClass}" style="width:${barFilled}%"></div></div>
-  <p class="metrics">${metricsStrip} &middot; &#x23F1;&#xFE0F; ${duration}${healthHtml}</p>
+  <p class="metrics">${metaParts.join(' &middot; ')}</p>
 </header>`;
 }
 function html_report_renderHighlights(highlights, dashboardUrl) {
@@ -113068,18 +113064,12 @@ function html_report_renderSuiteBreakdown(suites) {
         const passed = s.tests.filter((t) => t.status === 'passed').length;
         const failed = s.tests.filter((t) => t.status === 'failed' || t.status === 'errored').length;
         const skipped = s.tests.filter((t) => t.status === 'skipped').length;
-        const rate = total > 0 ? (passed / total) * 100 : -1;
-        return { name: s.name, total, passed, failed, skipped, rate, duration: s.duration };
+        const passRate = total > 0 ? (passed / total) * 100 : -1;
+        return { name: s.name, total, passed, failed, skipped, passRate, duration: s.duration };
     })
-        .sort((a, b) => {
-        if (a.rate < 0)
-            return 1;
-        if (b.rate < 0)
-            return -1;
-        return a.rate - b.rate;
-    });
+        .sort(compareSuitesByHealth);
     const tableRows = rows
-        .map((r) => `<tr><td>${escapeHtml(r.name)}</td><td>${r.total}</td><td>${r.passed}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${r.total > 0 ? `${r.rate.toFixed(1)}%` : 'N/A'}</td><td>${formatDuration(r.duration)}</td></tr>`)
+        .map((r) => `<tr><td>${escapeHtml(r.name)}</td><td>${r.total}</td><td>${r.passed}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${r.total > 0 ? `${r.passRate.toFixed(1)}%` : 'N/A'}</td><td>${formatDuration(r.duration)}</td></tr>`)
         .join('\n');
     return `<section>
   <h2>&#x1F4E6; Suite Breakdown</h2>
