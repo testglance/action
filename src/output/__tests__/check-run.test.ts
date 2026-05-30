@@ -107,6 +107,21 @@ describe('createCheckRun', () => {
     );
   });
 
+  it('formats title and body with metrics strip and pass rate', async () => {
+    const parsed = makeParsed({
+      summary: { total: 10, passed: 7, failed: 2, skipped: 1, errored: 0, duration: 4.2 },
+    });
+
+    await createCheckRun({ githubToken: 'ghp_test', checkName: 'Test Results', parsed });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.title).toBe('Tests: ✅ 7 passed · ❌ 2 failed · ⏭️ 1 skipped — 70.0%');
+    expect(call.output.summary).toContain('**✅ 7 passed · ❌ 2 failed · ⏭️ 1 skipped — 70.0%**');
+    expect(call.output.summary).toContain('⏱️ 4.2s');
+    expect(call.output.summary).toContain('📊 10 tests');
+    expect(call.output.summary).not.toContain('**Pass rate:**');
+  });
+
   it('sets conclusion to failure when tests fail', async () => {
     await createCheckRun({
       githubToken: 'ghp_test',
