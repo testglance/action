@@ -50,3 +50,19 @@ export function renderMetricsStrip(summary: {
   if (summary.errored > 0) parts.push(`💥 ${summary.errored} errored`);
   return parts.join(' · ');
 }
+
+export interface SuiteHealth {
+  passRate: number;
+  failed: number;
+  skipped: number;
+  duration: number;
+}
+
+export function compareSuitesByHealth(a: SuiteHealth, b: SuiteHealth): number {
+  if (a.passRate < 0 && b.passRate >= 0) return 1;
+  if (b.passRate < 0 && a.passRate >= 0) return -1;
+  if (a.passRate !== b.passRate) return a.passRate - b.passRate;
+  if (a.failed !== b.failed) return b.failed - a.failed;
+  if (a.skipped !== b.skipped) return b.skipped - a.skipped;
+  return b.duration - a.duration;
+}

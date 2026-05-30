@@ -18,6 +18,7 @@ import {
   formatDurationPair,
   truncate,
   renderMetricsStrip,
+  compareSuitesByHealth,
 } from './format';
 
 export interface HtmlReportOptions {
@@ -169,18 +170,20 @@ function renderHeader(
 ): string {
   const metricsStrip = escapeHtml(renderMetricsStrip(summary));
   const duration = formatDuration(summary.duration);
-  let healthHtml = '';
+  const statusIcon = statusClass === 'fail' ? '&#x1F534;' : '&#x2705;';
+
+  const metaParts: string[] = [`&#x23F1;&#xFE0F; ${duration}`];
   if (apiSuccess && healthScore !== null && healthScore !== undefined) {
-    healthHtml = ` &middot; &#x1F3E5; ${healthScore}/100`;
+    metaParts.push(`&#x1F3E5; ${healthScore}/100`);
   }
 
   const pct = passRate.toFixed(1);
   const barFilled = passRate === 100 ? 100 : Math.floor(passRate);
 
   return `<header>
-  <h1 class="${statusClass}">${statusClass === 'fail' ? '&#x1F534;' : '&#x2705;'} TestGlance Results &mdash; ${pct}% pass rate</h1>
+  <h1 class="${statusClass}">${statusIcon} ${metricsStrip} &mdash; ${pct}%</h1>
   <div class="progress-bar"><div class="progress-fill ${statusClass}" style="width:${barFilled}%"></div></div>
-  <p class="metrics">${metricsStrip} &middot; &#x23F1;&#xFE0F; ${duration}${healthHtml}</p>
+  <p class="metrics">${metaParts.join(' &middot; ')}</p>
 </header>`;
 }
 
@@ -452,19 +455,15 @@ function renderSuiteBreakdown(suites: ParsedSuite[]): string {
       const passed = s.tests.filter((t) => t.status === 'passed').length;
       const failed = s.tests.filter((t) => t.status === 'failed' || t.status === 'errored').length;
       const skipped = s.tests.filter((t) => t.status === 'skipped').length;
-      const rate = total > 0 ? (passed / total) * 100 : -1;
-      return { name: s.name, total, passed, failed, skipped, rate, duration: s.duration };
+      const passRate = total > 0 ? (passed / total) * 100 : -1;
+      return { name: s.name, total, passed, failed, skipped, passRate, duration: s.duration };
     })
-    .sort((a, b) => {
-      if (a.rate < 0) return 1;
-      if (b.rate < 0) return -1;
-      return a.rate - b.rate;
-    });
+    .sort(compareSuitesByHealth);
 
   const tableRows = rows
     .map(
       (r) =>
-        `<tr><td>${escapeHtml(r.name)}</td><td>${r.total}</td><td>${r.passed}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${r.total > 0 ? `${r.rate.toFixed(1)}%` : 'N/A'}</td><td>${formatDuration(r.duration)}</td></tr>`,
+        `<tr><td>${escapeHtml(r.name)}</td><td>${r.total}</td><td>${r.passed}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${r.total > 0 ? `${r.passRate.toFixed(1)}%` : 'N/A'}</td><td>${formatDuration(r.duration)}</td></tr>`,
     )
     .join('\n');
 

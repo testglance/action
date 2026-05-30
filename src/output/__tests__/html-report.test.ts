@@ -117,6 +117,18 @@ describe('generateHtmlReport', () => {
       expect(html).toContain('3 failed');
     });
 
+    it('leads the H1 with counts then pass rate', () => {
+      const html = generateHtmlReport(makeOptions());
+      const h1Match = html.match(/<h1[^>]*>(.*?)<\/h1>/);
+      expect(h1Match).not.toBeNull();
+      const h1 = h1Match![1];
+      const passedIdx = h1.indexOf('138 passed');
+      const pctIdx = h1.indexOf('97.2%');
+      expect(passedIdx).toBeGreaterThanOrEqual(0);
+      expect(pctIdx).toBeGreaterThan(passedIdx);
+      expect(h1).not.toContain('TestGlance Results');
+    });
+
     it('includes health score when available', () => {
       const html = generateHtmlReport(makeOptions({ healthScore: 92 }));
       expect(html).toContain('92/100');
@@ -305,6 +317,38 @@ describe('generateHtmlReport', () => {
       ]);
       const html = generateHtmlReport(makeOptions({ parsed }));
       expect(html).not.toContain('Suite Breakdown');
+    });
+
+    it('breaks pass-rate ties on failed desc, then skipped desc, then duration desc', () => {
+      const parsed = makeParsed({}, [
+        {
+          name: 'green-fast',
+          duration: 0.5,
+          tests: [{ name: 't1', suite: 'green-fast', status: 'passed', duration: 0.5 }],
+        },
+        {
+          name: 'green-with-skip',
+          duration: 0.5,
+          tests: [
+            { name: 't1', suite: 'green-with-skip', status: 'passed', duration: 0.3 },
+            { name: 't2', suite: 'green-with-skip', status: 'skipped', duration: 0 },
+          ],
+        },
+        {
+          name: 'green-slow',
+          duration: 5.0,
+          tests: [{ name: 't1', suite: 'green-slow', status: 'passed', duration: 5.0 }],
+        },
+      ]);
+      const html = generateHtmlReport(makeOptions({ parsed }));
+      const tableMatch = html.match(/<table>[\s\S]*?<\/table>/);
+      expect(tableMatch).not.toBeNull();
+      const table = tableMatch![0];
+      const withSkipIdx = table.indexOf('green-with-skip');
+      const slowIdx = table.indexOf('green-slow');
+      const fastIdx = table.indexOf('green-fast');
+      expect(withSkipIdx).toBeLessThan(slowIdx);
+      expect(slowIdx).toBeLessThan(fastIdx);
     });
   });
 
