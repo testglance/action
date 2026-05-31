@@ -36,6 +36,17 @@ const DEFAULT_SLOWEST_TESTS = 10;
 const DEFAULT_FLAKY_THRESHOLD = 2;
 const DEFAULT_PERF_THRESHOLD = 200;
 
+function parseShowAllTests(input: string): 'auto' | boolean {
+  const trimmed = input.trim().toLowerCase();
+  if (trimmed === '' || trimmed === 'auto') return 'auto';
+  if (trimmed === 'true') return true;
+  if (trimmed === 'false') return false;
+  core.warning(
+    `Invalid "show-all-tests" input "${input}". Expected "auto", "true", or "false"; defaulting to "auto".`,
+  );
+  return 'auto';
+}
+
 function parseSlowestTestsCount(input: string): number {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -132,7 +143,7 @@ export async function run(): Promise<RunResult> {
       core.getInput('annotate-failures') === 'true' || core.getInput('create-check') === 'true';
     const checkName = core.getInput('check-name') || 'Test Results';
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
-    const showAllTests = core.getInput('show-all-tests') === 'true';
+    const showAllTests = parseShowAllTests(core.getInput('show-all-tests'));
     const flakyThreshold = parseFlakyThreshold(core.getInput('flaky-threshold'));
     const perfThreshold = parsePerfThreshold(core.getInput('perf-threshold'));
     const htmlReport = core.getInput('html-report') === 'true';
