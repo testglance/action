@@ -199,7 +199,7 @@ describe('generateSummary', () => {
 
     expect(mockSummary.addRaw).toHaveBeenCalledWith(expect.stringContaining('### ❌ Failed Tests'));
     const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
-    const failureBlock = rawCalls.find((c: string) => c.includes('should reject expired token'));
+    const failureBlock = rawCalls.find((c: string) => c.includes('[!CAUTION]'));
     expect(failureBlock).toBeDefined();
     expect(failureBlock).toContain('> [!CAUTION]');
     expect(failureBlock).toContain('`auth.login`');
@@ -1122,8 +1122,10 @@ describe('renderAllTests', () => {
     const failingIdx = html.indexOf('has-failure');
     const passingIdx = html.indexOf('all-green');
     expect(failingIdx).toBeLessThan(passingIdx);
-    expect(html).toContain('<details><summary>❌ <strong>has-failure</strong> (2 tests, 1 failed)');
-    expect(html).toContain('<details><summary>✅ <strong>all-green</strong> (1 tests)');
+    expect(html).toContain(
+      '<details open><summary>❌ <strong>has-failure</strong> — ✅ 1 · ❌ 1 · ⏱️ 1.0s',
+    );
+    expect(html).toContain('<details open><summary>✅ <strong>all-green</strong> — ✅ 1 · ⏱️ 1.0s');
   });
 
   it('lists each test name with status emoji and formatted duration', () => {
@@ -1162,7 +1164,7 @@ describe('renderAllTests', () => {
     ]);
 
     const html = mockSummary.addRaw.mock.calls[0][0] as string;
-    expect(html).toContain('<details><summary>➖ <strong>empty</strong>');
+    expect(html).toContain('<details open><summary>➖ <strong>empty</strong>');
     expect(html).toContain('_(no tests)_');
   });
 
@@ -1257,6 +1259,44 @@ describe('renderAllTests', () => {
     const oneIdx = html.indexOf('one-fail');
     expect(twoIdx).toBeLessThan(oneIdx);
   });
+
+  it('sorts tests within a suite by status (failed → errored → skipped → passed) then duration desc', () => {
+    renderAllTests([
+      {
+        name: 'mixed',
+        duration: 5.0,
+        tests: [
+          { name: 'slow-pass', suite: 'mixed', status: 'passed', duration: 3.0 },
+          { name: 'fast-pass', suite: 'mixed', status: 'passed', duration: 0.1 },
+          { name: 'skip', suite: 'mixed', status: 'skipped', duration: 0 },
+          { name: 'err', suite: 'mixed', status: 'errored', duration: 0.2 },
+          { name: 'fail', suite: 'mixed', status: 'failed', duration: 1.0 },
+        ],
+      },
+    ]);
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    const order = ['fail', 'err', 'skip', 'slow-pass', 'fast-pass'];
+    const positions = order.map((n) => html.indexOf(`<td>${n}</td>`));
+    expect(positions.every((p) => p > -1)).toBe(true);
+    for (let i = 1; i < positions.length; i++) {
+      expect(positions[i - 1]).toBeLessThan(positions[i]);
+    }
+  });
+
+  it('renders large all-green suites collapsed (no open attribute)', () => {
+    const tests = Array.from({ length: 30 }, (_, i) => ({
+      name: `t${i}`,
+      suite: 'big-green',
+      status: 'passed' as const,
+      duration: 0.05,
+    }));
+    renderAllTests([{ name: 'big-green', duration: 1.5, tests }]);
+
+    const html = mockSummary.addRaw.mock.calls[0][0] as string;
+    expect(html).toContain('<details><summary>✅ <strong>big-green</strong>');
+    expect(html).not.toContain('<details open><summary>✅ <strong>big-green</strong>');
+  });
 });
 
 describe('generateSummary suite breakdown integration', () => {
@@ -1326,7 +1366,7 @@ describe('generateSummary suite breakdown integration', () => {
     expect(breakdownCall).toBeUndefined();
   });
 
-  it('omits the All Tests section by default', async () => {
+  it('omits the All Tests section when showAllTests is explicitly false', async () => {
     const parsed = makeParsed({ total: 2, passed: 2, failed: 0 }, [
       {
         name: 'suite-a',
@@ -1338,12 +1378,71 @@ describe('generateSummary suite breakdown integration', () => {
       },
     ]);
 
-    await generateSummary({ parsed, apiSuccess: true });
+    await generateSummary({ parsed, apiSuccess: true, showAllTests: false });
 
     const allTestsCall = mockSummary.addRaw.mock.calls.find((c: string[]) =>
       c[0].includes('### 🔬 All Tests'),
     );
     expect(allTestsCall).toBeUndefined();
+  });
+
+  it('auto-enables All Tests when run is small (≤200 total)', async () => {
+    const parsed = makeParsed({ total: 2, passed: 2, failed: 0 }, [
+      {
+        name: 'suite-a',
+        duration: 1.0,
+        tests: [
+          { name: 't1', suite: 'suite-a', status: 'passed', duration: 0.5 },
+          { name: 't2', suite: 'suite-a', status: 'passed', duration: 0.5 },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true, showAllTests: 'auto' });
+
+    const allTestsCall = mockSummary.addRaw.mock.calls.find((c: string[]) =>
+      c[0].includes('### 🔬 All Tests'),
+    );
+    expect(allTestsCall).toBeDefined();
+  });
+
+  it('auto-suppresses All Tests when run is large and multi-suite', async () => {
+    const tests = Array.from({ length: 300 }, (_, i) => ({
+      name: `t${i}`,
+      suite: 'suite-a',
+      status: 'passed' as const,
+      duration: 0.01,
+    }));
+    const parsed = makeParsed({ total: 600, passed: 600, failed: 0 }, [
+      { name: 'suite-a', duration: 3.0, tests },
+      { name: 'suite-b', duration: 3.0, tests: tests.map((t) => ({ ...t, suite: 'suite-b' })) },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true, showAllTests: 'auto' });
+
+    const allTestsCall = mockSummary.addRaw.mock.calls.find((c: string[]) =>
+      c[0].includes('### 🔬 All Tests'),
+    );
+    expect(allTestsCall).toBeUndefined();
+  });
+
+  it('auto-enables All Tests for single-suite runs up to 1000 tests', async () => {
+    const tests = Array.from({ length: 500 }, (_, i) => ({
+      name: `t${i}`,
+      suite: 'only-suite',
+      status: 'passed' as const,
+      duration: 0.01,
+    }));
+    const parsed = makeParsed({ total: 500, passed: 500, failed: 0 }, [
+      { name: 'only-suite', duration: 5.0, tests },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true, showAllTests: 'auto' });
+
+    const allTestsCall = mockSummary.addRaw.mock.calls.find((c: string[]) =>
+      c[0].includes('### 🔬 All Tests'),
+    );
+    expect(allTestsCall).toBeDefined();
   });
 
   it('renders the All Tests section when showAllTests is true', async () => {

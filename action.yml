@@ -27,9 +27,9 @@ inputs:
     required: false
     default: '10'
   show-all-tests:
-    description: 'Expand every test name under each suite in the CI summary. Off by default — opt in for small suites where full transparency is useful. Large monorepos should leave this off.'
+    description: 'Show every test name under each suite in the CI summary. "auto" (default) shows them when the run is small enough to fit (≤200 tests, or ≤1000 tests when there is a single suite). "true" forces on, "false" forces off.'
     required: false
-    default: 'false'
+    default: 'auto'
   send-results:
     description: 'Send parsed results to TestGlance API (set to false for dry-run testing)'
     required: false

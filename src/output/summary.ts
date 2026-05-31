@@ -50,7 +50,7 @@ export interface SummaryOptions {
   summaryTemplate?: string;
   meta?: TemplateContextMeta;
   reportFileCount?: number;
-  showAllTests?: boolean;
+  showAllTests?: 'auto' | boolean;
 }
 
 const MAX_RENDERED_SUMMARY_BYTES = 900_000;
@@ -58,6 +58,22 @@ const MAX_FAILED_TESTS_SHOWN = 25;
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_STACK_TRACE_LINES = 30;
 const MAX_ALL_TESTS_BYTES = 400_000;
+const AUTO_ALL_TESTS_MAX_TOTAL = 200;
+const AUTO_ALL_TESTS_SINGLE_SUITE_MAX_TOTAL = 1000;
+const SUITE_OPEN_MAX_TESTS = 25;
+
+export function shouldRenderAllTests(
+  showAllTests: 'auto' | boolean | undefined,
+  parsed: ParsedTestRun,
+): boolean {
+  if (showAllTests === true) return true;
+  if (showAllTests === false) return false;
+  const total = parsed.summary.total;
+  if (total === 0) return false;
+  if (total <= AUTO_ALL_TESTS_MAX_TOTAL) return true;
+  if (parsed.suites.length === 1 && total <= AUTO_ALL_TESTS_SINGLE_SUITE_MAX_TOTAL) return true;
+  return false;
+}
 
 export async function generateSummary(options: SummaryOptions): Promise<void> {
   const {
@@ -158,7 +174,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   try {
     renderSuiteBreakdown(parsed.suites);
 
-    if (showAllTests) {
+    if (shouldRenderAllTests(showAllTests, parsed)) {
       renderAllTests(parsed.suites);
     }
 
@@ -289,6 +305,20 @@ const TEST_STATUS_EMOJI: Record<string, string> = {
   skipped: '⏭️',
 };
 
+const TEST_STATUS_SORT_ORDER: Record<string, number> = {
+  failed: 0,
+  errored: 1,
+  skipped: 2,
+  passed: 3,
+};
+
+function compareTestsForDisplay(a: ParsedTestCase, b: ParsedTestCase): number {
+  const aOrder = TEST_STATUS_SORT_ORDER[a.status] ?? 99;
+  const bOrder = TEST_STATUS_SORT_ORDER[b.status] ?? 99;
+  if (aOrder !== bOrder) return aOrder - bOrder;
+  return b.duration - a.duration;
+}
+
 export function renderAllTests(suites: ParsedSuite[]): void {
   if (suites.length === 0) return;
 
@@ -299,7 +329,7 @@ export function renderAllTests(suites: ParsedSuite[]): void {
       const skipped = s.tests.filter((t) => t.status === 'skipped').length;
       const passed = s.tests.filter((t) => t.status === 'passed').length;
       const passRate = total > 0 ? (passed / total) * 100 : -1;
-      return { suite: s, total, failed, skipped, passRate, duration: s.duration };
+      return { suite: s, total, passed, failed, skipped, passRate, duration: s.duration };
     })
     .sort(compareSuitesByHealth);
 
@@ -307,20 +337,27 @@ export function renderAllTests(suites: ParsedSuite[]): void {
   let elided = 0;
   let budgetExceeded = false;
 
-  for (const { suite, total, failed, skipped } of ranked) {
+  for (const { suite, total, passed, failed, skipped } of ranked) {
     if (budgetExceeded) {
       elided++;
       continue;
     }
 
     const icon = failed > 0 ? '❌' : skipped > 0 ? '⚠️' : total === 0 ? '➖' : '✅';
-    const meta = failed > 0 ? `${total} tests, ${failed} failed` : `${total} tests`;
-    let block = `<details><summary>${icon} <strong>${escapeHtml(suite.name)}</strong> (${meta})</summary>\n\n`;
+    const statsParts: string[] = [];
+    if (passed > 0) statsParts.push(`✅ ${passed}`);
+    if (failed > 0) statsParts.push(`❌ ${failed}`);
+    if (skipped > 0) statsParts.push(`⏭️ ${skipped}`);
+    statsParts.push(`⏱️ ${formatDuration(suite.duration)}`);
+    const stats = statsParts.join(' · ');
+    const openAttr = failed > 0 || skipped > 0 || total <= SUITE_OPEN_MAX_TESTS ? ' open' : '';
+    let block = `<details${openAttr}><summary>${icon} <strong>${escapeHtml(suite.name)}</strong> — ${stats}</summary>\n\n`;
 
     if (total === 0) {
       block += '_(no tests)_\n\n</details>\n\n';
     } else {
-      const rows = suite.tests
+      const sortedTests = [...suite.tests].sort(compareTestsForDisplay);
+      const rows = sortedTests
         .map(
           (t) =>
             `<tr><td>${TEST_STATUS_EMOJI[t.status] ?? '•'}</td><td>${escapeHtml(t.name)}</td><td>${formatDuration(t.duration)}</td></tr>`,
