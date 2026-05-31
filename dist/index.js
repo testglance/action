@@ -17311,7 +17311,7 @@ module.exports = function (store) {
 
 /***/ }),
 
-/***/ 77078:
+/***/ 2931:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 var concatMap = __nccwpck_require__(51196);
@@ -17482,7 +17482,7 @@ function expand(str, max, isTop) {
 
     N = [];
 
-    for (var i = x; test(i, y); i += incr) {
+    for (var i = x; test(i, y) && N.length < max; i += incr) {
       var c;
       if (isAlphaSequence) {
         c = String.fromCharCode(i);
@@ -17521,7 +17521,7 @@ function expand(str, max, isTop) {
 
 /***/ }),
 
-/***/ 31186:
+/***/ 73919:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 var balanced = __nccwpck_require__(90870);
@@ -17689,7 +17689,7 @@ function expand(str, max, isTop) {
 
       N = [];
 
-      for (var i = x; test(i, y); i += incr) {
+      for (var i = x; test(i, y) && N.length < max; i += incr) {
         var c;
         if (isAlphaSequence) {
           c = String.fromCharCode(i);
@@ -35162,7 +35162,7 @@ var path = (function () { try { return __nccwpck_require__(16928) } catch (e) {}
 minimatch.sep = path.sep
 
 var GLOBSTAR = minimatch.GLOBSTAR = Minimatch.GLOBSTAR = {}
-var expand = __nccwpck_require__(77078)
+var expand = __nccwpck_require__(2931)
 
 var plTypes = {
   '!': { open: '(?:(?!(?:', close: '))[^/]*?)'},
@@ -36194,7 +36194,7 @@ minimatch.sep = path.sep
 
 const GLOBSTAR = Symbol('globstar **')
 minimatch.GLOBSTAR = GLOBSTAR
-const expand = __nccwpck_require__(31186)
+const expand = __nccwpck_require__(73919)
 
 const plTypes = {
   '!': { open: '(?:(?!(?:', close: '))[^/]*?)'},
@@ -93541,7 +93541,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.unescape = exports.escape = exports.AST = exports.Minimatch = exports.match = exports.makeRe = exports.braceExpand = exports.defaults = exports.filter = exports.GLOBSTAR = exports.sep = exports.minimatch = void 0;
-const brace_expansion_1 = __importDefault(__nccwpck_require__(31186));
+const brace_expansion_1 = __importDefault(__nccwpck_require__(73919));
 const assert_valid_pattern_js_1 = __nccwpck_require__(37382);
 const ast_js_1 = __nccwpck_require__(20174);
 const escape_js_1 = __nccwpck_require__(73839);
