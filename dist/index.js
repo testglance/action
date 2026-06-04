@@ -112781,14 +112781,14 @@ function resolveLocation(test) {
     return null;
 }
 async function createCheckRun(options) {
-    const { githubToken, checkName, parsed } = options;
+    const { githubToken, checkName, parsed, reportFile } = options;
     try {
         const octokit = getOctokit(githubToken);
         const { owner, repo } = github_context.repo;
         const pr = github_context.payload.pull_request;
         const headSha = pr?.head?.sha ?? github_context.sha;
         const { summary } = parsed;
-        const conclusion = summary.failed > 0 ? 'failure' : 'success';
+        const conclusion = summary.failed > 0 || summary.errored > 0 ? 'failure' : 'success';
         const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
         const metricsStrip = renderMetricsStrip(summary);
         const title = `Tests: ${metricsStrip} — ${passRate}%`;
@@ -112796,17 +112796,17 @@ async function createCheckRun(options) {
         const annotations = [];
         for (const suite of parsed.suites) {
             for (const test of suite.tests) {
-                if (test.status !== 'failed')
+                if (test.status !== 'failed' && test.status !== 'errored')
                     continue;
                 if (annotations.length >= MAX_ANNOTATIONS)
                     break;
                 const location = resolveLocation(test);
-                if (!location)
+                if (!location && !reportFile)
                     continue;
                 annotations.push({
-                    path: location.path,
-                    start_line: location.line,
-                    end_line: location.line,
+                    path: location ? location.path : normalizePath(reportFile),
+                    start_line: location ? location.line : 1,
+                    end_line: location ? location.line : 1,
                     annotation_level: 'failure',
                     message: test.errorMessage ?? 'Test failed',
                     title: test.name,
@@ -159166,7 +159166,14 @@ async function run() {
         }
         if (annotateFailures) {
             if (githubToken) {
-                await createCheckRun({ githubToken, checkName, parsed });
+                // ParsedTestCase doesn't track origin file across mergeTestRuns, so the
+                // first report file is the pragmatic fallback target for tests lacking a location.
+                await createCheckRun({
+                    githubToken,
+                    checkName,
+                    parsed,
+                    reportFile: successful[0].filePath,
+                });
             }
             else {
                 warning('annotate-failures requires github-token — skipping inline annotations');
