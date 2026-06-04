@@ -41,6 +41,8 @@ export interface ParsedTestCase {
   errorMessage?: string;
   errorType?: string;
   stackTrace?: string;
+  file?: string;
+  line?: number;
 }
 
 export type HighlightType =

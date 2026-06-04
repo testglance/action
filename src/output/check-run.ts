@@ -1,10 +1,20 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import { parseFileLocation } from '../utils/parse-stack-trace';
+import { parseFileLocation, normalizePath } from '../utils/parse-stack-trace';
 import { formatDuration, renderMetricsStrip } from './format';
-import type { ParsedTestRun } from '../types';
+import type { ParsedTestRun, ParsedTestCase } from '../types';
 
 const MAX_ANNOTATIONS = 50;
+
+function resolveLocation(test: ParsedTestCase): { path: string; line: number } | null {
+  if (test.file) {
+    return { path: normalizePath(test.file), line: test.line ?? 1 };
+  }
+  if (test.stackTrace) {
+    return parseFileLocation(test.stackTrace);
+  }
+  return null;
+}
 
 export interface CheckRunOptions {
   githubToken: string;
@@ -45,7 +55,7 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
         if (test.status !== 'failed') continue;
         if (annotations.length >= MAX_ANNOTATIONS) break;
 
-        const location = test.stackTrace ? parseFileLocation(test.stackTrace) : null;
+        const location = resolveLocation(test);
         if (!location) continue;
 
         annotations.push({
