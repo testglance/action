@@ -21,10 +21,11 @@ export interface CheckRunOptions {
   checkName: string;
   parsed: ParsedTestRun;
   reportFile?: string;
+  annotationLevel?: 'failure' | 'warning' | 'notice';
 }
 
 export async function createCheckRun(options: CheckRunOptions): Promise<void> {
-  const { githubToken, checkName, parsed, reportFile } = options;
+  const { githubToken, checkName, parsed, reportFile, annotationLevel = 'failure' } = options;
 
   try {
     const octokit = github.getOctokit(githubToken);
@@ -46,7 +47,7 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
       path: string;
       start_line: number;
       end_line: number;
-      annotation_level: 'failure';
+      annotation_level: 'failure' | 'warning' | 'notice';
       message: string;
       title: string;
     }> = [];
@@ -63,7 +64,7 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
           path: location ? location.path : normalizePath(reportFile as string),
           start_line: location ? location.line : 1,
           end_line: location ? location.line : 1,
-          annotation_level: 'failure',
+          annotation_level: annotationLevel,
           message: test.errorMessage ?? 'Test failed',
           title: test.name,
         });

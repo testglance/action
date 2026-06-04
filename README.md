@@ -175,8 +175,11 @@ See [`examples/reusable-workflow.yml`](examples/reusable-workflow.yml) for a `wo
 | `github-token`      |    No    | `''`                         | GitHub token for PR comments and Check Runs                                                                                |
 | `annotate-failures` |    No    | `false`                      | Annotate failed tests inline on the PR diff (creates a Check Run)                                                          |
 | `check-name`        |    No    | `Test Results`               | Name of the Check Run created by `annotate-failures`                                                                       |
+| `annotation-level`  |    No    | `failure`                    | Severity for inline failure annotations: `failure`, `warning`, or `notice`. `warning`/`notice` keep the check advisory.    |
 | `summary-template`  |    No    | `''`                         | Path to a Handlebars template that replaces the default CI summary. See [Custom Templates](docs/custom-templates.md).      |
 | `comment-template`  |    No    | `''`                         | Path to a Handlebars template that replaces the default PR comment body. See [Custom Templates](docs/custom-templates.md). |
+
+> **Note on `annotation-level`:** The Check Run's `conclusion` is still `failure` whenever tests fail, regardless of `annotation-level`. Setting `warning` or `notice` only changes the severity of the inline annotations — it does not change the check outcome. This is the dial for teams who want inline failure annotations without those annotations tripping required-checks branch protection.
 
 ## Permissions
 

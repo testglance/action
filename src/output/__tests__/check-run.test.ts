@@ -569,6 +569,44 @@ describe('createCheckRun', () => {
     expect(call.output.annotations[0].end_line).toBe(1);
   });
 
+  it('defaults annotation_level to "failure" when annotationLevel is not provided', async () => {
+    await createCheckRun({
+      githubToken: 'ghp_test',
+      checkName: 'Tests',
+      parsed: makeParsed(),
+    });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.annotations).toHaveLength(1);
+    expect(call.output.annotations[0].annotation_level).toBe('failure');
+  });
+
+  it('uses "warning" annotation_level when annotationLevel is "warning"', async () => {
+    await createCheckRun({
+      githubToken: 'ghp_test',
+      checkName: 'Tests',
+      parsed: makeParsed(),
+      annotationLevel: 'warning',
+    });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.annotations[0].annotation_level).toBe('warning');
+    expect(call.conclusion).toBe('failure');
+  });
+
+  it('uses "notice" annotation_level when annotationLevel is "notice"', async () => {
+    await createCheckRun({
+      githubToken: 'ghp_test',
+      checkName: 'Tests',
+      parsed: makeParsed(),
+      annotationLevel: 'notice',
+    });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.annotations[0].annotation_level).toBe('notice');
+    expect(call.conclusion).toBe('failure');
+  });
+
   it('normalizes native file paths to repo-relative', async () => {
     const parsed = makeParsed({
       suites: [
