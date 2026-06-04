@@ -20,10 +20,11 @@ export interface CheckRunOptions {
   githubToken: string;
   checkName: string;
   parsed: ParsedTestRun;
+  reportFile?: string;
 }
 
 export async function createCheckRun(options: CheckRunOptions): Promise<void> {
-  const { githubToken, checkName, parsed } = options;
+  const { githubToken, checkName, parsed, reportFile } = options;
 
   try {
     const octokit = github.getOctokit(githubToken);
@@ -33,7 +34,7 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
     const headSha = pr?.head?.sha ?? github.context.sha;
 
     const { summary } = parsed;
-    const conclusion = summary.failed > 0 ? 'failure' : 'success';
+    const conclusion = summary.failed > 0 || summary.errored > 0 ? 'failure' : 'success';
 
     const passRate =
       summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
@@ -52,16 +53,16 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
 
     for (const suite of parsed.suites) {
       for (const test of suite.tests) {
-        if (test.status !== 'failed') continue;
+        if (test.status !== 'failed' && test.status !== 'errored') continue;
         if (annotations.length >= MAX_ANNOTATIONS) break;
 
         const location = resolveLocation(test);
-        if (!location) continue;
+        if (!location && !reportFile) continue;
 
         annotations.push({
-          path: location.path,
-          start_line: location.line,
-          end_line: location.line,
+          path: location ? location.path : normalizePath(reportFile as string),
+          start_line: location ? location.line : 1,
+          end_line: location ? location.line : 1,
           annotation_level: 'failure',
           message: test.errorMessage ?? 'Test failed',
           title: test.name,
