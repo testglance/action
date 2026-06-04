@@ -107194,6 +107194,38 @@ function renderMetricsStrip(summary) {
         parts.push(`💥 ${summary.errored} errored`);
     return parts.join(' · ');
 }
+const HEALTH_SCORE_FACTORS = [
+    { label: 'Pass rate', weight: '70%', detail: 'share of tests passing' },
+    { label: 'Flakiness', weight: '20%', detail: 'fewer flaky tests scores higher' },
+    {
+        label: 'Runtime trend',
+        weight: '10%',
+        detail: 'getting faster scores above neutral, slower below',
+    },
+];
+const HEALTH_SCORE_FOOTNOTE = 'A fully green, stable suite scores ~95; the final points require a measurably improving runtime trend. Needs at least 5 runs.';
+function renderHealthScoreDetails() {
+    const factors = HEALTH_SCORE_FACTORS.map((f) => `- **${f.label} (${f.weight})** — ${f.detail}`).join('\n');
+    return [
+        '<details><summary>ⓘ How is this scored?</summary>',
+        '',
+        'Health Score (0–100), blended over the last 30 days:',
+        '',
+        factors,
+        '',
+        HEALTH_SCORE_FOOTNOTE,
+        '</details>',
+    ].join('\n');
+}
+function renderHealthScoreTooltipHtml() {
+    const factors = HEALTH_SCORE_FACTORS.map((f) => `<li><strong>${escapeHtml(f.label)} (${f.weight})</strong> — ${escapeHtml(f.detail)}</li>`).join('');
+    return (`<span class="health-info" tabindex="0" aria-label="How the health score is calculated">&#9432;` +
+        `<span class="health-tooltip">` +
+        `<strong>Health Score (0&ndash;100)</strong>, blended over the last 30 days:` +
+        `<ul>${factors}</ul>` +
+        `<span class="health-foot">${escapeHtml(HEALTH_SCORE_FOOTNOTE)}</span>` +
+        `</span></span>`);
+}
 function compareSuitesByHealth(a, b) {
     if (a.passRate < 0 && b.passRate >= 0)
         return 1;
@@ -107532,13 +107564,17 @@ async function generateSummary(options) {
     if (reportFileCount && reportFileCount > 1) {
         metricsLine += ` · 📄 ${reportFileCount} reports merged`;
     }
-    if (apiSuccess && healthScore !== null && healthScore !== undefined) {
+    const hasHealthScore = apiSuccess && healthScore !== null && healthScore !== undefined;
+    if (hasHealthScore) {
         metricsLine += ` · 🏥 ${healthScore}/100`;
     }
     else if (apiSuccess) {
         metricsLine += ' · 🏥 available after 5 runs';
     }
     summary_summary.addRaw(`${metricsLine}\n\n`);
+    if (hasHealthScore) {
+        summary_summary.addRaw(`${renderHealthScoreDetails()}\n\n`);
+    }
     if (flakyCount && flakyCount > 0) {
         summary_summary.addRaw(`**Flaky tests detected:** ${flakyCount}\n\n`);
     }
@@ -112884,7 +112920,7 @@ function renderHeader(summary, passRate, statusClass, apiSuccess, healthScore) {
     const statusIcon = statusClass === 'fail' ? '&#x1F534;' : '&#x2705;';
     const metaParts = [`&#x23F1;&#xFE0F; ${duration}`];
     if (apiSuccess && healthScore !== null && healthScore !== undefined) {
-        metaParts.push(`&#x1F3E5; ${healthScore}/100`);
+        metaParts.push(`&#x1F3E5; ${healthScore}/100 ${renderHealthScoreTooltipHtml()}`);
     }
     const pct = passRate.toFixed(1);
     const barFilled = passRate === 100 ? 100 : Math.floor(passRate);
@@ -113183,6 +113219,13 @@ section{margin-bottom:1.5rem}
 .progress-fill.pass{background:#1a7f37}
 .progress-fill.fail{background:#cf222e}
 .metrics{color:#57606a;font-size:.875rem}
+.health-info{position:relative;display:inline-block;cursor:help;color:#0969da;font-weight:600}
+.health-info:focus{outline:2px solid #0969da;outline-offset:2px;border-radius:2px}
+.health-tooltip{display:none;position:absolute;left:0;top:1.5rem;z-index:10;width:18rem;padding:.75rem .9rem;background:#161b22;color:#e6edf3;border-radius:6px;font-size:.8125rem;font-weight:400;line-height:1.4;box-shadow:0 4px 12px rgba(0,0,0,.3);text-align:left}
+.health-info:hover .health-tooltip,.health-info:focus .health-tooltip{display:block}
+.health-tooltip ul{margin:.5rem 0;padding-left:1.1rem}
+.health-tooltip li{padding:.1rem 0}
+.health-foot{display:block;margin-top:.5rem;color:#9da7b3}
 table{width:100%;border-collapse:collapse;margin:.5rem 0;font-size:.875rem}
 th,td{text-align:left;padding:.5rem .75rem;border-bottom:1px solid #d0d7de}
 th{background:#f6f8fa;font-weight:600}
