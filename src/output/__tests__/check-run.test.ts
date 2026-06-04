@@ -157,7 +157,7 @@ describe('createCheckRun', () => {
     });
   });
 
-  it('skips failed tests without extractable file location', async () => {
+  it('skips failed tests without extractable file location when no reportFile', async () => {
     await createCheckRun({
       githubToken: 'ghp_test',
       checkName: 'Test Results',
@@ -167,6 +167,185 @@ describe('createCheckRun', () => {
     const call = mockChecksCreate.mock.calls[0][0];
     const titles = call.output.annotations.map((a: { title: string }) => a.title);
     expect(titles).not.toContain('fails without location');
+  });
+
+  it('falls back to reportFile at line 1 for failed tests without a location', async () => {
+    await createCheckRun({
+      githubToken: 'ghp_test',
+      checkName: 'Test Results',
+      parsed: makeParsed(),
+      reportFile: './reports/junit.xml',
+    });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    const fallback = call.output.annotations.find(
+      (a: { title: string }) => a.title === 'fails without location',
+    );
+    expect(fallback).toEqual({
+      path: 'reports/junit.xml',
+      start_line: 1,
+      end_line: 1,
+      annotation_level: 'failure',
+      message: 'Something broke',
+      title: 'fails without location',
+    });
+  });
+
+  it('falls back to reportFile for a failed test with an unparseable stack trace', async () => {
+    const parsed = makeParsed({
+      suites: [
+        {
+          name: 'suite1',
+          duration: 1.0,
+          tests: [
+            {
+              name: 'unparseable trace',
+              suite: 'suite1',
+              status: 'failed',
+              duration: 0.1,
+              errorMessage: 'Kaboom',
+              stackTrace: 'no file reference here at all',
+            },
+          ],
+        },
+      ],
+    });
+
+    await createCheckRun({
+      githubToken: 'ghp_test',
+      checkName: 'Tests',
+      parsed,
+      reportFile: './reports/results.json',
+    });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.annotations).toHaveLength(1);
+    expect(call.output.annotations[0]).toEqual({
+      path: 'reports/results.json',
+      start_line: 1,
+      end_line: 1,
+      annotation_level: 'failure',
+      message: 'Kaboom',
+      title: 'unparseable trace',
+    });
+  });
+
+  it('annotates errored tests that have a location', async () => {
+    const parsed = makeParsed({
+      suites: [
+        {
+          name: 'suite1',
+          duration: 1.0,
+          tests: [
+            {
+              name: 'errored with native location',
+              suite: 'suite1',
+              status: 'errored',
+              duration: 0.1,
+              errorMessage: 'Setup threw',
+              file: 'src/db/connection.ts',
+              line: 12,
+            },
+            {
+              name: 'errored with stack trace',
+              suite: 'suite1',
+              status: 'errored',
+              duration: 0.1,
+              errorMessage: 'Boom',
+              stackTrace: `Error\n    at Object.<anonymous> (src/api/handler.ts:88:3)`,
+            },
+          ],
+        },
+      ],
+    });
+
+    await createCheckRun({ githubToken: 'ghp_test', checkName: 'Tests', parsed });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.annotations).toEqual([
+      {
+        path: 'src/db/connection.ts',
+        start_line: 12,
+        end_line: 12,
+        annotation_level: 'failure',
+        message: 'Setup threw',
+        title: 'errored with native location',
+      },
+      {
+        path: 'src/api/handler.ts',
+        start_line: 88,
+        end_line: 88,
+        annotation_level: 'failure',
+        message: 'Boom',
+        title: 'errored with stack trace',
+      },
+    ]);
+  });
+
+  it('falls back to reportFile for an errored test without a location', async () => {
+    const parsed = makeParsed({
+      suites: [
+        {
+          name: 'suite1',
+          duration: 1.0,
+          tests: [
+            {
+              name: 'errored no location',
+              suite: 'suite1',
+              status: 'errored',
+              duration: 0.1,
+              errorMessage: 'Crashed',
+            },
+          ],
+        },
+      ],
+    });
+
+    await createCheckRun({
+      githubToken: 'ghp_test',
+      checkName: 'Tests',
+      parsed,
+      reportFile: 'reports/junit.xml',
+    });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.annotations).toHaveLength(1);
+    expect(call.output.annotations[0]).toEqual({
+      path: 'reports/junit.xml',
+      start_line: 1,
+      end_line: 1,
+      annotation_level: 'failure',
+      message: 'Crashed',
+      title: 'errored no location',
+    });
+  });
+
+  it('concludes failure when a run has only errored tests (no failures)', async () => {
+    const parsed = makeParsed({
+      summary: { total: 1, passed: 0, failed: 0, skipped: 0, errored: 1, duration: 0.1 },
+      suites: [
+        {
+          name: 'suite1',
+          duration: 0.1,
+          tests: [
+            {
+              name: 'errored',
+              suite: 'suite1',
+              status: 'errored',
+              duration: 0.1,
+              errorMessage: 'Crashed',
+              file: 'src/db/connection.ts',
+              line: 12,
+            },
+          ],
+        },
+      ],
+    });
+
+    await createCheckRun({ githubToken: 'ghp_test', checkName: 'Tests', parsed });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.conclusion).toBe('failure');
   });
 
   it('caps annotations at 50', async () => {

@@ -446,7 +446,14 @@ export async function run(): Promise<RunResult> {
 
     if (annotateFailures) {
       if (githubToken) {
-        await createCheckRun({ githubToken, checkName, parsed });
+        // ParsedTestCase doesn't track origin file across mergeTestRuns, so the
+        // first report file is the pragmatic fallback target for tests lacking a location.
+        await createCheckRun({
+          githubToken,
+          checkName,
+          parsed,
+          reportFile: successful[0].filePath,
+        });
       } else {
         core.warning('annotate-failures requires github-token — skipping inline annotations');
       }
