@@ -50,6 +50,10 @@ inputs:
     description: 'Name of the GitHub Check Run created by annotate-failures'
     required: false
     default: 'Test Results'
+  annotation-level:
+    description: 'Severity for inline failure annotations: failure (default), warning, or notice. warning/notice keep the check advisory so it is less likely to trip required-checks branch protection.'
+    required: false
+    default: 'failure'
   flaky-threshold:
     description: 'Minimum status flips to flag a test as flaky (positive integer, last 10 runs)'
     required: false

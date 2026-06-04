@@ -47,6 +47,19 @@ function parseShowAllTests(input: string): 'auto' | boolean {
   return 'auto';
 }
 
+export function parseAnnotationLevel(input: string): 'failure' | 'warning' | 'notice' {
+  const trimmed = input.trim().toLowerCase();
+  if (trimmed === 'failure' || trimmed === 'warning' || trimmed === 'notice') {
+    return trimmed;
+  }
+  if (trimmed !== '') {
+    core.warning(
+      `Invalid "annotation-level" input "${input}". Expected "failure", "warning", or "notice"; defaulting to "failure".`,
+    );
+  }
+  return 'failure';
+}
+
 function parseSlowestTestsCount(input: string): number {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -142,6 +155,7 @@ export async function run(): Promise<RunResult> {
     const annotateFailures =
       core.getInput('annotate-failures') === 'true' || core.getInput('create-check') === 'true';
     const checkName = core.getInput('check-name') || 'Test Results';
+    const annotationLevel = parseAnnotationLevel(core.getInput('annotation-level'));
     const slowestTestsCount = parseSlowestTestsCount(core.getInput('slowest-tests'));
     const showAllTests = parseShowAllTests(core.getInput('show-all-tests'));
     const flakyThreshold = parseFlakyThreshold(core.getInput('flaky-threshold'));
@@ -453,6 +467,7 @@ export async function run(): Promise<RunResult> {
           checkName,
           parsed,
           reportFile: successful[0].filePath,
+          annotationLevel,
         });
       } else {
         core.warning('annotate-failures requires github-token — skipping inline annotations');
