@@ -106748,6 +106748,8 @@ function resolveStatus(testcase) {
 function extractTestCases(testcases, suiteName) {
     return testcases.map((tc) => {
         const { status, errorMessage, errorType, stackTrace } = resolveStatus(tc);
+        const file = tc['@_file'];
+        const line = Number.parseInt(tc['@_line'], 10);
         return {
             name: tc['@_name'] ?? 'unknown',
             suite: suiteName,
@@ -106756,6 +106758,8 @@ function extractTestCases(testcases, suiteName) {
             ...(errorMessage ? { errorMessage } : {}),
             ...(errorType ? { errorType } : {}),
             ...(stackTrace ? { stackTrace } : {}),
+            ...(file ? { file } : {}),
+            ...(Number.isFinite(line) ? { line } : {}),
         };
     });
 }
@@ -106888,6 +106892,8 @@ function parseCtrfJson(content) {
             ...(hasError && test.trace
                 ? { errorType: test.trace.split('\n')[0], stackTrace: test.trace }
                 : {}),
+            ...(test.filePath ? { file: test.filePath } : {}),
+            ...(typeof test.line === 'number' ? { line: test.line } : {}),
         };
         const existing = suiteMap.get(suiteName);
         if (existing) {
@@ -112765,6 +112771,15 @@ function parseFileLocation(stackTrace) {
 
 
 const MAX_ANNOTATIONS = 50;
+function resolveLocation(test) {
+    if (test.file) {
+        return { path: normalizePath(test.file), line: test.line ?? 1 };
+    }
+    if (test.stackTrace) {
+        return parseFileLocation(test.stackTrace);
+    }
+    return null;
+}
 async function createCheckRun(options) {
     const { githubToken, checkName, parsed } = options;
     try {
@@ -112785,7 +112800,7 @@ async function createCheckRun(options) {
                     continue;
                 if (annotations.length >= MAX_ANNOTATIONS)
                     break;
-                const location = test.stackTrace ? parseFileLocation(test.stackTrace) : null;
+                const location = resolveLocation(test);
                 if (!location)
                     continue;
                 annotations.push({
