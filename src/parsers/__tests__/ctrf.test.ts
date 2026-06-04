@@ -433,4 +433,31 @@ describe('parseCtrfJson', () => {
       }
     });
   });
+
+  describe('native file/line fields (ctrf-native-location.json)', () => {
+    let result: ParsedTestRun;
+
+    beforeAll(() => {
+      result = parseCtrfJson(fixture('ctrf-native-location.json'));
+    });
+
+    it('captures file from filePath and line from line', () => {
+      const test = result.suites[0].tests.find((t) => t.name === 'applies discount');
+      expect(test?.file).toBe('src/checkout/cart.spec.ts');
+      expect(test?.line).toBe(57);
+    });
+
+    it('captures file when line is absent, leaving line undefined', () => {
+      const test = result.suites[0].tests.find((t) => t.name === 'removes item');
+      expect(test?.file).toBe('src/checkout/cart.spec.ts');
+      expect(test?.line).toBeUndefined();
+    });
+
+    it('leaves file/line undefined when fields are absent', () => {
+      const result = parseCtrfJson(fixture('ctrf-basic.json'));
+      const test = result.suites[0].tests[0];
+      expect(test.file).toBeUndefined();
+      expect(test.line).toBeUndefined();
+    });
+  });
 });

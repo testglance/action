@@ -355,4 +355,31 @@ describe('parseJunitXml', () => {
       }
     });
   });
+
+  describe('native file/line attributes (junit-native-location.xml)', () => {
+    let result: ParsedTestRun;
+
+    beforeAll(() => {
+      result = parseJunitXml(fixture('junit-native-location.xml'));
+    });
+
+    it('captures file and line from testcase attributes', () => {
+      const test = result.suites[0].tests.find((t) => t.name === 'applies discount');
+      expect(test?.file).toBe('src/checkout/cart.test.ts');
+      expect(test?.line).toBe(57);
+    });
+
+    it('captures file when line attribute is absent, leaving line undefined', () => {
+      const test = result.suites[0].tests.find((t) => t.name === 'removes item');
+      expect(test?.file).toBe('src/checkout/cart.test.ts');
+      expect(test?.line).toBeUndefined();
+    });
+
+    it('leaves file/line undefined when attributes are absent', () => {
+      const result = parseJunitXml(fixture('junit-basic.xml'));
+      const test = result.suites[0].tests[0];
+      expect(test.file).toBeUndefined();
+      expect(test.line).toBeUndefined();
+    });
+  });
 });

@@ -1,0 +1,45 @@
+{
+  "results": {
+    "tool": {
+      "name": "playwright",
+      "version": "1.40.0"
+    },
+    "summary": {
+      "tests": 3,
+      "passed": 1,
+      "failed": 2,
+      "skipped": 0,
+      "pending": 0,
+      "other": 0,
+      "start": 1709136000000,
+      "stop": 1709136003000
+    },
+    "tests": [
+      {
+        "name": "applies discount",
+        "status": "failed",
+        "duration": 45,
+        "suite": "checkout.cart",
+        "filePath": "src/checkout/cart.spec.ts",
+        "line": 57,
+        "message": "Expected total 90 but got 100"
+      },
+      {
+        "name": "removes item",
+        "status": "failed",
+        "duration": 34,
+        "suite": "checkout.cart",
+        "filePath": "src/checkout/cart.spec.ts",
+        "message": "Item still present after removal"
+      },
+      {
+        "name": "lists items",
+        "status": "passed",
+        "duration": 30,
+        "suite": "checkout.cart",
+        "filePath": "src/checkout/cart.spec.ts",
+        "line": 12
+      }
+    ]
+  }
+}

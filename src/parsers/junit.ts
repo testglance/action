@@ -61,6 +61,8 @@ function extractTestCases(
 ): ParsedTestCase[] {
   return testcases.map((tc) => {
     const { status, errorMessage, errorType, stackTrace } = resolveStatus(tc);
+    const file = tc['@_file'] as string | undefined;
+    const line = Number.parseInt(tc['@_line'] as string, 10);
     return {
       name: (tc['@_name'] as string) ?? 'unknown',
       suite: suiteName,
@@ -69,6 +71,8 @@ function extractTestCases(
       ...(errorMessage ? { errorMessage } : {}),
       ...(errorType ? { errorType } : {}),
       ...(stackTrace ? { stackTrace } : {}),
+      ...(file ? { file } : {}),
+      ...(Number.isFinite(line) ? { line } : {}),
     };
   });
 }

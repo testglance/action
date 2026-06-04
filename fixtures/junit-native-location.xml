@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="native-location" tests="3" failures="2" time="0.300">
+  <testsuite name="checkout.cart" tests="3" failures="2" time="0.300">
+    <testcase name="applies discount" classname="checkout.cart" file="src/checkout/cart.test.ts" line="57" time="0.045">
+      <failure message="Expected total 90 but got 100" type="AssertionError" />
+    </testcase>
+    <testcase name="removes item" classname="checkout.cart" file="src/checkout/cart.test.ts" time="0.034">
+      <failure message="Item still present after removal" type="AssertionError" />
+    </testcase>
+    <testcase name="lists items" classname="checkout.cart" file="src/checkout/cart.test.ts" line="12" time="0.030" />
+  </testsuite>
+</testsuites>

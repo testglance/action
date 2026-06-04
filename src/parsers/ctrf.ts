@@ -25,6 +25,7 @@ interface CtrfTest {
   duration?: number;
   suite?: string;
   filePath?: string;
+  line?: number;
   message?: string;
   trace?: string;
 }
@@ -95,6 +96,8 @@ export function parseCtrfJson(content: string): ParsedTestRun {
       ...(hasError && test.trace
         ? { errorType: test.trace.split('\n')[0], stackTrace: test.trace }
         : {}),
+      ...(test.filePath ? { file: test.filePath } : {}),
+      ...(typeof test.line === 'number' ? { line: test.line } : {}),
     };
 
     const existing = suiteMap.get(suiteName);

@@ -298,4 +298,122 @@ describe('createCheckRun', () => {
     const call = mockChecksCreate.mock.calls[0][0];
     expect(call.output.annotations[0].message).toBe('Test failed');
   });
+
+  it('annotates using native file/line with no stack trace', async () => {
+    const parsed = makeParsed({
+      suites: [
+        {
+          name: 'suite1',
+          duration: 1.0,
+          tests: [
+            {
+              name: 'native location',
+              suite: 'suite1',
+              status: 'failed',
+              duration: 0.1,
+              errorMessage: 'Boom',
+              file: 'src/checkout/cart.test.ts',
+              line: 57,
+            },
+          ],
+        },
+      ],
+    });
+
+    await createCheckRun({ githubToken: 'ghp_test', checkName: 'Tests', parsed });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.annotations).toHaveLength(1);
+    expect(call.output.annotations[0]).toEqual({
+      path: 'src/checkout/cart.test.ts',
+      start_line: 57,
+      end_line: 57,
+      annotation_level: 'failure',
+      message: 'Boom',
+      title: 'native location',
+    });
+  });
+
+  it('prefers native file/line over stack trace location', async () => {
+    const parsed = makeParsed({
+      suites: [
+        {
+          name: 'suite1',
+          duration: 1.0,
+          tests: [
+            {
+              name: 'native wins',
+              suite: 'suite1',
+              status: 'failed',
+              duration: 0.1,
+              errorMessage: 'Boom',
+              file: 'src/native.test.ts',
+              line: 5,
+              stackTrace: `Error\n    at Object.<anonymous> (src/from-trace.ts:99:1)`,
+            },
+          ],
+        },
+      ],
+    });
+
+    await createCheckRun({ githubToken: 'ghp_test', checkName: 'Tests', parsed });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.annotations[0].path).toBe('src/native.test.ts');
+    expect(call.output.annotations[0].start_line).toBe(5);
+  });
+
+  it('defaults to line 1 when native file has no line', async () => {
+    const parsed = makeParsed({
+      suites: [
+        {
+          name: 'suite1',
+          duration: 1.0,
+          tests: [
+            {
+              name: 'no line',
+              suite: 'suite1',
+              status: 'failed',
+              duration: 0.1,
+              errorMessage: 'Boom',
+              file: 'src/checkout/cart.test.ts',
+            },
+          ],
+        },
+      ],
+    });
+
+    await createCheckRun({ githubToken: 'ghp_test', checkName: 'Tests', parsed });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.annotations[0].start_line).toBe(1);
+    expect(call.output.annotations[0].end_line).toBe(1);
+  });
+
+  it('normalizes native file paths to repo-relative', async () => {
+    const parsed = makeParsed({
+      suites: [
+        {
+          name: 'suite1',
+          duration: 1.0,
+          tests: [
+            {
+              name: 'leading slash',
+              suite: 'suite1',
+              status: 'failed',
+              duration: 0.1,
+              errorMessage: 'Boom',
+              file: './src/checkout/cart.test.ts',
+              line: 3,
+            },
+          ],
+        },
+      ],
+    });
+
+    await createCheckRun({ githubToken: 'ghp_test', checkName: 'Tests', parsed });
+
+    const call = mockChecksCreate.mock.calls[0][0];
+    expect(call.output.annotations[0].path).toBe('src/checkout/cart.test.ts');
+  });
 });

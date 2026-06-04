@@ -4,7 +4,7 @@ function isDependencyPath(filePath: string): boolean {
   return DEPENDENCY_DIRS.some((dir) => filePath.includes(dir));
 }
 
-function normalizePath(filePath: string): string {
+export function normalizePath(filePath: string): string {
   let p = filePath;
   if (p.startsWith('./')) p = p.slice(2);
   if (p.startsWith('/')) p = p.slice(1);
