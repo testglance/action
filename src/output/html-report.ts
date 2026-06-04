@@ -19,6 +19,7 @@ import {
   truncate,
   renderMetricsStrip,
   compareSuitesByHealth,
+  renderHealthScoreTooltipHtml,
 } from './format';
 
 export interface HtmlReportOptions {
@@ -174,7 +175,7 @@ function renderHeader(
 
   const metaParts: string[] = [`&#x23F1;&#xFE0F; ${duration}`];
   if (apiSuccess && healthScore !== null && healthScore !== undefined) {
-    metaParts.push(`&#x1F3E5; ${healthScore}/100`);
+    metaParts.push(`&#x1F3E5; ${healthScore}/100 ${renderHealthScoreTooltipHtml()}`);
   }
 
   const pct = passRate.toFixed(1);
@@ -552,6 +553,13 @@ section{margin-bottom:1.5rem}
 .progress-fill.pass{background:#1a7f37}
 .progress-fill.fail{background:#cf222e}
 .metrics{color:#57606a;font-size:.875rem}
+.health-info{position:relative;display:inline-block;cursor:help;color:#0969da;font-weight:600}
+.health-info:focus{outline:2px solid #0969da;outline-offset:2px;border-radius:2px}
+.health-tooltip{display:none;position:absolute;left:0;top:1.5rem;z-index:10;width:18rem;padding:.75rem .9rem;background:#161b22;color:#e6edf3;border-radius:6px;font-size:.8125rem;font-weight:400;line-height:1.4;box-shadow:0 4px 12px rgba(0,0,0,.3);text-align:left}
+.health-info:hover .health-tooltip,.health-info:focus .health-tooltip{display:block}
+.health-tooltip ul{margin:.5rem 0;padding-left:1.1rem}
+.health-tooltip li{padding:.1rem 0}
+.health-foot{display:block;margin-top:.5rem;color:#9da7b3}
 table{width:100%;border-collapse:collapse;margin:.5rem 0;font-size:.875rem}
 th,td{text-align:left;padding:.5rem .75rem;border-bottom:1px solid #d0d7de}
 th{background:#f6f8fa;font-weight:600}

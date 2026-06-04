@@ -134,9 +134,19 @@ describe('generateHtmlReport', () => {
       expect(html).toContain('92/100');
     });
 
+    it('includes a hover tooltip explaining the calculation alongside the score', () => {
+      const html = generateHtmlReport(makeOptions({ healthScore: 92 }));
+      expect(html).toContain('class="health-info"');
+      expect(html).toContain('class="health-tooltip"');
+      expect(html).toContain('Pass rate (70%)');
+      expect(html).toContain('Flakiness (20%)');
+      expect(html).toContain('Runtime trend (10%)');
+    });
+
     it('omits health score when not available', () => {
       const html = generateHtmlReport(makeOptions({ healthScore: null, apiSuccess: false }));
       expect(html).not.toContain('/100');
+      expect(html).not.toContain('class="health-info"');
     });
   });
 
