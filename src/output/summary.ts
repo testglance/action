@@ -22,6 +22,7 @@ import {
   renderProgressBar,
   renderMetricsStrip,
   compareSuitesByHealth,
+  renderHealthScoreDetails,
 } from './format';
 import {
   renderTemplate,
@@ -134,12 +135,17 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   if (reportFileCount && reportFileCount > 1) {
     metricsLine += ` · 📄 ${reportFileCount} reports merged`;
   }
-  if (apiSuccess && healthScore !== null && healthScore !== undefined) {
+  const hasHealthScore = apiSuccess && healthScore !== null && healthScore !== undefined;
+  if (hasHealthScore) {
     metricsLine += ` · 🏥 ${healthScore}/100`;
   } else if (apiSuccess) {
     metricsLine += ' · 🏥 available after 5 runs';
   }
   core.summary.addRaw(`${metricsLine}\n\n`);
+
+  if (hasHealthScore) {
+    core.summary.addRaw(`${renderHealthScoreDetails()}\n\n`);
+  }
 
   if (flakyCount && flakyCount > 0) {
     core.summary.addRaw(`**Flaky tests detected:** ${flakyCount}\n\n`);

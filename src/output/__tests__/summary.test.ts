@@ -90,6 +90,25 @@ describe('generateSummary', () => {
     expect(metricsLine).toContain('🏥 94/100');
   });
 
+  it('adds a collapsible calculation breakdown when a health score is shown', async () => {
+    await generateSummary({ parsed: makeParsed(), apiSuccess: true, healthScore: 94 });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const details = rawCalls.find((c: string) => c.includes('How is this scored?'));
+    expect(details).toBeDefined();
+    expect(details).toContain('<details>');
+    expect(details).toContain('Pass rate (70%)');
+    expect(details).toContain('Flakiness (20%)');
+    expect(details).toContain('Runtime trend (10%)');
+  });
+
+  it('omits the calculation breakdown when no health score is available', async () => {
+    await generateSummary({ parsed: makeParsed(), apiSuccess: true, healthScore: null });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    expect(rawCalls.some((c: string) => c.includes('How is this scored?'))).toBe(false);
+  });
+
   it('shows "available after 5 runs" inline when health score is null', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: true, healthScore: null });
 

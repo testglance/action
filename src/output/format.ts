@@ -51,6 +51,50 @@ export function renderMetricsStrip(summary: {
   return parts.join(' · ');
 }
 
+const HEALTH_SCORE_FACTORS: { label: string; weight: string; detail: string }[] = [
+  { label: 'Pass rate', weight: '70%', detail: 'share of tests passing' },
+  { label: 'Flakiness', weight: '20%', detail: 'fewer flaky tests scores higher' },
+  {
+    label: 'Runtime trend',
+    weight: '10%',
+    detail: 'getting faster scores above neutral, slower below',
+  },
+];
+
+const HEALTH_SCORE_FOOTNOTE =
+  'A fully green, stable suite scores ~95; the final points require a measurably improving runtime trend. Needs at least 5 runs.';
+
+export function renderHealthScoreDetails(): string {
+  const factors = HEALTH_SCORE_FACTORS.map(
+    (f) => `- **${f.label} (${f.weight})** — ${f.detail}`,
+  ).join('\n');
+  return [
+    '<details><summary>ⓘ How is this scored?</summary>',
+    '',
+    'Health Score (0–100), blended over the last 30 days:',
+    '',
+    factors,
+    '',
+    HEALTH_SCORE_FOOTNOTE,
+    '</details>',
+  ].join('\n');
+}
+
+export function renderHealthScoreTooltipHtml(): string {
+  const factors = HEALTH_SCORE_FACTORS.map(
+    (f) =>
+      `<li><strong>${escapeHtml(f.label)} (${f.weight})</strong> — ${escapeHtml(f.detail)}</li>`,
+  ).join('');
+  return (
+    `<span class="health-info" tabindex="0" aria-label="How the health score is calculated">&#9432;` +
+    `<span class="health-tooltip">` +
+    `<strong>Health Score (0&ndash;100)</strong>, blended over the last 30 days:` +
+    `<ul>${factors}</ul>` +
+    `<span class="health-foot">${escapeHtml(HEALTH_SCORE_FOOTNOTE)}</span>` +
+    `</span></span>`
+  );
+}
+
 export interface SuiteHealth {
   passRate: number;
   failed: number;
