@@ -98145,6 +98145,7 @@ __nccwpck_require__.r(__webpack_exports__);
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
+  parseAnnotationLevel: () => (/* binding */ parseAnnotationLevel),
   run: () => (/* binding */ run)
 });
 
@@ -112781,7 +112782,7 @@ function resolveLocation(test) {
     return null;
 }
 async function createCheckRun(options) {
-    const { githubToken, checkName, parsed, reportFile } = options;
+    const { githubToken, checkName, parsed, reportFile, annotationLevel = 'failure' } = options;
     try {
         const octokit = getOctokit(githubToken);
         const { owner, repo } = github_context.repo;
@@ -112807,7 +112808,7 @@ async function createCheckRun(options) {
                     path: location ? location.path : normalizePath(reportFile),
                     start_line: location ? location.line : 1,
                     end_line: location ? location.line : 1,
-                    annotation_level: 'failure',
+                    annotation_level: annotationLevel,
                     message: test.errorMessage ?? 'Test failed',
                     title: test.name,
                 });
@@ -158846,6 +158847,16 @@ function parseShowAllTests(input) {
     warning(`Invalid "show-all-tests" input "${input}". Expected "auto", "true", or "false"; defaulting to "auto".`);
     return 'auto';
 }
+function parseAnnotationLevel(input) {
+    const trimmed = input.trim().toLowerCase();
+    if (trimmed === 'failure' || trimmed === 'warning' || trimmed === 'notice') {
+        return trimmed;
+    }
+    if (trimmed !== '') {
+        warning(`Invalid "annotation-level" input "${input}". Expected "failure", "warning", or "notice"; defaulting to "failure".`);
+    }
+    return 'failure';
+}
 function parseSlowestTestsCount(input) {
     const trimmed = input.trim();
     if (!trimmed) {
@@ -158917,6 +158928,7 @@ async function run() {
         const sendResults = localOnly ? false : getInput('send-results') !== 'false';
         const annotateFailures = getInput('annotate-failures') === 'true' || getInput('create-check') === 'true';
         const checkName = getInput('check-name') || 'Test Results';
+        const annotationLevel = parseAnnotationLevel(getInput('annotation-level'));
         const slowestTestsCount = parseSlowestTestsCount(getInput('slowest-tests'));
         const showAllTests = parseShowAllTests(getInput('show-all-tests'));
         const flakyThreshold = parseFlakyThreshold(getInput('flaky-threshold'));
@@ -159173,6 +159185,7 @@ async function run() {
                     checkName,
                     parsed,
                     reportFile: successful[0].filePath,
+                    annotationLevel,
                 });
             }
             else {
