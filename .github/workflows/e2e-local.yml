@@ -1,0 +1,82 @@
+name: E2E (local / act)
+
+# workflow_dispatch-only: this workflow exists solely for local `act` smoke runs
+# (see scripts/e2e-act.sh). It must NEVER run in hosted CI — the authoritative
+# end-to-end job is e2e.yml. Unlike e2e.yml there is no checkout / setup-node /
+# pnpm install here: the source is supplied via `act --bind` and dist/ is
+# pre-built by the wrapper script, so every step is a bare `uses: ./`.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  e2e-local:
+    name: E2E (local / act)
+    runs-on: ubuntu-latest
+    steps:
+      # ── Local-only mode: no api-key (emits the local-only marker + Parsed) ──
+      - name: 'Local-only: no api-key'
+        uses: ./
+        with:
+          report-path: fixtures/junit-basic.xml
+
+      # ── JUnit XML: auto-detect format from .xml extension ──
+      - name: 'JUnit: auto-detect'
+        uses: ./
+        with:
+          report-path: fixtures/junit-basic.xml
+
+      # ── CTRF JSON: auto-detect format from .json extension ──
+      - name: 'CTRF: auto-detect'
+        uses: ./
+        with:
+          report-path: fixtures/ctrf-basic.json
+
+      # ── Multi-suite JUnit ──
+      - name: 'JUnit: multi-suite'
+        uses: ./
+        with:
+          report-path: fixtures/junit-multi-suite.xml
+
+      # ── Reports with stack traces ──
+      - name: 'JUnit: with stack traces'
+        uses: ./
+        with:
+          report-path: fixtures/junit-with-stacktraces.xml
+
+      - name: 'CTRF: with stack traces'
+        uses: ./
+        with:
+          report-path: fixtures/ctrf-with-stacktraces.json
+
+      # ── Edge cases: must warn but NOT fail (exit 0, FR5) ──
+      - name: 'Edge: malformed XML (should warn, exit 0)'
+        uses: ./
+        with:
+          report-path: fixtures/junit-malformed.xml
+
+      - name: 'Edge: empty test suite (should warn, exit 0)'
+        uses: ./
+        with:
+          report-path: fixtures/junit-empty.xml
+
+      - name: 'Edge: no matching file (should warn, exit 0)'
+        uses: ./
+        with:
+          report-path: fixtures/does-not-exist.xml
+
+      - name: 'Edge: invalid CTRF schema (should warn, exit 0)'
+        uses: ./
+        with:
+          report-path: fixtures/ctrf-invalid-schema.json
+
+      # ── Check Run smoke: annotate-failures + a dummy token ──
+      # Cannot create a real Check Run without a live GitHub API — we only assert
+      # the code path runs and the step still exits 0 (expect a warning that the
+      # Check Run could not be created).
+      - name: 'Check Run: smoke (dummy token, expect graceful warning)'
+        uses: ./
+        with:
+          report-path: fixtures/junit-with-stacktraces.xml
+          annotate-failures: 'true'
+          github-token: dummy-token-for-local-smoke

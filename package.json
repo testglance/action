@@ -9,6 +9,7 @@
     "build": "ncc build src/index.ts --out dist --source-map --license licenses.txt",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e:act": "bash scripts/e2e-act.sh",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write .",
