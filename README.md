@@ -369,6 +369,44 @@ The hosted dashboard is in development. Once available, you'll be able to:
 
 Until then, the `api-key` input is accepted but inactive — all core features (CI summaries, PR comments, annotations) work without it.
 
+## Local development
+
+Standard workflow (pnpm):
+
+```bash
+pnpm install
+pnpm test          # vitest
+pnpm lint          # eslint
+pnpm typecheck     # tsc --noEmit
+pnpm build         # bundle to dist/index.js (gitignored; CI rebuilds it)
+```
+
+### End-to-end smoke test with `act`
+
+`pnpm e2e:act` runs the **bundled** Action (`dist/index.js` + `action.yml`) against
+real report fixtures inside Docker via [`act`](https://github.com/nektos/act), then
+asserts it parses JUnit/CTRF, handles edge cases (malformed/empty/missing) with a
+warning, and **exits 0**. This catches packaging/runtime breakage that unit tests
+can't, before you push.
+
+```bash
+pnpm e2e:act
+```
+
+**Prerequisites:**
+
+- Docker running (the script skips with exit 0 if the daemon is unavailable).
+- `act` installed. First run only, seed the runner image: `act --pull` (subsequent
+  runs use `--pull=false`).
+- Don't run two `act` invocations against the same Docker daemon concurrently —
+  `act` uses host networking and the containers race.
+
+**Caveat:** `act` cannot create real GitHub **Check Run annotations** or **PR
+comments** (no live GitHub API). Those are covered by the vitest suite (mocked
+octokit) and by the authoritative hosted e2e (`.github/workflows/e2e.yml`). The
+Check Run code path is still smoke-exercised here — with a dummy token it warns
+gracefully and exits 0, but no annotation is created.
+
 ## License
 
 MIT
