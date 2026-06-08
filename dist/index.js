@@ -112363,7 +112363,11 @@ const pr_comment_SEVERITY_ORDER = {
     info: 2,
 };
 function sanitizeMarkerName(name) {
-    const stripped = name.replace(/-->/g, '').trim();
+    // The key is embedded in tj-data/tj markers and recovered by regexes that
+    // capture it as a single whitespace-free token, so collapse internal
+    // whitespace — GitHub matrix job names like "test (ubuntu-latest)" contain
+    // spaces and would otherwise produce a blob that can never be decoded.
+    const stripped = name.replace(/-->/g, '').trim().replace(/\s+/g, '-');
     return stripped.length > 0 ? stripped : 'tests';
 }
 function stripMarkers(body) {
