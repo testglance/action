@@ -135,6 +135,12 @@ describe('renderPrComment — unified table', () => {
     const result = renderPrComment([makeSection({ testJobName: 'test-->hack' })]);
     expect(result).toContain('<!-- tj-data:testhack ');
   });
+
+  it('collapses whitespace in the job name so the blob key stays decodable', () => {
+    const result = renderPrComment([makeSection({ testJobName: 'test (ubuntu-latest)' })]);
+    expect(result).toContain('<!-- tj-data:test-(ubuntu-latest) ');
+    expect(decodeJobBlobs(result).map((b) => b.key)).toEqual(['test-(ubuntu-latest)']);
+  });
 });
 
 describe('renderPrComment — per-job details', () => {
@@ -248,6 +254,20 @@ describe('mergeTestJobSection — upsert by job key', () => {
     expect(merged).toContain('| e2e |');
     const blobs = decodeJobBlobs(merged);
     expect(blobs.map((b) => b.key)).toEqual(['unit', 'e2e']);
+  });
+
+  it('preserves an existing job when the next job name contains spaces (matrix jobs)', () => {
+    const initial = renderPrComment([
+      makeSection({ testJobName: 'test (ubuntu-latest)', total: 100, passed: 100 }),
+    ]);
+    const merged = mergeTestJobSection(
+      initial,
+      makeSection({ testJobName: 'test (macos-latest)', total: 50, passed: 50 }),
+    );
+    expect(decodeJobBlobs(merged).map((b) => b.key)).toEqual([
+      'test-(ubuntu-latest)',
+      'test-(macos-latest)',
+    ]);
   });
 
   it('replaces an existing job in place without duplicating it', () => {
