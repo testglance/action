@@ -10,13 +10,13 @@ vi.mock('@actions/core', () => ({
 
 import type { PrCommentSection } from '../pr-comment';
 import {
-  renderTestJobSection,
   renderPrComment,
   mergeTestJobSection,
   renderBaseBranchSection,
   renderFlakyCompact,
   renderPerfRegressionCompact,
   renderTrendLine,
+  decodeJobBlobs,
 } from '../pr-comment';
 import type { Highlight, ParsedTestRun } from '../../types';
 import type {
@@ -42,138 +42,260 @@ function makeSection(overrides: Partial<PrCommentSection> = {}): PrCommentSectio
   };
 }
 
-describe('renderTestJobSection', () => {
-  it('renders counts-first headline with job name, strip, and pass rate', () => {
-    const result = renderTestJobSection(makeSection());
-    expect(result).toContain('<!-- tj:ci/test -->');
-    expect(result).toContain('<!-- /tj:ci/test -->');
-    expect(result).toContain('### ci/test · ✅ 313 passed — 100.0%');
-    expect(result).not.toContain('❌ 0 failed');
-    expect(result).toContain('11.2s');
-    expect(result).toContain('🏥 94/100');
-  });
-
-  it('renders failed count in headline strip when present', () => {
-    const result = renderTestJobSection(
-      makeSection({ status: 'failed', total: 315, passed: 313, failed: 2 }),
-    );
-    expect(result).toContain('### ci/test · ✅ 313 passed · ❌ 2 failed');
-  });
-
-  it('renders skipped count in headline strip when present', () => {
-    const result = renderTestJobSection(makeSection({ total: 315, passed: 313, skipped: 2 }));
-    expect(result).toContain('⏭️ 2 skipped');
-  });
-
-  it('renders errored count in headline strip when present', () => {
-    const result = renderTestJobSection(makeSection({ total: 315, passed: 313, errored: 2 }));
-    expect(result).toContain('💥 2 errored');
-  });
-
-  it('omits health score when null', () => {
-    const result = renderTestJobSection(makeSection({ healthScore: null }));
-    expect(result).not.toContain('🏥');
-  });
-
-  it('renders highlights as signal table', () => {
-    const highlights: Highlight[] = [
-      {
-        type: 'new_failures',
-        severity: 'critical',
-        message: '1 new failure',
-        data: { tests: [{ name: 'checkout.payment_flow', suite: 'checkout' }] },
-      },
-      {
-        type: 'new_tests',
-        severity: 'info',
-        message: '2 new tests',
-        data: { count: 2 },
-      },
-    ];
-    const result = renderTestJobSection(makeSection({ highlights }));
-    expect(result).toContain('| Signal | Details |');
-    expect(result).toContain('🔴');
-    expect(result).toContain('🔵');
-  });
-
-  it('renders View Run link when runUrl provided', () => {
-    const result = renderTestJobSection(makeSection());
-    expect(result).toContain('[View Run →](https://www.testglance.dev/runs/run_abc123)');
-  });
-
-  it('omits View Run link when runUrl is undefined', () => {
-    const result = renderTestJobSection(makeSection({ runUrl: undefined }));
-    expect(result).not.toContain('View Run');
-  });
-
-  it('renders clean section without signal table when no highlights', () => {
-    const result = renderTestJobSection(makeSection({ highlights: [] }));
-    expect(result).not.toContain('| Signal | Details |');
-  });
-
-  it('sanitizes testJobName markers to prevent HTML comment breakout', () => {
-    const result = renderTestJobSection(makeSection({ testJobName: 'test-->hack' }));
-    expect(result).toContain('<!-- tj:testhack -->');
-    expect(result).toContain('<!-- /tj:testhack -->');
-  });
-});
-
-describe('renderPrComment', () => {
-  it('wraps sections with top marker, header, and footer', () => {
+describe('renderPrComment — unified table', () => {
+  it('wraps the comment with the top marker, header, and updated footer', () => {
     const result = renderPrComment([makeSection()]);
     expect(result).toContain('<!-- testglance-pr-summary -->');
     expect(result).toContain('## 🔬 TestGlance');
     expect(result).toContain('*Updated ');
   });
 
-  it('separates multiple sections with ---', () => {
-    const sections = [makeSection({ testJobName: 'unit' }), makeSection({ testJobName: 'e2e' })];
-    const result = renderPrComment(sections);
-    expect(result).toContain('<!-- tj:unit -->');
-    expect(result).toContain('<!-- tj:e2e -->');
-    expect(result).toContain('---');
+  it('renders a rollup line summarizing all table jobs', () => {
+    const result = renderPrComment([
+      makeSection({ testJobName: 'test', total: 420, passed: 420, duration: 15.4 }),
+      makeSection({ testJobName: 'test-e2e', total: 18, passed: 18, duration: 94.4 }),
+    ]);
+    expect(result).toContain('✅ 438 passed across 2 jobs — 100.0%');
+  });
+
+  it('uses singular "job" for a single job', () => {
+    const result = renderPrComment([makeSection({ total: 313, passed: 313 })]);
+    expect(result).toContain('across 1 job —');
+  });
+
+  it('renders one table row per job with name, result, pass rate, duration, health, links', () => {
+    const result = renderPrComment([
+      makeSection({
+        testJobName: 'test',
+        total: 420,
+        passed: 420,
+        duration: 15.4,
+        healthScore: 95,
+      }),
+    ]);
+    expect(result).toContain('| Job | Result | Pass rate | Duration | Health |  |');
+    expect(result).toContain(
+      '| test | ✅ | 420/420 · 100.0% | 15.4s | 95 | [Run](https://www.testglance.dev/runs/run_abc123) |',
+    );
+  });
+
+  it('marks failed jobs with 🔴 in the rollup and row', () => {
+    const result = renderPrComment([
+      makeSection({ status: 'failed', total: 100, passed: 98, failed: 2 }),
+    ]);
+    expect(result).toContain('🔴 98 passed, 2 failed across 1 job — 98.0%');
+    expect(result).toContain('| ci/test | 🔴 |');
+  });
+
+  it('renders an em dash for the health cell when health score is null', () => {
+    const result = renderPrComment([makeSection({ healthScore: null })]);
+    expect(result).toContain('| ci/test | ✅ | 313/313 · 100.0% | 11.2s | — |');
+  });
+
+  it('renders an em dash for the links cell when no urls are provided', () => {
+    const result = renderPrComment([makeSection({ runUrl: undefined, artifactUrl: undefined })]);
+    expect(result).toMatch(/\| 11\.2s \| 94 \| — \|/);
+  });
+
+  it('renders the artifact report link alongside the run link', () => {
+    const result = renderPrComment([
+      makeSection({ artifactUrl: 'https://example.com/report.html' }),
+    ]);
+    expect(result).toContain(
+      '[Run](https://www.testglance.dev/runs/run_abc123) · [Report](https://example.com/report.html)',
+    );
+  });
+
+  it('does not render a details block for an all-green job', () => {
+    const result = renderPrComment([makeSection()]);
+    expect(result).not.toContain('<details>');
+  });
+
+  it('renders a single global baseline note when every job lacks baseline data', () => {
+    const result = renderPrComment([
+      makeSection({ testJobName: 'a', baseBranch: 'main', baseDelta: null }),
+      makeSection({ testJobName: 'b', baseBranch: 'main', baseDelta: null }),
+    ]);
+    const matches = result.match(/No base branch data available/g) ?? [];
+    expect(matches).toHaveLength(1);
+    expect(result).toContain('push to `main`');
+  });
+
+  it('omits the baseline note when no job has a base branch configured', () => {
+    const result = renderPrComment([makeSection()]);
+    expect(result).not.toContain('No base branch data available');
+  });
+
+  it('embeds a hidden tj-data blob per job', () => {
+    const result = renderPrComment([makeSection({ testJobName: 'unit' })]);
+    expect(result).toMatch(/<!-- tj-data:unit [A-Za-z0-9+/=]+ -->/);
+  });
+
+  it('sanitizes the job name used as the blob key', () => {
+    const result = renderPrComment([makeSection({ testJobName: 'test-->hack' })]);
+    expect(result).toContain('<!-- tj-data:testhack ');
   });
 });
 
-describe('mergeTestJobSection', () => {
-  const existingBody = [
-    '<!-- testglance-pr-summary -->',
-    '## 🔬 TestGlance Test Summary',
-    '',
-    '<!-- tj:unit -->',
-    '### ✅ unit',
-    '**100 tests** | 5.0s | Health: 90/100',
-    '<!-- /tj:unit -->',
-    '',
-    '---',
-    '',
-    '*Updated 2026-03-18T00:00:00.000Z*',
-  ].join('\n');
+describe('renderPrComment — per-job details', () => {
+  function critical(): Highlight {
+    return {
+      type: 'new_failures',
+      severity: 'critical',
+      message: '1 new failure',
+      data: { tests: [{ name: 'checkout.payment_flow', suite: 'checkout' }] },
+    };
+  }
 
-  it('replaces existing section by marker', () => {
-    const newSection = makeSection({ testJobName: 'unit', total: 200, passed: 200 });
-    const result = mergeTestJobSection(existingBody, newSection);
-    expect(result).toContain('✅ 200 passed');
-    expect(result).not.toContain('**100 tests**');
-    expect(result).toContain('<!-- tj:unit -->');
+  it('does not expand a job whose only highlight is informational', () => {
+    const result = renderPrComment([
+      makeSection({
+        highlights: [
+          {
+            type: 'health_score_delta',
+            severity: 'info',
+            message: 'Health Score: 95 → 95',
+            data: { previous: 95, current: 95, direction: 'flat' },
+          },
+        ],
+      }),
+    ]);
+    expect(result).not.toContain('<details>');
   });
 
-  it('appends new section when not found', () => {
-    const newSection = makeSection({ testJobName: 'e2e', total: 50, passed: 50 });
-    const result = mergeTestJobSection(existingBody, newSection);
-    expect(result).toContain('<!-- tj:unit -->');
-    expect(result).toContain('<!-- tj:e2e -->');
-    expect(result).toContain('✅ 50 passed');
+  it('expands a job with a critical highlight and renders the signal table', () => {
+    const result = renderPrComment([makeSection({ highlights: [critical()] })]);
+    expect(result).toContain('<details>');
+    expect(result).toContain('<summary>🟡 ci/test — details</summary>');
+    expect(result).toContain('| Signal | Details |');
+    expect(result).toContain('🔴');
   });
 
-  it('preserves other TestJob sections', () => {
-    const bodyWithTwo = [
+  it('uses a 🔴 summary marker when the job has failures', () => {
+    const result = renderPrComment([
+      makeSection({
+        status: 'failed',
+        total: 100,
+        passed: 99,
+        failed: 1,
+        highlights: [critical()],
+      }),
+    ]);
+    expect(result).toContain('<summary>🔴 ci/test — details</summary>');
+  });
+
+  it('keeps the progress bar inside the details block', () => {
+    const result = renderPrComment([makeSection({ highlights: [critical()] })]);
+    const detailsIdx = result.indexOf('<details>');
+    const barIdx = result.indexOf('█');
+    expect(detailsIdx).toBeGreaterThanOrEqual(0);
+    expect(barIdx).toBeGreaterThan(detailsIdx);
+  });
+
+  it('renders the trend line inside the details block when present', () => {
+    const result = renderPrComment([
+      makeSection({
+        highlights: [critical()],
+        trends: {
+          passRate: { direction: 'up', current: 97.5, delta: 2.3, sparkline: '' },
+          duration: {
+            direction: 'down',
+            current: 12.4,
+            delta: -1.2,
+            deltaPercent: -8.8,
+            sparkline: '',
+          },
+          testCount: { current: 100, delta: 3 },
+        },
+      }),
+    ]);
+    expect(result).toContain('📈');
+    expect(result).toContain('Pass rate: 97.5% ↑');
+  });
+
+  it('expands a job with base-branch regressions and renders the comparison', () => {
+    const baseDelta: DeltaComparison = {
+      testsAdded: [],
+      testsRemoved: [],
+      newlyFailing: [{ name: 'login.auth', suite: 's' }],
+      newlyPassing: [],
+      passRatePrev: 100,
+      passRateCurr: 99,
+      passRateDelta: -1,
+      durationPrev: 10,
+      durationCurr: 11,
+      durationDelta: 1,
+      durationDeltaPercent: 10,
+      hasChanges: true,
+    };
+    const result = renderPrComment([makeSection({ baseBranch: 'main', baseDelta })]);
+    expect(result).toContain('<details>');
+    expect(result).toContain('🔴 **Regressions:**');
+    expect(result).toContain('`login.auth`');
+  });
+});
+
+describe('mergeTestJobSection — upsert by job key', () => {
+  it('appends a new job, preserving the existing one', () => {
+    const initial = renderPrComment([
+      makeSection({ testJobName: 'unit', total: 100, passed: 100 }),
+    ]);
+    const merged = mergeTestJobSection(
+      initial,
+      makeSection({ testJobName: 'e2e', total: 50, passed: 50 }),
+    );
+    expect(merged).toContain('| unit |');
+    expect(merged).toContain('| e2e |');
+    const blobs = decodeJobBlobs(merged);
+    expect(blobs.map((b) => b.key)).toEqual(['unit', 'e2e']);
+  });
+
+  it('replaces an existing job in place without duplicating it', () => {
+    const initial = renderPrComment([
+      makeSection({ testJobName: 'unit', total: 100, passed: 100 }),
+    ]);
+    const merged = mergeTestJobSection(
+      initial,
+      makeSection({ testJobName: 'unit', total: 200, passed: 200 }),
+    );
+    expect(merged).toContain('200/200 · 100.0%');
+    expect(merged).not.toContain('100/100');
+    const blobs = decodeJobBlobs(merged);
+    expect(blobs).toHaveLength(1);
+    expect(blobs[0].key).toBe('unit');
+  });
+
+  it('preserves job order across multiple merges', () => {
+    let body = renderPrComment([makeSection({ testJobName: 'unit' })]);
+    body = mergeTestJobSection(body, makeSection({ testJobName: 'integration' }));
+    body = mergeTestJobSection(body, makeSection({ testJobName: 'e2e' }));
+    body = mergeTestJobSection(
+      body,
+      makeSection({ testJobName: 'integration', passed: 1, total: 1 }),
+    );
+    expect(decodeJobBlobs(body).map((b) => b.key)).toEqual(['unit', 'integration', 'e2e']);
+  });
+
+  it('rebuilds from only the incoming job when the existing comment has no blobs (legacy)', () => {
+    const legacyBody = [
       '<!-- testglance-pr-summary -->',
-      '## 🔬 TestGlance Test Summary',
+      '## 🔬 TestGlance',
+      '### old-job',
+      '*Updated 2026-03-18T00:00:00.000Z*',
+    ].join('\n');
+    const merged = mergeTestJobSection(legacyBody, makeSection({ testJobName: 'unit' }));
+    expect(decodeJobBlobs(merged).map((b) => b.key)).toEqual(['unit']);
+    expect(merged).toContain('| unit |');
+  });
+
+  it('preserves sibling jobs from a pre-blob comment (old tj: markers, no blobs)', () => {
+    const legacyBody = [
+      '<!-- testglance-pr-summary -->',
+      '## 🔬 TestGlance',
       '',
       '<!-- tj:unit -->',
       '### ✅ unit',
-      '**100 tests** | 5.0s',
+      '**100 tests** | 5.0s | Health: 90/100',
       '<!-- /tj:unit -->',
       '',
       '---',
@@ -183,80 +305,151 @@ describe('mergeTestJobSection', () => {
       '**20 tests** | 30.0s',
       '<!-- /tj:e2e -->',
       '',
-      '---',
-      '',
       '*Updated 2026-03-18T00:00:00.000Z*',
     ].join('\n');
 
-    const newSection = makeSection({ testJobName: 'unit', total: 150, passed: 150 });
-    const result = mergeTestJobSection(bodyWithTwo, newSection);
-    expect(result).toContain('✅ 150 passed');
-    expect(result).toContain('<!-- tj:e2e -->');
-    expect(result).toContain('**20 tests**');
+    const merged = mergeTestJobSection(
+      legacyBody,
+      makeSection({ testJobName: 'unit', passed: 1, total: 1 }),
+    );
+    const keys = decodeJobBlobs(merged).map((b) => b.key);
+    expect(keys).toContain('unit');
+    expect(keys).toContain('e2e');
+    expect(merged).toContain('**20 tests**');
   });
 });
 
-describe('PR comment tests-changed compact summary', () => {
-  function makeTestsChanged(overrides: Partial<TestsChangedReport> = {}): TestsChangedReport {
-    return {
-      newTests: [],
-      removedTests: [],
-      statusChanged: [],
-      hasChanges: true,
-      ...overrides,
+describe('tj-data blob round-trip', () => {
+  it('decodes the data embedded by the renderer', () => {
+    const body = renderPrComment([
+      makeSection({ testJobName: 'unit', total: 200, passed: 198, failed: 2, healthScore: 88 }),
+    ]);
+    const [job] = decodeJobBlobs(body);
+    expect(job.key).toBe('unit');
+    expect(job.passed).toBe(198);
+    expect(job.failed).toBe(2);
+    expect(job.healthScore).toBe(88);
+  });
+
+  it('skips malformed blobs without throwing', () => {
+    const body = [
+      renderPrComment([makeSection({ testJobName: 'unit' })]),
+      '<!-- tj-data:broken @@@not-base64@@@ -->',
+    ].join('\n');
+    const blobs = decodeJobBlobs(body);
+    expect(blobs.map((b) => b.key)).toEqual(['unit']);
+  });
+
+  it('keeps blob payloads inside HTML comments so they stay hidden', () => {
+    const body = renderPrComment([makeSection({ testJobName: 'unit' })]);
+    const blobLine = body.split('\n').find((l) => l.includes('tj-data:unit'));
+    expect(blobLine).toMatch(/^<!--.*-->$/);
+  });
+});
+
+describe('errored tests are treated as failures', () => {
+  it('marks an errored-but-not-failed job 🔴 in the row and rollup', () => {
+    const result = renderPrComment([
+      makeSection({ status: 'passed', total: 100, passed: 98, failed: 0, errored: 2 }),
+    ]);
+    expect(result).toContain('| ci/test | 🔴 |');
+    expect(result).toContain('🔴 98 passed, 2 errored across 1 job —');
+  });
+
+  it('expands an errored job and surfaces the errored count', () => {
+    const result = renderPrComment([
+      makeSection({ status: 'passed', total: 100, passed: 98, failed: 0, errored: 2 }),
+    ]);
+    expect(result).toContain('<details>');
+    expect(result).toContain('<summary>🔴 ci/test — details</summary>');
+    expect(result).toContain('💥 2 errored');
+  });
+
+  it('surfaces skipped counts in the details metrics strip', () => {
+    const result = renderPrComment([
+      makeSection({ status: 'failed', total: 100, passed: 97, failed: 1, skipped: 2 }),
+    ]);
+    expect(result).toContain('⏭️ 2 skipped');
+  });
+});
+
+describe('trend indicators are not lost on quiet jobs', () => {
+  it('shows trend arrows in the table row for an all-green job with trends', () => {
+    const result = renderPrComment([
+      makeSection({
+        trends: {
+          passRate: { direction: 'up', current: 100, delta: 1, sparkline: '' },
+          duration: {
+            direction: 'down',
+            current: 11.2,
+            delta: -1,
+            deltaPercent: -8,
+            sparkline: '',
+          },
+          testCount: { current: 313, delta: 0 },
+        },
+      }),
+    ]);
+    expect(result).not.toContain('<details>');
+    expect(result).toMatch(/100\.0% ↑ \| 11\.2s ↓ \|/);
+  });
+});
+
+describe('baseline note', () => {
+  it('surfaces the note when only some jobs lack baseline data (mixed)', () => {
+    const withData: DeltaComparison = {
+      testsAdded: [],
+      testsRemoved: [],
+      newlyFailing: [],
+      newlyPassing: [],
+      passRatePrev: 100,
+      passRateCurr: 100,
+      passRateDelta: 0,
+      durationPrev: 5,
+      durationCurr: 5,
+      durationDelta: 0,
+      durationDeltaPercent: 0,
+      hasChanges: false,
     };
-  }
-
-  it('compact summary line renders with correct counts', () => {
-    const tc = makeTestsChanged({
-      newTests: [
-        { name: 'a', suite: 's', status: 'passed', duration: 0.1 },
-        { name: 'b', suite: 's', status: 'passed', duration: 0.1 },
-        { name: 'c', suite: 's', status: 'passed', duration: 0.1 },
-        { name: 'd', suite: 's', status: 'passed', duration: 0.1 },
-        { name: 'e', suite: 's', status: 'passed', duration: 0.1 },
-      ],
-      removedTests: [{ name: 'r', suite: 's', status: 'passed', duration: 0.1 }],
-      statusChanged: [
-        { name: 'x', suite: 's', status: 'failed', duration: 0.1, previousStatus: 'passed' },
-        { name: 'y', suite: 's', status: 'passed', duration: 0.1, previousStatus: 'failed' },
-      ],
-    });
-    const result = renderTestJobSection(makeSection({ testsChanged: tc }));
-    expect(result).toContain('📝 5 new tests, 1 removed, 2 status changes');
+    const result = renderPrComment([
+      makeSection({ testJobName: 'a', baseBranch: 'main', baseDelta: withData }),
+      makeSection({ testJobName: 'b', baseBranch: 'main', baseDelta: null }),
+    ]);
+    expect(result).toContain('No base branch data available');
+    expect(result).toContain('push to `main`');
   });
+});
 
-  it('newly failing tests highlighted with warning emoji', () => {
-    const tc = makeTestsChanged({
-      statusChanged: [
-        { name: 'x', suite: 's', status: 'failed', duration: 0.1, previousStatus: 'passed' },
-      ],
-    });
-    const result = renderTestJobSection(makeSection({ testsChanged: tc }));
-    expect(result).toContain('⚠️ 1 newly failing');
+describe('comment size cap', () => {
+  it('keeps the full comment (visible + blobs) within the limit', () => {
+    const huge = 'x'.repeat(5000);
+    const sections = Array.from({ length: 40 }, (_, i) =>
+      makeSection({
+        testJobName: `job-${i}`,
+        status: 'failed',
+        total: 100,
+        passed: 50,
+        failed: 50,
+        highlights: [
+          {
+            type: 'new_failures',
+            severity: 'critical',
+            message: huge,
+            data: { tests: [{ name: huge, suite: huge }] },
+          },
+        ],
+      }),
+    );
+    const result = renderPrComment(sections);
+    expect(result.length).toBeLessThanOrEqual(60_000);
   });
+});
 
-  it('counts passed→errored as newly failing', () => {
-    const tc = makeTestsChanged({
-      statusChanged: [
-        { name: 'x', suite: 's', status: 'errored', duration: 0.1, previousStatus: 'passed' },
-      ],
-    });
-    const result = renderTestJobSection(makeSection({ testsChanged: tc }));
-    expect(result).toContain('⚠️ 1 newly failing');
-  });
-
-  it('summary line omitted when no changes', () => {
-    const tc = makeTestsChanged({ hasChanges: false });
-    const result = renderTestJobSection(makeSection({ testsChanged: tc }));
-    expect(result).not.toContain('📝');
-    expect(result).not.toContain('⚠️');
-  });
-
-  it('summary line omitted when testsChanged is null', () => {
-    const result = renderTestJobSection(makeSection({ testsChanged: null }));
-    expect(result).not.toContain('📝');
-    expect(result).not.toContain('⚠️');
+describe('table cell escaping', () => {
+  it('percent-encodes parentheses in link URLs so the link does not break', () => {
+    const result = renderPrComment([makeSection({ artifactUrl: 'https://ex.com/report(1).html' })]);
+    expect(result).toContain('https://ex.com/report%281%29.html');
+    expect(result).not.toContain('report(1).html');
   });
 });
 
@@ -342,65 +535,38 @@ describe('renderBaseBranchSection', () => {
   });
 });
 
-describe('renderTestJobSection with baseDelta', () => {
-  function makeDelta(overrides: Partial<DeltaComparison> = {}): DeltaComparison {
+describe('tests-changed compact summary', () => {
+  function makeTestsChanged(overrides: Partial<TestsChangedReport> = {}): TestsChangedReport {
     return {
-      testsAdded: [],
-      testsRemoved: [],
-      newlyFailing: [],
-      newlyPassing: [],
-      passRatePrev: 100.0,
-      passRateCurr: 100.0,
-      passRateDelta: 0,
-      durationPrev: 5.0,
-      durationCurr: 5.0,
-      durationDelta: 0,
-      durationDeltaPercent: 0,
-      hasChanges: false,
+      newTests: [],
+      removedTests: [],
+      statusChanged: [],
+      hasChanges: true,
       ...overrides,
     };
   }
 
-  it('includes base branch section when baseBranch and baseDelta are set', () => {
-    const result = renderTestJobSection(
-      makeSection({ baseBranch: 'main', baseDelta: makeDelta() }),
-    );
-    expect(result).toContain('No regressions vs `main`');
+  it('renders the compact line with correct counts inside details', () => {
+    const tc = makeTestsChanged({
+      newTests: [
+        { name: 'a', suite: 's', status: 'passed', duration: 0.1 },
+        { name: 'b', suite: 's', status: 'passed', duration: 0.1 },
+      ],
+      removedTests: [{ name: 'r', suite: 's', status: 'passed', duration: 0.1 }],
+      statusChanged: [
+        { name: 'x', suite: 's', status: 'failed', duration: 0.1, previousStatus: 'passed' },
+      ],
+    });
+    const result = renderPrComment([makeSection({ testsChanged: tc })]);
+    expect(result).toContain('<details>');
+    expect(result).toContain('⚠️ 1 newly failing | 📝 2 new tests, 1 removed, 1 status changes');
   });
 
-  it('includes no-data message when baseDelta is null with baseBranch set', () => {
-    const result = renderTestJobSection(makeSection({ baseBranch: 'main', baseDelta: null }));
-    expect(result).toContain('No base branch data available');
-  });
-
-  it('omits base branch section when baseBranch is not set', () => {
-    const result = renderTestJobSection(makeSection({ baseDelta: null }));
-    expect(result).not.toContain('base branch');
-  });
-
-  it('places base branch section between highlights and testsChanged', () => {
-    const tc: TestsChangedReport = {
-      newTests: [{ name: 'a', suite: 's', status: 'passed', duration: 0.1 }],
-      removedTests: [],
-      statusChanged: [],
-      hasChanges: true,
-    };
-    const result = renderTestJobSection(
-      makeSection({
-        baseBranch: 'main',
-        baseDelta: makeDelta(),
-        testsChanged: tc,
-        highlights: [
-          { type: 'new_tests', severity: 'info', message: '1 new test', data: { count: 1 } },
-        ],
-      }),
-    );
-
-    const highlightsIdx = result.indexOf('| Signal | Details |');
-    const baseBranchIdx = result.indexOf('No regressions vs');
-    const testsChangedIdx = result.indexOf('📝');
-    expect(highlightsIdx).toBeLessThan(baseBranchIdx);
-    expect(baseBranchIdx).toBeLessThan(testsChangedIdx);
+  it('does not expand a job when testsChanged has no changes', () => {
+    const result = renderPrComment([
+      makeSection({ testsChanged: makeTestsChanged({ hasChanges: false }) }),
+    ]);
+    expect(result).not.toContain('<details>');
   });
 });
 
@@ -483,51 +649,25 @@ describe('renderFlakyCompact', () => {
     expect(output).toBe('⚠️ 1 flaky test: ``test `with` tick line2``');
   });
 
-  it('is wired into renderTestJobSection after testsChanged', () => {
-    const section = makeSection({
-      flaky: {
-        hasFlakyTests: true,
-        flakyTests: [
-          {
-            name: 'flaky_test',
-            suite: 'suite',
-            flakyRate: 50,
-            flipCount: 2,
-            recentStatuses: ['passed', 'failed', 'passed'],
-          },
-        ],
-      },
-    });
-    const result = renderTestJobSection(section);
+  it('is wired into the job details block', () => {
+    const result = renderPrComment([
+      makeSection({
+        flaky: {
+          hasFlakyTests: true,
+          flakyTests: [
+            {
+              name: 'flaky_test',
+              suite: 'suite',
+              flakyRate: 50,
+              flipCount: 2,
+              recentStatuses: ['passed', 'failed', 'passed'],
+            },
+          ],
+        },
+      }),
+    ]);
+    expect(result).toContain('<details>');
     expect(result).toContain('⚠️ 1 flaky test: `flaky_test`');
-  });
-
-  it('flaky section appears after testsChanged in renderTestJobSection', () => {
-    const testsChanged: TestsChangedReport = {
-      newTests: [{ name: 'new_test', suite: 'suite', status: 'passed', duration: 1.0 }],
-      removedTests: [],
-      statusChanged: [],
-      hasChanges: true,
-    };
-    const section = makeSection({
-      testsChanged,
-      flaky: {
-        hasFlakyTests: true,
-        flakyTests: [
-          {
-            name: 'flaky_test',
-            suite: 'suite',
-            flakyRate: 50,
-            flipCount: 2,
-            recentStatuses: ['passed', 'failed', 'passed'],
-          },
-        ],
-      },
-    });
-    const result = renderTestJobSection(section);
-    const testsChangedIdx = result.indexOf('📝');
-    const flakyIdx = result.indexOf('⚠️ 1 flaky test');
-    expect(testsChangedIdx).toBeLessThan(flakyIdx);
   });
 });
 
@@ -621,58 +761,26 @@ describe('renderPerfRegressionCompact', () => {
     expect(output).toContain('``test `with` ticks``');
   });
 
-  it('is wired into renderTestJobSection after flaky', () => {
-    const section = makeSection({
-      perfRegression: {
-        hasRegressions: true,
-        regressions: [
-          {
-            name: 'slow_test',
-            suite: 'suite',
-            currentDuration: 10.0,
-            medianDuration: 1.0,
-            increasePercent: 900,
-          },
-        ],
-        sparkline: '▁',
-      },
-    });
-    const result = renderTestJobSection(section);
+  it('is wired into the job details block', () => {
+    const result = renderPrComment([
+      makeSection({
+        perfRegression: {
+          hasRegressions: true,
+          regressions: [
+            {
+              name: 'slow_test',
+              suite: 'suite',
+              currentDuration: 10.0,
+              medianDuration: 1.0,
+              increasePercent: 900,
+            },
+          ],
+          sparkline: '▁',
+        },
+      }),
+    ]);
+    expect(result).toContain('<details>');
     expect(result).toContain('🐌 1 slower test: `slow_test` (+900%)');
-  });
-
-  it('perf section appears after flaky in renderTestJobSection', () => {
-    const section = makeSection({
-      flaky: {
-        hasFlakyTests: true,
-        flakyTests: [
-          {
-            name: 'flaky_test',
-            suite: 'suite',
-            flakyRate: 50,
-            flipCount: 2,
-            recentStatuses: ['passed', 'failed', 'passed'],
-          },
-        ],
-      },
-      perfRegression: {
-        hasRegressions: true,
-        regressions: [
-          {
-            name: 'slow_test',
-            suite: 'suite',
-            currentDuration: 10.0,
-            medianDuration: 1.0,
-            increasePercent: 900,
-          },
-        ],
-        sparkline: '▁',
-      },
-    });
-    const result = renderTestJobSection(section);
-    const flakyIdx = result.indexOf('⚠️ 1 flaky test');
-    const perfIdx = result.indexOf('🐌 1 slower test');
-    expect(flakyIdx).toBeLessThan(perfIdx);
   });
 });
 
@@ -727,42 +835,7 @@ describe('renderTrendLine', () => {
   });
 });
 
-describe('renderTestJobSection with trends', () => {
-  it('includes trend line when trends present', () => {
-    const section = makeSection({ trends: makeTrends() });
-    const result = renderTestJobSection(section);
-    expect(result).toContain('📈');
-    expect(result).toContain('Pass rate: 97.5% ↑');
-  });
-
-  it('omits trend line when trends is null', () => {
-    const section = makeSection({ trends: null });
-    const result = renderTestJobSection(section);
-    expect(result).not.toContain('📈');
-  });
-
-  it('omits trend line when trends is undefined', () => {
-    const section = makeSection();
-    const result = renderTestJobSection(section);
-    expect(result).not.toContain('📈');
-  });
-
-  it('renders trend line between stats and highlights', () => {
-    const section = makeSection({
-      trends: makeTrends(),
-      highlights: [
-        { type: 'new_tests', severity: 'info' as const, message: 'msg', data: { count: 5 } },
-      ],
-    });
-    const result = renderTestJobSection(section);
-    const trendIdx = result.indexOf('📈');
-    const highlightIdx = result.indexOf('| Signal |');
-    expect(trendIdx).toBeGreaterThan(0);
-    expect(trendIdx).toBeLessThan(highlightIdx);
-  });
-});
-
-describe('renderTestJobSection with comment-template', () => {
+describe('custom comment template', () => {
   const FIXTURES = path.resolve(__dirname, 'fixtures');
   const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 
@@ -811,7 +884,7 @@ describe('renderTestJobSection with comment-template', () => {
     else process.env.GITHUB_WORKSPACE = prevWorkspace;
   });
 
-  it('renders custom comment body wrapped in job-section markers', () => {
+  it('renders a custom-template job as a standalone block below the table', () => {
     const tplPath = path.join(FIXTURES, '__tmp-comment.hbs');
     fs.writeFileSync(tplPath, 'CUSTOM BODY for {{meta.jobName}}: {{results.passRate}}%', 'utf8');
     try {
@@ -820,37 +893,38 @@ describe('renderTestJobSection with comment-template', () => {
         parsed: makeParsed(),
         meta,
       });
-      const result = renderTestJobSection(section);
-      expect(result.startsWith('<!-- tj:ci/test -->')).toBe(true);
-      expect(result.endsWith('<!-- /tj:ci/test -->')).toBe(true);
-      expect(result).toContain('CUSTOM BODY for ci/test: 95.0%');
-      expect(result).not.toContain('### ✅');
+      const result = renderPrComment([section]);
+      expect(result).toContain(
+        '<!-- tj:ci/test -->\nCUSTOM BODY for ci/test: 95.0%\n<!-- /tj:ci/test -->',
+      );
+      expect(result).not.toContain('| Job | Result |');
       expect(mockCoreWarning).not.toHaveBeenCalled();
     } finally {
       fs.unlinkSync(tplPath);
     }
   });
 
-  it('falls back to default rendering when template is invalid', () => {
+  it('falls back to a normal table row when the template is invalid', () => {
     const section = makeSection({
       commentTemplate: '/no/such/comment.hbs',
       parsed: makeParsed(),
       meta,
     });
-    const result = renderTestJobSection(section);
-    expect(result).toContain('### ci/test ·');
+    const result = renderPrComment([section]);
+    expect(result).toContain('| ci/test | ✅ |');
+    expect(result).not.toContain('### ci/test');
     expect(mockCoreWarning).toHaveBeenCalledWith(
       expect.stringContaining('Custom comment template failed'),
     );
   });
 
-  it('does not invoke template renderer when commentTemplate is absent', () => {
-    const result = renderTestJobSection(makeSection({ parsed: makeParsed(), meta }));
-    expect(result).toContain('### ci/test ·');
+  it('does not invoke the template renderer when commentTemplate is absent', () => {
+    const result = renderPrComment([makeSection({ parsed: makeParsed(), meta })]);
+    expect(result).toContain('| ci/test | ✅ |');
     expect(mockCoreWarning).not.toHaveBeenCalled();
   });
 
-  it('mergeTestJobSection swaps custom-rendered section between markers', () => {
+  it('merges custom-template jobs by key, replacing in place', () => {
     const tplPath = path.join(FIXTURES, '__tmp-comment-merge.hbs');
     fs.writeFileSync(tplPath, 'CUSTOM-{{meta.jobName}}', 'utf8');
     try {
@@ -888,39 +962,27 @@ describe('renderTestJobSection with comment-template', () => {
     }
   });
 
-  it('strips embedded job-section markers from rendered comment body', () => {
+  it('strips embedded job-section markers from the custom body', () => {
     const tplPath = path.join(FIXTURES, '__tmp-marker-inject.hbs');
     fs.writeFileSync(tplPath, 'before<!-- tj:evil -->mid<!-- /tj:evil -->after', 'utf8');
     try {
-      const sectionA = makeSection({
+      const section = makeSection({
         testJobName: 'job-a',
         commentTemplate: tplPath,
         parsed: makeParsed(),
         meta: { ...meta, jobName: 'job-a' },
       });
-      const sectionB = makeSection({
-        testJobName: 'job-b',
-        commentTemplate: tplPath,
-        parsed: makeParsed(),
-        meta: { ...meta, jobName: 'job-b' },
-      });
-
-      const body = renderPrComment([sectionA]);
+      const body = renderPrComment([section]);
       expect(body).not.toContain('<!-- tj:evil -->');
       expect(body).not.toContain('<!-- /tj:evil -->');
       expect(body).toContain('beforemidafter');
-
-      const merged = mergeTestJobSection(body, sectionB);
-      expect(merged).toContain('<!-- tj:job-a -->');
-      expect(merged).toContain('<!-- /tj:job-a -->');
-      expect(merged).toContain('<!-- tj:job-b -->');
-      expect(merged).toContain('<!-- /tj:job-b -->');
+      expect(body).toContain('<!-- tj:job-a -->');
     } finally {
       fs.unlinkSync(tplPath);
     }
   });
 
-  it('falls back to "tests" marker when sanitized job name is empty', () => {
+  it('falls back to the "tests" marker when the sanitized job name is empty', () => {
     const tplPath = path.join(FIXTURES, '__tmp-empty-job.hbs');
     fs.writeFileSync(tplPath, 'BODY', 'utf8');
     try {
@@ -930,9 +992,8 @@ describe('renderTestJobSection with comment-template', () => {
         parsed: makeParsed(),
         meta: { ...meta, jobName: 'whatever' },
       });
-      const result = renderTestJobSection(section);
-      expect(result.startsWith('<!-- tj:tests -->')).toBe(true);
-      expect(result.endsWith('<!-- /tj:tests -->')).toBe(true);
+      const result = renderPrComment([section]);
+      expect(result).toContain('<!-- tj:tests -->\nBODY\n<!-- /tj:tests -->');
     } finally {
       fs.unlinkSync(tplPath);
     }

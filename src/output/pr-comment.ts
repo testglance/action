@@ -9,6 +9,7 @@ import type {
   TrendIndicators,
 } from '../history/types';
 import {
+  escapeHtml,
   formatDuration,
   formatDurationPair,
   renderMetricsStrip,
@@ -47,8 +48,46 @@ export interface PrCommentSection {
   meta?: TemplateContextMeta;
 }
 
+/**
+ * Per-job state persisted inside the comment as a hidden `tj-data` blob. Each
+ * job runs as a separate Action invocation and only knows its own data, so the
+ * whole comment is re-rendered from the decoded blobs of every job on each
+ * merge. This is what lets independent jobs share one consolidated table.
+ *
+ * Jobs that use a custom comment template can't fold into the shared table, so
+ * they carry their pre-rendered `customBody` and render as standalone blocks.
+ */
+export interface StoredJobData {
+  key: string;
+  testJobName: string;
+  customBody?: string;
+  status?: 'passed' | 'failed';
+  total?: number;
+  passed?: number;
+  failed?: number;
+  skipped?: number;
+  errored?: number;
+  duration?: number;
+  healthScore?: number | null;
+  highlights?: Highlight[];
+  runUrl?: string;
+  artifactUrl?: string;
+  testsChanged?: TestsChangedReport | null;
+  baseDelta?: DeltaComparison | null;
+  baseBranch?: string;
+  flaky?: FlakyDetectionResult | null;
+  perfRegression?: PerfRegressionResult | null;
+  trends?: TrendIndicators | null;
+}
+
+const SUMMARY_MARKER = '<!-- testglance-pr-summary -->';
 const MAX_RENDERED_COMMENT_BYTES = 60_000;
-const TJ_MARKER_PATTERN = /<!--\s*\/?\s*tj:[^>]*-->/g;
+const TJ_DATA_PATTERN = /<!--\s*tj-data:(\S+)\s+([A-Za-z0-9+/=]+)\s*-->/g;
+const MARKER_STRIP_PATTERN = /<!--\s*\/?\s*tj(?:-data)?:[^>]*-->/g;
+// Pre-blob comments wrapped each job in <!-- tj:KEY -->…<!-- /tj:KEY -->. Used to
+// preserve those jobs (as opaque standalone blocks) when migrating an existing
+// comment that has no tj-data blobs yet.
+const LEGACY_SECTION_PATTERN = /<!--\s*tj:(\S+?)\s*-->\n?([\s\S]*?)\n?<!--\s*\/tj:\1\s*-->/g;
 
 const SEVERITY_EMOJI: Record<HighlightSeverity, string> = {
   critical: '🔴',
@@ -67,14 +106,33 @@ function sanitizeMarkerName(name: string): string {
   return stripped.length > 0 ? stripped : 'tests';
 }
 
-function stripTjMarkers(body: string): string {
-  return body.replace(TJ_MARKER_PATTERN, '');
+function stripMarkers(body: string): string {
+  return body.replace(MARKER_STRIP_PATTERN, '');
 }
 
-function capCommentBody(body: string, label: string): string {
-  if (body.length <= MAX_RENDERED_COMMENT_BYTES) return body;
-  const truncated = body.slice(0, MAX_RENDERED_COMMENT_BYTES);
-  return `${truncated}\n\n_…rendered ${label} truncated to ${MAX_RENDERED_COMMENT_BYTES} chars to fit GitHub PR comment limit._`;
+function escapeTableCell(value: string): string {
+  return escapeHtml(value.replace(/\r?\n/g, ' ')).replace(/\|/g, '\\|');
+}
+
+// Markdown inline-link URLs break on unescaped spaces and parentheses; percent-
+// encode them so an artifact/run URL with those chars doesn't truncate the link.
+function escapeLinkUrl(url: string): string {
+  return url.replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29');
+}
+
+function capVisibleBody(
+  body: string,
+  label: string,
+  maxBytes: number = MAX_RENDERED_COMMENT_BYTES,
+): string {
+  if (body.length <= maxBytes) return body;
+  const notice = `\n\n_…rendered ${label} truncated to fit GitHub PR comment limit._`;
+  const room = Math.max(0, maxBytes - notice.length);
+  return body.slice(0, room) + notice;
+}
+
+function passRate(passed: number, total: number): string {
+  return total > 0 ? ((passed / total) * 100).toFixed(1) : '0.0';
 }
 
 function renderHighlightRow(h: Highlight): string {
@@ -198,111 +256,6 @@ export function renderTrendLine(trends: TrendIndicators): string {
   return `📈 ${passStr} · ${durStr} · ${countStr}`;
 }
 
-export function renderTestJobSection(section: PrCommentSection): string {
-  const safeKey = sanitizeMarkerName(section.testJobName);
-
-  if (section.commentTemplate) {
-    if (!section.parsed || !section.meta) {
-      core.warning(
-        'Custom comment template provided but parsed/meta context is missing. Falling back to default comment.',
-      );
-    } else {
-      const context = buildTemplateContext({
-        parsed: section.parsed,
-        meta: section.meta,
-        delta: section.delta ?? null,
-        flaky: section.flaky ?? null,
-        trends: section.trends ?? null,
-        perfRegression: section.perfRegression ?? null,
-        history: section.history ?? null,
-        slowestLimit: section.slowestLimit,
-      });
-      const rendered = renderTemplate(section.commentTemplate, context, { label: 'comment' });
-      if (rendered !== null) {
-        const safe = capCommentBody(stripTjMarkers(rendered), 'comment');
-        return `<!-- tj:${safeKey} -->\n${safe}\n<!-- /tj:${safeKey} -->`;
-      }
-    }
-  }
-
-  const passRate = section.total > 0 ? ((section.passed / section.total) * 100).toFixed(1) : '0.0';
-  const counts = {
-    passed: section.passed,
-    failed: section.failed,
-    skipped: section.skipped ?? 0,
-    errored: section.errored ?? 0,
-  };
-
-  const lines: string[] = [];
-  lines.push(`<!-- tj:${safeKey} -->`);
-  lines.push(`### ${section.testJobName} · ${renderMetricsStrip(counts)} — ${passRate}%`);
-  lines.push(renderProgressBar(Number(passRate)));
-
-  let statsLine = `⏱️ ${formatDuration(section.duration)}`;
-  if (section.healthScore !== null && section.healthScore !== undefined) {
-    statsLine += ` · 🏥 ${section.healthScore}/100`;
-  }
-  lines.push(statsLine);
-
-  if (section.trends) {
-    lines.push(renderTrendLine(section.trends));
-  }
-
-  const hasDetails =
-    section.highlights.length > 0 ||
-    (section.baseBranch && section.baseDelta !== undefined) ||
-    (section.testsChanged && section.testsChanged.hasChanges) ||
-    (section.flaky && section.flaky.hasFlakyTests) ||
-    (section.perfRegression && section.perfRegression.hasRegressions);
-
-  if (hasDetails) {
-    lines.push('');
-    lines.push('---');
-    lines.push('');
-  }
-
-  if (section.highlights.length > 0) {
-    const sorted = [...section.highlights].sort(
-      (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
-    );
-    lines.push('| Signal | Details |');
-    lines.push('|--------|---------|');
-    for (const h of sorted) {
-      lines.push(renderHighlightRow(h));
-    }
-    lines.push('');
-  }
-
-  if (section.baseBranch && section.baseDelta !== undefined) {
-    lines.push(renderBaseBranchSection(section.baseDelta, section.baseBranch));
-    lines.push('');
-  }
-
-  if (section.testsChanged && section.testsChanged.hasChanges) {
-    lines.push(renderTestsChangedCompact(section.testsChanged));
-    lines.push('');
-  }
-
-  if (section.flaky && section.flaky.hasFlakyTests) {
-    lines.push(renderFlakyCompact(section.flaky));
-    lines.push('');
-  }
-
-  if (section.perfRegression && section.perfRegression.hasRegressions) {
-    lines.push(renderPerfRegressionCompact(section.perfRegression));
-    lines.push('');
-  }
-
-  const links: string[] = [];
-  if (section.runUrl) links.push(`[View Run →](${section.runUrl})`);
-  if (section.artifactUrl) links.push(`[📄 HTML Report](${section.artifactUrl})`);
-  if (links.length > 0) lines.push(links.join(' · '));
-
-  lines.push(`<!-- /tj:${safeKey} -->`);
-
-  return lines.join('\n');
-}
-
 function renderTestsChangedCompact(report: TestsChangedReport): string {
   const parts: string[] = [];
   if (report.newTests.length > 0) parts.push(`${report.newTests.length} new tests`);
@@ -364,57 +317,347 @@ export function renderPerfRegressionCompact(result: PerfRegressionResult): strin
   return `🐌 ${total} slower test${total === 1 ? '' : 's'}: ${names}`;
 }
 
-export function renderPrComment(sections: PrCommentSection[]): string {
+function renderCustomBody(section: PrCommentSection): string | null {
+  if (!section.commentTemplate) return null;
+  if (!section.parsed || !section.meta) {
+    core.warning(
+      'Custom comment template provided but parsed/meta context is missing. Falling back to default comment.',
+    );
+    return null;
+  }
+
+  const context = buildTemplateContext({
+    parsed: section.parsed,
+    meta: section.meta,
+    delta: section.delta ?? null,
+    flaky: section.flaky ?? null,
+    trends: section.trends ?? null,
+    perfRegression: section.perfRegression ?? null,
+    history: section.history ?? null,
+    slowestLimit: section.slowestLimit,
+  });
+  const rendered = renderTemplate(section.commentTemplate, context, { label: 'comment' });
+  if (rendered === null) return null;
+  return capVisibleBody(stripMarkers(rendered), 'comment');
+}
+
+export function toStoredJobData(section: PrCommentSection): StoredJobData {
+  const key = sanitizeMarkerName(section.testJobName);
+  const customBody = renderCustomBody(section);
+  if (customBody !== null) {
+    return { key, testJobName: section.testJobName, customBody };
+  }
+
+  return {
+    key,
+    testJobName: section.testJobName,
+    status: section.status,
+    total: section.total,
+    passed: section.passed,
+    failed: section.failed,
+    skipped: section.skipped,
+    errored: section.errored,
+    duration: section.duration,
+    healthScore: section.healthScore ?? null,
+    highlights: section.highlights ?? [],
+    runUrl: section.runUrl,
+    artifactUrl: section.artifactUrl,
+    testsChanged: section.testsChanged ?? null,
+    baseDelta: section.baseDelta ?? undefined,
+    baseBranch: section.baseBranch,
+    flaky: section.flaky ?? null,
+    perfRegression: section.perfRegression ?? null,
+    trends: section.trends ?? null,
+  };
+}
+
+const MAX_BLOB_BYTES = 40_000;
+
+function encodeJobBlob(job: StoredJobData): string {
+  const b64 = Buffer.from(JSON.stringify(job), 'utf8').toString('base64');
+  return `<!-- tj-data:${job.key} ${b64} -->`;
+}
+
+// The summary fields needed to keep a job's table row and rollup intact, without
+// the heavy detail arrays. Used as a fallback so the comment stays under
+// GitHub's limit when full per-job state would overflow it.
+function summaryOnlyJob(job: StoredJobData): StoredJobData {
+  return {
+    key: job.key,
+    testJobName: job.testJobName,
+    customBody: job.customBody,
+    status: job.status,
+    total: job.total,
+    passed: job.passed,
+    failed: job.failed,
+    skipped: job.skipped,
+    errored: job.errored,
+    duration: job.duration,
+    healthScore: job.healthScore,
+    runUrl: job.runUrl,
+    artifactUrl: job.artifactUrl,
+    baseBranch: job.baseBranch,
+  };
+}
+
+function encodeJobBlobs(jobs: StoredJobData[]): string {
+  const full = jobs.map(encodeJobBlob).join('\n');
+  if (full.length <= MAX_BLOB_BYTES) return full;
+  return jobs.map((j) => encodeJobBlob(summaryOnlyJob(j))).join('\n');
+}
+
+export function decodeJobBlobs(body: string): StoredJobData[] {
+  const out: StoredJobData[] = [];
+  const re = new RegExp(TJ_DATA_PATTERN.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(body)) !== null) {
+    try {
+      const json = Buffer.from(match[2], 'base64').toString('utf8');
+      const data = JSON.parse(json) as StoredJobData;
+      if (data && typeof data.key === 'string') out.push(data);
+    } catch {
+      // Malformed or legacy blob — skip; the owning job repopulates on its next run.
+    }
+  }
+  return out;
+}
+
+// Recover jobs from a pre-blob comment so a migrating comment keeps every job's
+// last-known output (as an opaque standalone block) instead of dropping all but
+// the one currently merging. Each block is replaced by its real table row once
+// that job runs again.
+function decodeLegacySections(body: string): StoredJobData[] {
+  const out: StoredJobData[] = [];
+  const re = new RegExp(LEGACY_SECTION_PATTERN.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(body)) !== null) {
+    const key = sanitizeMarkerName(match[1]);
+    out.push({ key, testJobName: key, customBody: match[2].trim() });
+  }
+  return out;
+}
+
+function isCustomJob(job: StoredJobData): boolean {
+  return job.customBody !== undefined;
+}
+
+function failureCount(job: StoredJobData): number {
+  return (job.failed ?? 0) + (job.errored ?? 0);
+}
+
+function jobLinks(job: StoredJobData, style: 'compact' | 'full'): string[] {
+  const runLabel = style === 'compact' ? 'Run' : 'View Run →';
+  const reportLabel = style === 'compact' ? 'Report' : '📄 HTML Report';
+  const links: string[] = [];
+  if (job.runUrl) links.push(`[${runLabel}](${escapeLinkUrl(job.runUrl)})`);
+  if (job.artifactUrl) links.push(`[${reportLabel}](${escapeLinkUrl(job.artifactUrl)})`);
+  return links;
+}
+
+function isNoteworthy(job: StoredJobData): boolean {
+  return (
+    failureCount(job) > 0 ||
+    (job.highlights?.some((h) => h.severity !== 'info') ?? false) ||
+    (job.baseDelta?.hasChanges ?? false) ||
+    (job.testsChanged?.hasChanges ?? false) ||
+    (job.flaky?.hasFlakyTests ?? false) ||
+    (job.perfRegression?.hasRegressions ?? false)
+  );
+}
+
+function renderSummaryRow(job: StoredJobData): string {
+  const total = job.total ?? 0;
+  const passed = job.passed ?? 0;
+  const rate = passRate(passed, total);
+  const result = failureCount(job) > 0 ? '🔴' : '✅';
+  const health =
+    job.healthScore === null || job.healthScore === undefined ? '—' : String(job.healthScore);
+
+  const rateArrow = job.trends ? ` ${TREND_ARROW[job.trends.passRate.direction]}` : '';
+  const durArrow = job.trends ? ` ${TREND_ARROW[job.trends.duration.direction]}` : '';
+
+  const links = jobLinks(job, 'compact');
+  const linkCell = links.length > 0 ? links.join(' · ') : '—';
+
+  return `| ${escapeTableCell(job.testJobName)} | ${result} | ${passed}/${total} · ${rate}%${rateArrow} | ${formatDuration(job.duration ?? 0)}${durArrow} | ${health} | ${linkCell} |`;
+}
+
+function renderJobDetails(job: StoredJobData): string | null {
+  if (!isNoteworthy(job)) return null;
+
   const lines: string[] = [];
-  lines.push('<!-- testglance-pr-summary -->');
+  const summaryEmoji = failureCount(job) > 0 ? '🔴' : '🟡';
+  lines.push('<details>');
+  lines.push(`<summary>${summaryEmoji} ${escapeHtml(job.testJobName)} — details</summary>`);
+  lines.push('');
+
+  lines.push(
+    renderMetricsStrip({
+      passed: job.passed ?? 0,
+      failed: job.failed ?? 0,
+      skipped: job.skipped ?? 0,
+      errored: job.errored ?? 0,
+    }),
+  );
+  lines.push(renderProgressBar(Number(passRate(job.passed ?? 0, job.total ?? 0))));
+
+  let statsLine = `⏱️ ${formatDuration(job.duration ?? 0)}`;
+  if (job.healthScore !== null && job.healthScore !== undefined) {
+    statsLine += ` · 🏥 ${job.healthScore}/100`;
+  }
+  lines.push(statsLine);
+
+  if (job.trends) {
+    lines.push(renderTrendLine(job.trends));
+  }
+
+  if (job.highlights && job.highlights.length > 0) {
+    const sorted = [...job.highlights].sort(
+      (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
+    );
+    lines.push('');
+    lines.push('| Signal | Details |');
+    lines.push('|--------|---------|');
+    for (const h of sorted) {
+      lines.push(renderHighlightRow(h));
+    }
+  }
+
+  if (job.baseBranch && job.baseDelta != null) {
+    lines.push('');
+    lines.push(renderBaseBranchSection(job.baseDelta, job.baseBranch));
+  }
+
+  if (job.testsChanged && job.testsChanged.hasChanges) {
+    lines.push('');
+    lines.push(renderTestsChangedCompact(job.testsChanged));
+  }
+
+  if (job.flaky && job.flaky.hasFlakyTests) {
+    lines.push('');
+    lines.push(renderFlakyCompact(job.flaky));
+  }
+
+  if (job.perfRegression && job.perfRegression.hasRegressions) {
+    lines.push('');
+    lines.push(renderPerfRegressionCompact(job.perfRegression));
+  }
+
+  const links = jobLinks(job, 'full');
+  if (links.length > 0) {
+    lines.push('');
+    lines.push(links.join(' · '));
+  }
+
+  lines.push('');
+  lines.push('</details>');
+  return lines.join('\n');
+}
+
+function renderRollupLine(tableJobs: StoredJobData[]): string {
+  const totals = tableJobs.reduce(
+    (acc, j) => ({
+      passed: acc.passed + (j.passed ?? 0),
+      failed: acc.failed + (j.failed ?? 0),
+      errored: acc.errored + (j.errored ?? 0),
+      total: acc.total + (j.total ?? 0),
+      duration: acc.duration + (j.duration ?? 0),
+    }),
+    { passed: 0, failed: 0, errored: 0, total: 0, duration: 0 },
+  );
+
+  const rate = passRate(totals.passed, totals.total);
+  const emoji = totals.failed > 0 || totals.errored > 0 ? '🔴' : '✅';
+  const jobWord = tableJobs.length === 1 ? 'job' : 'jobs';
+  let counts = `${totals.passed} passed`;
+  if (totals.failed > 0) counts += `, ${totals.failed} failed`;
+  if (totals.errored > 0) counts += `, ${totals.errored} errored`;
+
+  return `${emoji} ${counts} across ${tableJobs.length} ${jobWord} — ${rate}% · ⏱️ ${formatDuration(totals.duration)}`;
+}
+
+function renderGlobalBaselineNote(tableJobs: StoredJobData[]): string | null {
+  const awaiting = tableJobs.filter((j) => j.baseBranch && j.baseDelta == null);
+  if (awaiting.length === 0) return null;
+
+  const branches = [...new Set(awaiting.map((j) => j.baseBranch as string))];
+  if (branches.length === 1) {
+    return renderBaseBranchSection(null, branches[0]);
+  }
+  const branchList = branches.map((b) => `\`${b}\``).join(', ');
+  return `> No base branch data available — push to ${branchList} to establish baseline`;
+}
+
+function renderCommentFromStored(jobs: StoredJobData[]): string {
+  const tableJobs = jobs.filter((j) => !isCustomJob(j));
+  const customJobs = jobs.filter(isCustomJob);
+
+  const lines: string[] = [];
+  lines.push(SUMMARY_MARKER);
   lines.push('## 🔬 TestGlance');
   lines.push('');
 
-  for (let i = 0; i < sections.length; i++) {
-    lines.push(renderTestJobSection(sections[i]));
+  if (tableJobs.length > 0) {
+    lines.push(renderRollupLine(tableJobs));
     lines.push('');
-    if (i < sections.length - 1) {
-      lines.push('---');
+    lines.push('| Job | Result | Pass rate | Duration | Health |  |');
+    lines.push('|-----|:------:|-----------|----------|:------:|--|');
+    for (const job of tableJobs) {
+      lines.push(renderSummaryRow(job));
+    }
+    lines.push('');
+
+    const baselineNote = renderGlobalBaselineNote(tableJobs);
+    if (baselineNote) {
+      lines.push(baselineNote);
       lines.push('');
     }
+
+    for (const job of tableJobs) {
+      const details = renderJobDetails(job);
+      if (details) {
+        lines.push(details);
+        lines.push('');
+      }
+    }
+  }
+
+  for (const job of customJobs) {
+    lines.push(`<!-- tj:${job.key} -->`);
+    lines.push(job.customBody!);
+    lines.push(`<!-- /tj:${job.key} -->`);
+    lines.push('');
   }
 
   lines.push('---');
   lines.push(`*Updated ${new Date().toISOString()}*`);
 
-  return lines.join('\n');
+  // Blobs carry the per-job state and can't be lossily truncated, so reserve
+  // their room first and cap the visible body to what's left — otherwise the
+  // appended blobs push the comment past GitHub's hard limit and the post fails.
+  const blobSection = jobs.length > 0 ? `\n\n${encodeJobBlobs(jobs)}` : '';
+  const visibleBudget = Math.max(0, MAX_RENDERED_COMMENT_BYTES - blobSection.length);
+  const visible = capVisibleBody(lines.join('\n'), 'comment', visibleBudget);
+  return `${visible}${blobSection}`;
+}
+
+export function renderPrComment(sections: PrCommentSection[]): string {
+  return renderCommentFromStored(sections.map(toStoredJobData));
 }
 
 export function mergeTestJobSection(existingBody: string, newSection: PrCommentSection): string {
-  const safeKey = sanitizeMarkerName(newSection.testJobName);
-  const startMarker = `<!-- tj:${safeKey} -->`;
-  const endMarker = `<!-- /tj:${safeKey} -->`;
+  const existing = decodeJobBlobs(existingBody);
+  if (existing.length === 0) {
+    existing.push(...decodeLegacySections(existingBody));
+  }
+  const incoming = toStoredJobData(newSection);
 
-  const newSectionContent = renderTestJobSection(newSection);
-
-  const startIdx = existingBody.indexOf(startMarker);
-  const endIdx = existingBody.lastIndexOf(endMarker);
-
-  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-    const before = existingBody.slice(0, startIdx);
-    const after = existingBody.slice(endIdx + endMarker.length);
-
-    const updatedFooter = after.replace(/\*Updated .*?\*/, `*Updated ${new Date().toISOString()}*`);
-
-    return before + newSectionContent + updatedFooter;
+  const idx = existing.findIndex((j) => j.key === incoming.key);
+  if (idx >= 0) {
+    existing[idx] = incoming;
+  } else {
+    existing.push(incoming);
   }
 
-  const footerMatch = existingBody.match(/\n---\n\*Updated .*?\*$/);
-  if (footerMatch && footerMatch.index !== undefined) {
-    const beforeFooter = existingBody.slice(0, footerMatch.index);
-    return (
-      beforeFooter +
-      '\n\n---\n\n' +
-      newSectionContent +
-      '\n\n---\n' +
-      `*Updated ${new Date().toISOString()}*`
-    );
-  }
-
-  return existingBody + '\n\n---\n\n' + newSectionContent;
+  return renderCommentFromStored(existing);
 }
