@@ -165,6 +165,14 @@ describe('generateSummary', () => {
     );
   });
 
+  it('does not show API failure warning in local-only mode', async () => {
+    await generateSummary({ parsed: makeParsed(), apiSuccess: false, localOnly: true });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const hasFailureBanner = rawCalls.some((c: string) => c.includes('API submission failed'));
+    expect(hasFailureBanner).toBe(false);
+  });
+
   it('does not show health score section when API failed', async () => {
     await generateSummary({ parsed: makeParsed(), apiSuccess: false });
 

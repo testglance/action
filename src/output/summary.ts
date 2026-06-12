@@ -35,6 +35,7 @@ export { formatDuration, truncate } from './format';
 export interface SummaryOptions {
   parsed: ParsedTestRun;
   apiSuccess: boolean;
+  localOnly?: boolean;
   runId?: string;
   healthScore?: number | null;
   dashboardUrl?: string;
@@ -80,6 +81,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   const {
     parsed,
     apiSuccess,
+    localOnly,
     healthScore,
     dashboardUrl,
     flakyCount,
@@ -125,7 +127,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
 
   core.summary.addRaw(`## ${renderMetricsStrip(summary)} — ${passRate}%\n\n`);
 
-  if (!apiSuccess) {
+  if (!apiSuccess && !localOnly) {
     core.summary.addRaw('> ⚠️ **API submission failed** — dashboard data not updated\n\n');
   }
 
