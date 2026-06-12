@@ -429,6 +429,7 @@ export async function run(): Promise<RunResult> {
       await generateSummary({
         parsed,
         apiSuccess: result?.success ?? false,
+        localOnly,
         runId: result?.runId,
         healthScore: result?.healthScore,
         dashboardUrl,
