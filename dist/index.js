@@ -107538,7 +107538,7 @@ function shouldRenderAllTests(showAllTests, parsed) {
     return false;
 }
 async function generateSummary(options) {
-    const { parsed, apiSuccess, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, trends, history, summaryTemplate, meta, reportFileCount, showAllTests, } = options;
+    const { parsed, apiSuccess, localOnly, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, trends, history, summaryTemplate, meta, reportFileCount, showAllTests, } = options;
     if (summaryTemplate && meta) {
         const context = buildTemplateContext({
             parsed,
@@ -107563,7 +107563,7 @@ async function generateSummary(options) {
     const { summary } = parsed;
     const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
     summary_summary.addRaw(`## ${renderMetricsStrip(summary)} — ${passRate}%\n\n`);
-    if (!apiSuccess) {
+    if (!apiSuccess && !localOnly) {
         summary_summary.addRaw('> ⚠️ **API submission failed** — dashboard data not updated\n\n');
     }
     summary_summary.addRaw(`${renderProgressBar(Number(passRate))}\n\n`);
@@ -159340,6 +159340,7 @@ async function run() {
             await generateSummary({
                 parsed,
                 apiSuccess: result?.success ?? false,
+                localOnly,
                 runId: result?.runId,
                 healthScore: result?.healthScore,
                 dashboardUrl,
