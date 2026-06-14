@@ -5,8 +5,9 @@
 
 ## How these docs work
 
-- `CLAUDE.md` (and the mirrored root `AGENTS.md`) hold only the high-frequency essentials —
-  identity, commands, critical rules, conventions, and a routing table into this directory.
+- `AGENTS.md` (the root entry point; `CLAUDE.md` imports it via `@AGENTS.md`) holds only the
+  high-frequency essentials — identity, commands, critical rules, conventions, and a routing
+  table into this directory.
 - These `.agents/*.md` files are **loaded on demand**, not auto-loaded. Open the one your
   task points to so session context stays small and high-signal.
 - Docs describe **reality** as found in source, with clickable `path:line` references. When

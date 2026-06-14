@@ -1,8 +1,8 @@
 # AGENTS.md — TestGlance Action
 
-> Cross-tool agent guide (Cursor, Codex, Copilot, etc.). This is a **mirror of
-> [`CLAUDE.md`](CLAUDE.md)** — when you change one, change the other. Deep reference docs
-> live in [`.agents/`](.agents/README.md) and are loaded on demand.
+> **Single source of truth for agent guidance** — cross-tool (Cursor, Codex, Copilot,
+> Claude Code, …). `CLAUDE.md` imports this file via `@AGENTS.md`, so edit it **here**, not
+> there. Deep reference docs live in [`.agents/`](.agents/README.md) and are loaded on demand.
 
 GitHub Action that parses test reports (JUnit XML, CTRF JSON), derives history/analytics, and renders results to the CI summary, PR comments, check-run annotations, and an HTML report — optionally sending them to the TestGlance API.
 
