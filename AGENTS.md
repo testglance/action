@@ -1,10 +1,10 @@
-# TestGlance Action
+# AGENTS.md — TestGlance Action
+
+> Cross-tool agent guide (Cursor, Codex, Copilot, etc.). This is a **mirror of
+> [`CLAUDE.md`](CLAUDE.md)** — when you change one, change the other. Deep reference docs
+> live in [`.agents/`](.agents/README.md) and are loaded on demand.
 
 GitHub Action that parses test reports (JUnit XML, CTRF JSON), derives history/analytics, and renders results to the CI summary, PR comments, check-run annotations, and an HTML report — optionally sending them to the TestGlance API.
-
-> This file is the lean entry point: essentials used in most sessions, plus a routing
-> table into [`.agents/`](.agents/README.md) for everything deeper. The root
-> [`AGENTS.md`](AGENTS.md) mirrors this file for non-Claude tools — **keep the two in sync.**
 
 ## Overview
 
@@ -37,7 +37,7 @@ pnpm e2e:act       # local e2e smoke via act (skips gracefully without docker/ac
 4. **Never commit `dist/`.** It's gitignored and produced by CI; `pnpm build` locally only to verify the bundle compiles.
 5. **Tests use real fixtures** from `fixtures/` — small ones committed, large ones generated at test time.
 
-See [`.agents/conventions.md`](.agents/conventions.md) for the full rationale, and
+See [`.agents/conventions.md`](.agents/conventions.md) for rationale, and
 [`.agents/known-issues.md`](.agents/known-issues.md) before "fixing" anything that looks off.
 
 ## Conventions (cheat-sheet)
