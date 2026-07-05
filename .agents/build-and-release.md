@@ -104,14 +104,25 @@ It walks `node_modules/@actions/*/package.json` and, for any package whose `expo
 
 ## Renovate
 
-`renovate.json` extends `config:recommended` plus automerge presets. Automerge applies to:
+`renovate.json` extends `config:recommended`, `helpers:pinGitHubActionDigests` (SHA-pins
+all third-party actions and keeps the pins updated), and the `:automergeLinters` /
+`:automergeTesters` / `:automergeTypes` presets. Automerge applies to:
 
-- devDependency patch/minor updates (`renovate.json:18-22`)
-- `github-actions` patch/minor updates (`renovate.json:23-27`)
-- `lockFileMaintenance` (`renovate.json:13-16`)
-- digests, patches, linters, testers, types (the `:automerge*` presets, `renovate.json:5-9`)
+- devDependency patch/minor updates (`renovate.json` `packageRules`)
+- linter / tester / `@types` updates (the `:automerge*` presets)
+- `github-actions` **digest re-pins** + patch/minor tag moves (`renovate.json` `packageRules`)
+- `lockFileMaintenance`
 
-`minimumReleaseAge: "3 days"` and `internalChecksFilter: "strict"` (`renovate.json:11-12`) gate updates. Note the automerge policy interacts with the dist-rebuild flow — see [known-issues](./known-issues.md) B.
+Automerge does **not** apply to production `dependencies` - the packages ncc bundles into
+`dist/` - which carry an explicit `automerge: false` rule and require human review.
+`:automergePatch` (which previously covered prod-dep patches) and `:automergeDigest` were
+removed for this reason.
+
+`minimumReleaseAge: "3 days"` and `internalChecksFilter: "strict"` gate all updates. The
+first Renovate run after enabling `helpers:pinGitHubActionDigests` opens a one-time "Pin
+dependencies" PR (updateType `pin`) that is **not** auto-merged and is reviewed once. This
+posture was hardened in [#159](https://github.com/testglance/action/issues/159) — see
+[known-issues](./known-issues.md) B and [security](./security.md).
 
 ## Related
 
