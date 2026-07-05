@@ -124964,7 +124964,7 @@ async function generateSummary(options) {
         summary_summary.addRaw('\n');
     }
     if (options.artifactUrl) {
-        summary_summary.addRaw(`📄 [Download HTML Report](${options.artifactUrl})\n`);
+        summary_summary.addRaw(`📄 [HTML Report — download from Artifacts](${options.artifactUrl})\n`);
     }
     await summary_summary.write();
 }
@@ -175133,7 +175133,10 @@ async function run() {
                 });
                 const uploadSuccess = await upload_artifact_uploadArtifact(html, artifactName);
                 if (uploadSuccess) {
-                    artifactUrl = `${runUrl}#artifacts`;
+                    // GitHub has no in-browser artifact viewer and no stable anchor to the
+                    // artifacts section, so link to the run page where the artifact can be
+                    // downloaded rather than a dead `#artifacts` fragment.
+                    artifactUrl = runUrl;
                 }
             }
             catch (err) {
