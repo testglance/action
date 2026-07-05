@@ -59,24 +59,24 @@ When adding a parser perf assertion, generate the input — do not commit a larg
 
 ## Mocking strategy (orchestration tests)
 
-`src/__tests__/index.test.ts` tests the full `run()` pipeline but is **heavily mocked** — it is orchestration-level, not true integration (parsers, API, history math, and all I/O are stubbed). For that gap see [known-issues](./known-issues.md) item F.
+`src/__tests__/index.test.ts` tests the full `run()` pipeline but is **heavily mocked** — it is orchestration-level, not true integration (parsers, API, history math, and all I/O are stubbed); its top-level `describe` is named `run() orchestration (all collaborators mocked)` to make that explicit. The real, unmocked pipeline (real parsers → merge → summary against committed fixtures) is exercised by `src/__tests__/index.integration.test.ts`, complementing the CI-level `.github/workflows/e2e.yml`.
 
 What it mocks (all via `vi.mock`, top of file):
 
-- `@actions/core` — `getInput`/`info`/`warning`/`setFailed`/`debug` captured as `vi.fn()` (`index.test.ts:9`).
-- `node:fs` — `readFileSync`/`mkdirSync`/`writeFileSync`/`existsSync` (`index.test.ts:19`).
-- `@actions/cache` — `restoreCache`/`saveCache`/`ReserveCacheError` (`index.test.ts:108`), so history cache round-trips are simulated.
+- `@actions/core` — `getInput`/`info`/`warning`/`setFailed`/`debug` captured as `vi.fn()` (`index.test.ts:13`).
+- `node:fs` — `readFileSync`/`mkdirSync`/`writeFileSync`/`existsSync` (`index.test.ts:23`).
+- `@actions/cache` — `restoreCache`/`saveCache`/`ReserveCacheError` (`index.test.ts:112`), so history cache round-trips are simulated.
 - Both parsers (`../parsers/junit`, `../parsers/ctrf`), the API client (`../api/client`), and util/output modules: `detect-format`, `detect-framework`, `discover-files`, `merge-results`, `auto-detect`, `errors`, and `output/*` (summary, post-pr-comment, check-run, html-report, upload-artifact).
 
 Key test scaffolding:
 
-- `VALID_PARSED_RUN` (`index.test.ts:118`) — a canonical `ParsedTestRun` returned by the mocked parsers.
-- `setupInputs(overrides)` (`index.test.ts:132`) — factory that drives `core.getInput`; pass `{ 'api-key': '' }`, `{ history: 'true' }`, etc. to flip a single input. See [inputs-reference](./inputs-reference.md) for the input names.
-- `beforeEach` (`index.test.ts:158`) wires default happy-path return values and calls `setupInputs()`.
+- `VALID_PARSED_RUN` (`index.test.ts:122`) — a canonical `ParsedTestRun` returned by the mocked parsers.
+- `setupInputs(overrides)` (`index.test.ts:136`) — factory that drives `core.getInput`; pass `{ 'api-key': '' }`, `{ history: 'true' }`, etc. to flip a single input. See [inputs-reference](./inputs-reference.md) for the input names.
+- `beforeEach` (`index.test.ts:162`) wires default happy-path return values and calls `setupInputs()`.
 
 ### The "setFailed is NEVER called" invariant
 
-The product requirement (FR5: never break CI, always exit 0 — see [architecture](./architecture.md)) is pinned by a dedicated block (`index.test.ts:347`) asserting `mockSetFailed` is **not** called on: happy path, no files, parse error, API error, and unexpected exception. Many other tests re-assert `expect(mockSetFailed).not.toHaveBeenCalled()` inline. **Do not remove these.** Note also that several analytics failures (delta, flaky, tests-changed) only emit `core.debug`, not `core.warning` (`index.test.ts:1123`, `1199`, `1457`) — see [known-issues](./known-issues.md).
+The product requirement (FR5: never break CI, always exit 0 — see [architecture](./architecture.md)) is pinned by a dedicated block (`index.test.ts:354`) asserting `mockSetFailed` is **not** called on: happy path, no files, parse error, API error, and unexpected exception. Many other tests re-assert `expect(mockSetFailed).not.toHaveBeenCalled()` inline. **Do not remove these.** Note also that several analytics failures (delta, flaky, tests-changed) only emit `core.debug`, not `core.warning` (`index.test.ts:1130`, `1206`, `1464`) — see [known-issues](./known-issues.md).
 
 ## Real integration — self-test & e2e
 

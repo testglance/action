@@ -79,7 +79,7 @@ its _failure_ (as opposed to "not enough data yet") deserves `core.warning` inst
 The guarantee is enforced by assertions, not just convention. `@actions/core` is mocked and
 `setFailed` is asserted never-called:
 
-- `src/__tests__/index.test.ts:347` — `describe('critical: core.setFailed is NEVER called (AC7)')`, covering happy path, no-files, parse error, API-error, and unexpected-exception cases. The empty-`api-key` (local-only) case lives separately at `src/__tests__/index.test.ts:2022`.
+- `src/__tests__/index.test.ts:354` — `describe('critical: core.setFailed is NEVER called (AC7)')`, covering happy path, no-files, parse error, API-error, and unexpected-exception cases. The empty-`api-key` (local-only) case lives separately at `src/__tests__/index.test.ts:2053`.
 - `src/utils/__tests__/errors.test.ts:66` — every `errors.ts` handler asserted not to call `setFailed`.
 - `src/output/__tests__/check-run.test.ts:426` and `src/output/__tests__/post-pr-comment.test.ts:141` — output modules likewise never fail.
 
