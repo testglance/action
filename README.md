@@ -62,7 +62,11 @@ The hosted TestGlance dashboard — health scores, flaky test detection, and tre
 - **Multi-File Merge** — glob patterns merge multiple report files into a single summary
 - **Inline Annotations** — opt-in failure annotations on the PR diff at the exact file:line
 - **PR Comments** — multi-job summaries merged into a single comment, updated on re-runs
-- **SaaS Dashboard** _(coming soon)_ — optional health scores, flaky test detection, and trend tracking
+- **Run History** — recent runs tracked via GitHub Actions Cache; no account, no external service
+- **Flaky Test Detection** — flags tests that flip between pass and fail across recent runs
+- **Performance Regression Detection** — flags tests running far slower than their historical median, with a duration trend sparkline
+- **HTML Report** — self-contained report uploaded as a workflow artifact on every run
+- **SaaS Dashboard** _(coming soon)_ — optional org-wide health scores and long-term trend tracking
 
 ## Feature Comparison
 
@@ -171,6 +175,7 @@ See [`examples/reusable-workflow.yml`](examples/reusable-workflow.yml) for a `wo
 | `report-format`     |    No    | `auto`                       | Format: `junit`, `ctrf`, or `auto` (detect from extension)                                                                 |
 | `test-job-name`     |    No    | `''`                         | Override the display name for this test job                                                                                |
 | `slowest-tests`     |    No    | `10`                         | Number of slowest tests to show in CI summary (0 to disable)                                                               |
+| `show-all-tests`    |    No    | `auto`                       | List every test name under each suite in the CI summary. `auto` shows them when the run is small enough to fit.            |
 | `send-results`      |    No    | `true`                       | Send results to TestGlance API. Automatically forced to `false` when no `api-key` is provided.                             |
 | `github-token`      |    No    | `''`                         | GitHub token for PR comments and Check Runs                                                                                |
 | `annotate-failures` |    No    | `false`                      | Annotate failed tests inline on the PR diff (creates a Check Run)                                                          |
@@ -178,6 +183,12 @@ See [`examples/reusable-workflow.yml`](examples/reusable-workflow.yml) for a `wo
 | `annotation-level`  |    No    | `failure`                    | Severity for inline failure annotations: `failure`, `warning`, or `notice`. `warning`/`notice` keep the check advisory.    |
 | `summary-template`  |    No    | `''`                         | Path to a Handlebars template that replaces the default CI summary. See [Custom Templates](docs/custom-templates.md).      |
 | `comment-template`  |    No    | `''`                         | Path to a Handlebars template that replaces the default PR comment body. See [Custom Templates](docs/custom-templates.md). |
+| `history`           |    No    | `true`                       | Track run history via GitHub Actions Cache. Powers flaky and performance-regression detection.                             |
+| `history-limit`     |    No    | `20`                         | Maximum number of runs kept in history                                                                                     |
+| `flaky-threshold`   |    No    | `2`                          | Minimum pass/fail status flips over the last 10 runs to flag a test as flaky                                               |
+| `perf-threshold`    |    No    | `200`                        | Percent increase over a test's median historical duration to flag as a regression (`200` = 3× slower)                      |
+| `html-report`       |    No    | `true`                       | Generate a self-contained HTML report and upload it as a workflow artifact                                                 |
+| `artifact-name`     |    No    | `testglance-report`          | Name of the uploaded HTML report artifact                                                                                  |
 
 > **Note on `annotation-level`:** The Check Run's `conclusion` is still `failure` whenever tests fail, regardless of `annotation-level`. Setting `warning` or `notice` only changes the severity of the inline annotations — it does not change the check outcome. This is the dial for teams who want inline failure annotations without those annotations tripping required-checks branch protection.
 
@@ -229,6 +240,20 @@ jobs:
 > **Important:** When you add a `permissions` block, GitHub removes all default permissions and grants **only** what you list. If your job needs other permissions (e.g., `contents: read` to check out code), you must include them explicitly.
 
 For the full reference, see [`docs/permissions.md`](docs/permissions.md).
+
+## Run History, Flaky Tests & Performance Regressions
+
+On by default, with no account and no external service: each run's results are stored in GitHub Actions Cache (last 20 runs, configurable via `history-limit`). Once history accumulates, the CI summary and PR comment gain:
+
+- **Flaky test detection** — a test that flips between pass and fail at least `flaky-threshold` times (default `2`) within the last 10 runs is flagged, with its recent status pattern and flip rate.
+- **Performance regressions** — a test whose duration exceeds its median across previous runs by more than `perf-threshold` percent (default `200`, i.e. 3× slower) is flagged. Requires at least 3 previous recorded durations for that test.
+- **Trends** — pass-rate and duration indicators across recent runs, including a duration sparkline.
+
+History uses Actions Cache under the hood, so it needs no extra permissions and stores nothing outside your repository. Set `history: false` to turn it off.
+
+## HTML Report
+
+Every run also produces a self-contained HTML report and uploads it as a workflow artifact (named `testglance-report` by default, configurable via `artifact-name`). Download it from the run's **Artifacts** section to browse results offline or attach them to a bug report. Set `html-report: false` to disable.
 
 ## Supported Formats
 

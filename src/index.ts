@@ -410,7 +410,10 @@ export async function run(): Promise<RunResult> {
         });
         const uploadSuccess = await uploadArtifact(html, artifactName);
         if (uploadSuccess) {
-          artifactUrl = `${runUrl}#artifacts`;
+          // GitHub has no in-browser artifact viewer and no stable anchor to the
+          // artifacts section, so link to the run page where the artifact can be
+          // downloaded rather than a dead `#artifacts` fragment.
+          artifactUrl = runUrl;
         }
       } catch (err) {
         core.warning(
