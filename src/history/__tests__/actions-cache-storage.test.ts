@@ -122,6 +122,22 @@ describe('ActionsCacheStorage', () => {
     expect(mockDebug).toHaveBeenCalledWith(expect.stringContaining('cache miss'));
   });
 
+  it('load() returns null and warns when cache hit but history file is missing on disk', async () => {
+    mockRestoreCache.mockResolvedValue('testglance-history-main-abc');
+    mockExistsSync.mockReturnValue(false);
+
+    const storage = new ActionsCacheStorage('main', 'abc');
+    const result = await storage.load();
+
+    expect(result).toBeNull();
+    expect(mockWarning).toHaveBeenCalledWith(
+      expect.stringContaining('history file not found on disk'),
+    );
+    expect(mockWarning).toHaveBeenCalledWith(
+      expect.stringContaining('run history unavailable this run'),
+    );
+  });
+
   it('load() returns null and warns on error', async () => {
     mockRestoreCache.mockRejectedValue(new Error('network timeout'));
 

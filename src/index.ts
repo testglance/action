@@ -264,8 +264,8 @@ export async function run(): Promise<RunResult> {
           try {
             delta = computeDelta(entries[entries.length - 2], entries[entries.length - 1]);
           } catch (err) {
-            core.debug(
-              `Delta comparison failed: ${err instanceof Error ? err.message : String(err)}`,
+            core.warning(
+              `Delta comparison failed: ${err instanceof Error ? err.message : String(err)}; delta section skipped.`,
             );
           }
 
@@ -275,8 +275,8 @@ export async function run(): Promise<RunResult> {
               entries[entries.length - 1],
             );
           } catch (err) {
-            core.debug(
-              `Tests changed computation failed: ${err instanceof Error ? err.message : String(err)}`,
+            core.warning(
+              `Tests changed computation failed: ${err instanceof Error ? err.message : String(err)}; tests-changed section skipped.`,
             );
           }
         }
@@ -293,7 +293,9 @@ export async function run(): Promise<RunResult> {
       try {
         flaky = detectFlakyTests(loadedHistory.entries, flakyThreshold);
       } catch (err) {
-        core.debug(`Flaky detection failed: ${err instanceof Error ? err.message : String(err)}`);
+        core.warning(
+          `Flaky detection failed: ${err instanceof Error ? err.message : String(err)}; flaky section skipped.`,
+        );
       }
     } else if (historyEnabled && loadedHistory) {
       core.debug('Need at least 5 runs for flaky detection');
@@ -310,8 +312,8 @@ export async function run(): Promise<RunResult> {
           );
         }
       } catch (err) {
-        core.debug(
-          `Performance regression detection failed: ${err instanceof Error ? err.message : String(err)}`,
+        core.warning(
+          `Performance regression detection failed: ${err instanceof Error ? err.message : String(err)}; performance section skipped.`,
         );
       }
     } else if (historyEnabled && loadedHistory) {
@@ -324,7 +326,9 @@ export async function run(): Promise<RunResult> {
       try {
         trends = computeTrends(loadedHistory.entries);
       } catch (err) {
-        core.debug(`Trend computation failed: ${err instanceof Error ? err.message : String(err)}`);
+        core.warning(
+          `Trend computation failed: ${err instanceof Error ? err.message : String(err)}; trends section skipped.`,
+        );
       }
     }
 
@@ -347,8 +351,8 @@ export async function run(): Promise<RunResult> {
           baseDelta = computeDelta(baseLatest, currentEntry);
         }
       } catch (err) {
-        core.debug(
-          `Base branch comparison failed: ${err instanceof Error ? err.message : String(err)}`,
+        core.warning(
+          `Base branch comparison failed: ${err instanceof Error ? err.message : String(err)}; base-branch comparison skipped.`,
         );
       }
     }

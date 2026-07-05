@@ -40,7 +40,9 @@ export class ActionsCacheStorage implements HistoryStorage {
       }
 
       if (!existsSync(this.filePath)) {
-        core.debug('Cache restored but history file not found on disk');
+        core.warning(
+          'Cache restored but history file not found on disk; run history unavailable this run.',
+        );
         return null;
       }
 

@@ -44,7 +44,7 @@ restoreKeys = [ testglance-history-<branch>-<reportPathHash>-,
 - The per-run `suffix` makes each run's save key unique, so the same run never clashes; `restoreKeys` are prefix fallbacks so a run restores the most recent matching cache (Actions Cache restore is prefix-matched). This is the standard "save under a unique key, restore by prefix" pattern.
 - Temp file: `<os.tmpdir()>/testglance-history-<branch>-<reportPathHash>/history.json` (`actions-cache-storage.ts:24`-`26`). The dir is `mkdir -p`'d in the constructor.
 
-**`load()`** (`actions-cache-storage.ts:29`): `restoreCache` → on miss or missing-file-on-disk returns `null` (`core.debug`). Any thrown error is caught, `core.warning`'d, and returns `null`.
+**`load()`** (`actions-cache-storage.ts:29`): `restoreCache` → on cache miss returns `null` (`core.debug`); on a cache hit whose history file is missing on disk returns `null` with a `core.warning` (data loss despite a hit). Any thrown error is caught, `core.warning`'d, and returns `null`.
 
 **`save()`** (`actions-cache-storage.ts:61`): writes JSON then `saveCache`. A `ReserveCacheError` (key already exists — concurrent run won the race) is swallowed at `core.debug` and treated as success (`actions-cache-storage.ts:69`). Other errors → `core.warning`.
 
@@ -126,14 +126,14 @@ On PRs, the action loads the **base branch's** history with a separate `ActionsC
 - `baseDelta = computeDelta(baseLatest, currentEntry)` (`src/index.ts:347`), only when base history has `entries.length > 0`.
 - Surfaced to output as `baseDelta` / `baseBranch` (`src/index.ts:498`-`499`). See [output](./output.md).
 
-## <a id="wart-silent-analytics-failures"></a>Wart — silent analytics failures
+## <a id="wart-silent-analytics-failures"></a>Analytics failures are visible (was a wart)
 
-The top-level history block logs failures at `core.warning` (`src/index.ts:284`), but the **inner analytic try/catches log at `core.debug`** and then leave the result `null`:
+The top-level history block logs failures at `core.warning` (`src/index.ts:284`), and each **inner analytic try/catch now also logs at `core.warning`** with a `… section skipped.` clarifier before leaving the result `null`:
 
 - delta / testsChanged (`src/index.ts:267`, `:278`)
 - flaky (`src/index.ts:296`), perf (`src/index.ts:313`), trends (`src/index.ts:327`), base-branch (`src/index.ts:350`)
 
-`core.debug` only shows when `ACTIONS_STEP_DEBUG=true`, so a thrown analytic silently produces no output and no warning. When an analytic "didn't show up", suspect a swallowed `debug`. Tracked in [known-issues](./known-issues.md).
+So a thrown analytic now produces a visible warning naming the dropped section on a normal run. Only the "not enough runs yet" notices remain at `core.debug`. Fixed in [#162](https://github.com/testglance/action/issues/162); see [known-issues](./known-issues.md) E (resolved).
 
 ## Cross-links
 
@@ -141,4 +141,4 @@ The top-level history block logs failures at `core.warning` (`src/index.ts:284`)
 - [output](./output.md) — how delta/flaky/perf/trends render in the summary and PR comment.
 - [inputs-reference](./inputs-reference.md) — `history`, `history-limit`, `flaky-threshold`, `perf-threshold`.
 - [architecture](./architecture.md) — where history sits in the `run()` pipeline.
-- [known-issues](./known-issues.md) — the silent-`core.debug` analytics wart.
+- [known-issues](./known-issues.md) — item E (silent-`core.debug` analytics wart), now resolved.
