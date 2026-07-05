@@ -10,7 +10,7 @@ These were surfaced during the AI-native docs revamp. Each has a tracking issue 
 | A   | [#158 — Add LICENSE file (MIT) to match README badge](https://github.com/testglance/action/issues/158)                | Licensing     | Medium   | Open   |
 | B   | [#159 — Reconsider Renovate auto-merge of devDeps + GitHub Actions](https://github.com/testglance/action/issues/159)  | Supply chain  | Medium   | Open   |
 | C   | [#160 — Add test coverage collection and thresholds in CI](https://github.com/testglance/action/issues/160)           | Testing       | Low      | Open   |
-| D   | [#161 — Stop shipping the ~6.5MB source map in published dist/](https://github.com/testglance/action/issues/161)      | Build/perf    | Low      | Open   |
+| D   | [#161 — Stop shipping the ~6.5MB source map in published dist/](https://github.com/testglance/action/issues/161)      | Build/perf    | Low      | Fixed  |
 | E   | [#162 — Promote silent analytics failures from debug() to warning()](https://github.com/testglance/action/issues/162) | Observability | Medium   | Open   |
 | F   | [#163 — Clarify index.test.ts is an orchestration unit test](https://github.com/testglance/action/issues/163)         | Testing/docs  | Low      | Open   |
 
@@ -28,9 +28,11 @@ The README shows an MIT badge linking to `/LICENSE`, but no `LICENSE` file exist
 
 `vitest.config.ts` has no coverage config and CI doesn't gate on coverage despite a large suite. Add `--coverage` (v8) and enforce minimums in the `test` job. See [testing](./testing.md).
 
-## D — Source map shipped to consumers ([#161](https://github.com/testglance/action/issues/161))
+## D — Source map shipped to consumers ([#161](https://github.com/testglance/action/issues/161)) — Fixed
 
-`ncc ... --source-map` emits `dist/index.js.map` (~6.5MB), committed to `main` and downloaded by every consumer on every run. Usually unnecessary for a published action. See [build-and-release](./build-and-release.md).
+**Was:** `ncc ... --source-map` emitted `dist/index.js.map` (~6.5MB) plus a `dist/sourcemap-register.js` shim, committed to `main` and downloaded by every consumer on every run.
+
+**Fixed:** the `build` script no longer passes `--source-map`, so the released `dist/` ships only `index.js` + `licenses.txt`. `pnpm build:debug` keeps `--source-map` for local bundle debugging (never shipped — `release-v1` uses `pnpm build`). See [build-and-release](./build-and-release.md).
 
 ## E — Analytics failures logged at debug level ([#162](https://github.com/testglance/action/issues/162))
 
