@@ -8,14 +8,15 @@
 `pnpm build` runs ncc to bundle the TypeScript entry into a single committed-at-release JS file (`package.json:9`):
 
 ```
-ncc build src/index.ts --out dist --source-map --license licenses.txt
+ncc build src/index.ts --out dist --license licenses.txt
 ```
 
 Output of a build:
 
 - `dist/index.js` — the bundle that `action.yml` points at (`action.yml:91`, `main: 'dist/index.js'`).
-- `dist/index.js.map` — source map (shipped; see [known-issues](./known-issues.md) D).
 - `dist/licenses.txt` — third-party license report.
+
+The released bundle ships **no source map** (issue [#161](https://github.com/testglance/action/issues/161)). For local debugging of the bundled output, `pnpm build:debug` runs the same ncc command with `--source-map`, which additionally emits `dist/index.js.map` and a `dist/sourcemap-register.js` shim. `dist/` is gitignored and the `release-v1` job uses `pnpm build` (not `build:debug`), so a locally generated map is never shipped.
 
 Toolchain:
 
@@ -63,8 +64,8 @@ Steps (`ci.yml:85-117`):
 
 1. Mint a **GitHub App token** via `actions/create-github-app-token` (`ci.yml:86-90`) using `REBUILD_BOT_APP_ID` / `REBUILD_BOT_PRIVATE_KEY` secrets. The App token (not `GITHUB_TOKEN`) is required to force-push the tag and to commit to `main` under branch protection.
 2. Checkout with `fetch-depth: 0` and the App token (`ci.yml:91-94`).
-3. `pnpm install --frozen-lockfile` + `pnpm build` (`ci.yml:100-101`).
-4. Commit `dist/` **only if changed** (`ci.yml:102-112`): `git add -f dist/` (force, since gitignored), and if `git diff --cached` is non-empty, commit `chore: rebuild dist [skip ci]` as `testglance-rebuild-bot[bot]` and push to `main`. `[skip ci]` prevents a CI loop.
+3. `rm -rf dist` + `pnpm install --frozen-lockfile` + `pnpm build`. The `rm -rf dist` guarantees the committed tree matches a fresh build (so artifacts no longer emitted are dropped, not left stale).
+4. Commit `dist/` **only if changed**: `git add -A -f dist/` (force, since gitignored; `-A` stages deletions so removed artifacts are committed), and if `git diff --cached` is non-empty, commit `chore: rebuild dist [skip ci]` as `testglance-rebuild-bot[bot]` and push to `main`. `[skip ci]` prevents a CI loop.
 5. Force-retag (`ci.yml:113-116`): `git tag -f v1 && git push origin v1 --force`.
 
 ## Floating `v1` tag
@@ -128,4 +129,4 @@ posture was hardened in [#159](https://github.com/testglance/action/issues/159) 
 
 - [conventions](./conventions.md) — dist/pnpm/commit rules.
 - [testing](./testing.md) — vitest + the `uses: ./` self-test.
-- [known-issues](./known-issues.md) — B (automerge) and D (shipped source map).
+- [known-issues](./known-issues.md) — B (automerge).
