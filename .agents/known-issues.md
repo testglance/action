@@ -5,10 +5,9 @@
 
 These were surfaced during the AI-native docs revamp. Each has a tracking issue on `testglance/action`. Docs elsewhere in `.agents/` link here instead of pretending the behavior is ideal.
 
-| #   | Issue                                                                                                                 | Area          | Severity | Status |
-| --- | --------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ------ |
-| E   | [#162 — Promote silent analytics failures from debug() to warning()](https://github.com/testglance/action/issues/162) | Observability | Medium   | Open   |
-| F   | [#163 — Clarify index.test.ts is an orchestration unit test](https://github.com/testglance/action/issues/163)         | Testing/docs  | Low      | Open   |
+| #   | Issue                                                                                                         | Area         | Severity | Status |
+| --- | ------------------------------------------------------------------------------------------------------------- | ------------ | -------- | ------ |
+| F   | [#163 — Clarify index.test.ts is an orchestration unit test](https://github.com/testglance/action/issues/163) | Testing/docs | Low      | Open   |
 
 ---
 
@@ -45,6 +44,10 @@ the CI `test` job runs `vitest run --coverage`, so coverage regressions fail the
 
 **Fixed:** the `build` script no longer passes `--source-map`, so the released `dist/` ships only `index.js` + `licenses.txt`. `pnpm build:debug` keeps `--source-map` for local bundle debugging (never shipped — `release-v1` uses `pnpm build`). See [build-and-release](./build-and-release.md).
 
-## E — Analytics failures logged at debug level ([#162](https://github.com/testglance/action/issues/162))
+## E — Analytics failures logged at debug level ([#162](https://github.com/testglance/action/issues/162)) — Resolved
 
-History/delta/flaky/perf computation failures use `core.debug()`, invisible unless the consumer enables Actions step debug logging — analytics can silently vanish. Promote data-affecting failures to `core.warning()` (still never `setFailed`, always exit 0). See [observability](./observability.md) and [history-analytics](./history-analytics.md).
+**Resolved.** History/delta/flaky/perf/trends computation failures previously used `core.debug()`, invisible unless the consumer enabled Actions step debug logging, so analytics could silently vanish. Data-affecting failures — the six analytics `catch` blocks in `src/index.ts` plus the cache-hit-but-missing-file case in `actions-cache-storage.ts` — now log via `core.warning()` with a "section skipped" clarifier (still never `setFailed`, always exit 0). "Not enough runs yet" notices and verbose tracing stay at `core.debug()`. See [observability](./observability.md) and [history-analytics](./history-analytics.md).
+
+## F — "Integration" test is heavily mocked ([#163](https://github.com/testglance/action/issues/163))
+
+`src/__tests__/index.test.ts` mocks `@actions/core`, `node:fs`, parsers, API, and utils — it verifies `run()` orchestration, not real module integration. True integration lives in `.github/workflows/e2e.yml`. Relabel wording; optionally add a thin unmocked integration test. See [testing](./testing.md).

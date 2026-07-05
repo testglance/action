@@ -1114,7 +1114,7 @@ describe('run() orchestration (all collaborators mocked)', () => {
       expect(summaryCall.delta).toBeNull();
     });
 
-    it('delta computation error does not fail the action (debug log only)', async () => {
+    it('delta computation error does not fail the action (warns, section skipped)', async () => {
       await setupHistoryWithPreviousRun();
 
       const comparison = await import('../history/comparison');
@@ -1127,7 +1127,8 @@ describe('run() orchestration (all collaborators mocked)', () => {
       expect(mockSetFailed).not.toHaveBeenCalled();
       const summaryCall = mockGenerateSummary.mock.calls[0][0];
       expect(summaryCall.delta).toBeNull();
-      expect(mockDebug).toHaveBeenCalledWith(expect.stringContaining('Delta comparison failed'));
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('Delta comparison failed'));
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('delta section skipped'));
     });
   });
 
@@ -1203,8 +1204,11 @@ describe('run() orchestration (all collaborators mocked)', () => {
       expect(mockSetFailed).not.toHaveBeenCalled();
       const summaryCall = mockGenerateSummary.mock.calls[0][0];
       expect(summaryCall.testsChanged).toBeNull();
-      expect(mockDebug).toHaveBeenCalledWith(
+      expect(mockWarning).toHaveBeenCalledWith(
         expect.stringContaining('Tests changed computation failed'),
+      );
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('tests-changed section skipped'),
       );
     });
   });
@@ -1356,8 +1360,11 @@ describe('run() orchestration (all collaborators mocked)', () => {
       await run();
 
       expect(mockSetFailed).not.toHaveBeenCalled();
-      expect(mockDebug).toHaveBeenCalledWith(
+      expect(mockWarning).toHaveBeenCalledWith(
         expect.stringContaining('Base branch comparison failed'),
+      );
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('base-branch comparison skipped'),
       );
     });
 
@@ -1461,7 +1468,8 @@ describe('run() orchestration (all collaborators mocked)', () => {
       await run();
 
       expect(mockSetFailed).not.toHaveBeenCalled();
-      expect(mockDebug).toHaveBeenCalledWith(expect.stringContaining('flaky detection boom'));
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('flaky detection boom'));
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('flaky section skipped'));
 
       const summaryCall = mockGenerateSummary.mock.calls[0][0];
       expect(summaryCall.flaky).toBeNull();
@@ -1676,7 +1684,10 @@ describe('run() orchestration (all collaborators mocked)', () => {
       await run();
 
       expect(mockSetFailed).not.toHaveBeenCalled();
-      expect(mockDebug).toHaveBeenCalledWith(expect.stringContaining('perf detection boom'));
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('perf detection boom'));
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringContaining('performance section skipped'),
+      );
 
       const summaryCall = mockGenerateSummary.mock.calls[0][0];
       expect(summaryCall.perfRegression).toBeNull();
@@ -1851,7 +1862,8 @@ describe('run() orchestration (all collaborators mocked)', () => {
       await run();
 
       expect(mockSetFailed).not.toHaveBeenCalled();
-      expect(mockDebug).toHaveBeenCalledWith(expect.stringContaining('trends computation boom'));
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('trends computation boom'));
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('trends section skipped'));
 
       const summaryCall = mockGenerateSummary.mock.calls[0][0];
       expect(summaryCall.trends).toBeNull();

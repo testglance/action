@@ -21,11 +21,11 @@ No external telemetry, metrics, or tracing. The only data that leaves the runner
 normalized results JSON POSTed to the API (see [api-client](./api-client.md)) — and only
 when an `api-key` is set. Everything else is GitHub Actions log output via `@actions/core`.
 
-| Level          | Used for                                                       | Examples                                                                                                                                                                                                                                                                    |
-| -------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core.info`    | success + progress, always visible                             | parse summary `src/index.ts:222`; local-only notice `src/index.ts:146`; submit success `src/index.ts:373`; first-run notice `src/index.ts:250`                                                                                                                              |
-| `core.warning` | ALL user-facing errors + invalid inputs                        | every handler in `errors.ts`; invalid-input fallbacks (e.g. `src/index.ts:44`); per-file parse failure `src/index.ts:209`; "all files failed" `src/index.ts:216`; output-step failures (summary `src/index.ts:457`, PR comment `src/index.ts:516`, HTML `src/index.ts:416`) |
-| `core.debug`   | detailed analytics-step failures + "not enough runs yet" notes | delta `src/index.ts:267`; tests-changed `src/index.ts:278`; flaky `src/index.ts:296`; perf `src/index.ts:313`; trends `src/index.ts:327`; base-branch delta `src/index.ts:350`                                                                                              |
+| Level          | Used for                                                          | Examples                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core.info`    | success + progress, always visible                                | parse summary `src/index.ts:222`; local-only notice `src/index.ts:146`; submit success `src/index.ts:373`; first-run notice `src/index.ts:250`                                                                                                                                                                                                                                     |
+| `core.warning` | ALL user-facing errors + invalid inputs + analytics-step failures | every handler in `errors.ts`; invalid-input fallbacks (e.g. `src/index.ts:44`); per-file parse failure `src/index.ts:209`; "all files failed" `src/index.ts:216`; output-step failures (summary, PR comment, HTML); analytics failures (delta, tests-changed, flaky, perf, trends, base-branch) each `… section skipped`; cache-hit-but-missing-file in `actions-cache-storage.ts` |
+| `core.debug`   | verbose tracing + "not enough runs yet" notes                     | "need 5 runs for flaky detection"; "perf baseline collecting"; "need 3 runs for perf"; cache miss / load-save success traces in `actions-cache-storage.ts`                                                                                                                                                                                                                         |
 
 - **No `core.notice`** anywhere. **No `core.error`** anywhere. (`core.error` would print a red annotation but still not fail; the project deliberately uses `warning` instead — verified absent in `src/`.)
 - `core.debug` output is **only visible when the consumer enables step debug logging** (the `ACTIONS_STEP_DEBUG` secret / runner debug). On a normal run it is invisible.
@@ -34,7 +34,8 @@ when an `api-key` is set. Everything else is GitHub Actions log output via `@act
 
 - Did something the user asked for succeed, or are you reporting normal progress? → `core.info`.
 - Did a feature the user can see (summary, PR comment, check run, submission, parsing, an input) fail or get skipped? → `core.warning`. The user should be able to notice and fix it.
-- Did an _optional history/analytics_ computation fail or get skipped for lack of data? → `core.debug`. But see the [wart](#wart-silent-analytics-drops) below before choosing this for anything that drops user-visible data.
+- Did an _optional history/analytics_ computation **fail** (throw), dropping a user-visible section? → `core.warning`, naming the section that was skipped (e.g. `… delta section skipped.`). This is data-affecting and must be visible on a normal run.
+- Did an analytics step get skipped only because there is **not enough data yet** ("need N runs"), or is it pure verbose tracing? → `core.debug`.
 
 ## `errors.ts` handlers
 
@@ -63,16 +64,17 @@ e.g. `Your CI pipeline is unaffected.` (`handleApiUnreachable`, `handleUnexpecte
 Keep this convention for any new top-level failure message so a red warning never reads
 like a broken build.
 
-## WART: silent analytics drops
+## Analytics failures are visible (was wart E)
 
 Analytics computations (delta, tests-changed, flaky, perf-regression, trends, base-branch
-delta) are wrapped in their own try/catch that logs at **`core.debug`** (e.g.
-`src/index.ts:267`, `src/index.ts:296`, `src/index.ts:350`). Because debug is hidden on
-normal runs, a failure here **silently drops that analytics section** from the summary / PR
-comment with no visible warning — the run looks clean. This is data-affecting, unlike the
-benign "need N runs" debug notes that share the same level. Tracked as
-[known-issues](./known-issues.md) E. If you add a new history/analytics step, weigh whether
-its _failure_ (as opposed to "not enough data yet") deserves `core.warning` instead.
+delta) are each wrapped in their own try/catch. A **failure** logs at `core.warning` with a
+`… section skipped.` clarifier (`src/index.ts` — delta, tests-changed, flaky, perf, trends,
+base-branch), and a cache-hit-but-missing-file history loss warns from
+`src/history/actions-cache-storage.ts`. The benign "need N runs yet" notices stay at
+`core.debug`. So a dropped analytics section is now visible on a normal run. This was
+[known-issues](./known-issues.md) E ([#162](https://github.com/testglance/action/issues/162)),
+now resolved. If you add a new history/analytics step, follow the same rule: its _failure_
+(as opposed to "not enough data yet") is a `core.warning`.
 
 ## Testing the no-fail guarantee
 
@@ -90,5 +92,5 @@ case. See [testing](./testing.md) for the mocking setup.
 
 - [api-client](./api-client.md) — where `errorCode` (`NETWORK_ERROR` etc.) comes from.
 - [output](./output.md) — summary / PR comment / check run, each independently try/caught.
-- [known-issues](./known-issues.md) — wart E (silent analytics drops).
+- [known-issues](./known-issues.md) — item E (silent analytics drops), now resolved.
 - [conventions](./conventions.md) — repo-wide rules including the never-`setFailed` rule.
