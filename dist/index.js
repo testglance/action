@@ -174273,7 +174273,7 @@ class ActionsCacheStorage {
                 return null;
             }
             if (!(0,external_node_fs_.existsSync)(this.filePath)) {
-                core_debug('Cache restored but history file not found on disk');
+                warning('Cache restored but history file not found on disk; run history unavailable this run.');
                 return null;
             }
             const raw = (0,external_node_fs_.readFileSync)(this.filePath, 'utf-8');
@@ -175013,13 +175013,13 @@ async function run() {
                         delta = computeDelta(entries[entries.length - 2], entries[entries.length - 1]);
                     }
                     catch (err) {
-                        core_debug(`Delta comparison failed: ${err instanceof Error ? err.message : String(err)}`);
+                        warning(`Delta comparison failed: ${err instanceof Error ? err.message : String(err)}; delta section skipped.`);
                     }
                     try {
                         testsChanged = computeTestsChanged(entries[entries.length - 2], entries[entries.length - 1]);
                     }
                     catch (err) {
-                        core_debug(`Tests changed computation failed: ${err instanceof Error ? err.message : String(err)}`);
+                        warning(`Tests changed computation failed: ${err instanceof Error ? err.message : String(err)}; tests-changed section skipped.`);
                     }
                 }
             }
@@ -175033,7 +175033,7 @@ async function run() {
                 flaky = detectFlakyTests(loadedHistory.entries, flakyThreshold);
             }
             catch (err) {
-                core_debug(`Flaky detection failed: ${err instanceof Error ? err.message : String(err)}`);
+                warning(`Flaky detection failed: ${err instanceof Error ? err.message : String(err)}; flaky section skipped.`);
             }
         }
         else if (historyEnabled && loadedHistory) {
@@ -175048,7 +175048,7 @@ async function run() {
                 }
             }
             catch (err) {
-                core_debug(`Performance regression detection failed: ${err instanceof Error ? err.message : String(err)}`);
+                warning(`Performance regression detection failed: ${err instanceof Error ? err.message : String(err)}; performance section skipped.`);
             }
         }
         else if (historyEnabled && loadedHistory) {
@@ -175060,7 +175060,7 @@ async function run() {
                 trends = computeTrends(loadedHistory.entries);
             }
             catch (err) {
-                core_debug(`Trend computation failed: ${err instanceof Error ? err.message : String(err)}`);
+                warning(`Trend computation failed: ${err instanceof Error ? err.message : String(err)}; trends section skipped.`);
             }
         }
         let baseDelta = null;
@@ -175081,7 +175081,7 @@ async function run() {
                 }
             }
             catch (err) {
-                core_debug(`Base branch comparison failed: ${err instanceof Error ? err.message : String(err)}`);
+                warning(`Base branch comparison failed: ${err instanceof Error ? err.message : String(err)}; base-branch comparison skipped.`);
             }
         }
         const firstFile = successful[0].filePath;
