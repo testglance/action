@@ -53,7 +53,7 @@ When adding a parser perf assertion, generate the input — do not commit a larg
 
 ## Mocking strategy (orchestration tests)
 
-`src/__tests__/index.test.ts` tests the full `run()` pipeline but is **heavily mocked** — it is orchestration-level, not true integration (parsers, API, history math, and all I/O are stubbed). For that gap see [known-issues](./known-issues.md) item F.
+`src/__tests__/index.test.ts` tests the full `run()` pipeline but is **heavily mocked** — it is orchestration-level, not true integration (parsers, API, history math, and all I/O are stubbed); its top-level `describe` is named `run() orchestration (all collaborators mocked)` to make that explicit. The real, unmocked pipeline (real parsers → merge → summary against committed fixtures) is exercised by `src/__tests__/index.integration.test.ts`, complementing the CI-level `.github/workflows/e2e.yml`.
 
 What it mocks (all via `vi.mock`, top of file):
 
@@ -70,7 +70,7 @@ Key test scaffolding:
 
 ### The "setFailed is NEVER called" invariant
 
-The product requirement (FR5: never break CI, always exit 0 — see [architecture](./architecture.md)) is pinned by a dedicated block (`index.test.ts:347`) asserting `mockSetFailed` is **not** called on: happy path, no files, parse error, API error, and unexpected exception. Many other tests re-assert `expect(mockSetFailed).not.toHaveBeenCalled()` inline. **Do not remove these.** Note also that several analytics failures (delta, flaky, tests-changed) only emit `core.debug`, not `core.warning` (`index.test.ts:1123`, `1199`, `1457`) — see [known-issues](./known-issues.md).
+The product requirement (FR5: never break CI, always exit 0 — see [architecture](./architecture.md)) is pinned by a dedicated block (`index.test.ts:350`) asserting `mockSetFailed` is **not** called on: happy path, no files, parse error, API error, and unexpected exception. Many other tests re-assert `expect(mockSetFailed).not.toHaveBeenCalled()` inline. **Do not remove these.** Note also that several analytics failures (delta, flaky, tests-changed) only emit `core.debug`, not `core.warning` (`index.test.ts:1126`, `1202`, `1460`) — see [known-issues](./known-issues.md).
 
 ## Real integration — self-test & e2e
 

@@ -526,4 +526,9 @@ export async function run(): Promise<RunResult> {
   }
 }
 
-run();
+// Skip the auto-invoke under Vitest so the module can be imported side-effect-free
+// (index.integration.test.ts drives run() explicitly). In the published dist/ bundle
+// VITEST is never set, so the Action still runs on load.
+if (!process.env.VITEST) {
+  run();
+}

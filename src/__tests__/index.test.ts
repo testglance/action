@@ -167,7 +167,10 @@ beforeEach(() => {
   setupInputs();
 });
 
-describe('run() integration', () => {
+// Orchestration-level: every collaborator is mocked (see vi.mock calls above), so this
+// verifies how run() wires them together, NOT real cross-module integration. The real,
+// unmocked pipeline is covered in index.integration.test.ts and .github/workflows/e2e.yml.
+describe('run() orchestration (all collaborators mocked)', () => {
   describe('happy path — JUnit XML + API 200', () => {
     it('discovers file, parses, sends to API, logs success', async () => {
       await run();
