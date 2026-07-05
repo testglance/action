@@ -1895,6 +1895,30 @@ describe('run() integration', () => {
       expect(mockUploadArtifact).toHaveBeenCalledWith('<html>report</html>', 'testglance-report');
     });
 
+    it('links the report to the run page without a dead #artifacts fragment', async () => {
+      setupInputs({ 'html-report': 'true' });
+      mockUploadArtifact.mockResolvedValueOnce(true);
+      const prevServer = process.env.GITHUB_SERVER_URL;
+      const prevRepo = process.env.GITHUB_REPOSITORY;
+      const prevRunId = process.env.GITHUB_RUN_ID;
+      process.env.GITHUB_SERVER_URL = 'https://github.com';
+      process.env.GITHUB_REPOSITORY = 'acme/widgets';
+      process.env.GITHUB_RUN_ID = '42';
+
+      try {
+        await run();
+
+        const expectedUrl = 'https://github.com/acme/widgets/actions/runs/42';
+        const summaryCall = mockGenerateSummary.mock.calls[0][0];
+        expect(summaryCall.artifactUrl).toBe(expectedUrl);
+        expect(summaryCall.artifactUrl).not.toContain('#artifacts');
+      } finally {
+        process.env.GITHUB_SERVER_URL = prevServer;
+        process.env.GITHUB_REPOSITORY = prevRepo;
+        process.env.GITHUB_RUN_ID = prevRunId;
+      }
+    });
+
     it('uses custom artifact name', async () => {
       setupInputs({ 'html-report': 'true', 'artifact-name': 'my-report' });
 

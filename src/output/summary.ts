@@ -246,7 +246,7 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
   }
 
   if (options.artifactUrl) {
-    core.summary.addRaw(`📄 [Download HTML Report](${options.artifactUrl})\n`);
+    core.summary.addRaw(`📄 [HTML Report — download from Artifacts](${options.artifactUrl})\n`);
   }
 
   await core.summary.write();
