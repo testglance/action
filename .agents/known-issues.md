@@ -7,7 +7,6 @@ These were surfaced during the AI-native docs revamp. Each has a tracking issue 
 
 | #   | Issue                                                                                                                 | Area          | Severity | Status |
 | --- | --------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ------ |
-| D   | [#161 — Stop shipping the ~6.5MB source map in published dist/](https://github.com/testglance/action/issues/161)      | Build/perf    | Low      | Open   |
 | E   | [#162 — Promote silent analytics failures from debug() to warning()](https://github.com/testglance/action/issues/162) | Observability | Medium   | Open   |
 | F   | [#163 — Clarify index.test.ts is an orchestration unit test](https://github.com/testglance/action/issues/163)         | Testing/docs  | Low      | Open   |
 
@@ -40,9 +39,11 @@ See [security](./security.md) and [build-and-release](./build-and-release.md).
 the CI `test` job runs `vitest run --coverage`, so coverage regressions fail the build. See
 [testing](./testing.md).
 
-## D — Source map shipped to consumers ([#161](https://github.com/testglance/action/issues/161))
+## D — Source map shipped to consumers ([#161](https://github.com/testglance/action/issues/161)) — Fixed
 
-`ncc ... --source-map` emits `dist/index.js.map` (~6.5MB), committed to `main` and downloaded by every consumer on every run. Usually unnecessary for a published action. See [build-and-release](./build-and-release.md).
+**Was:** `ncc ... --source-map` emitted `dist/index.js.map` (~6.5MB) plus a `dist/sourcemap-register.js` shim, committed to `main` and downloaded by every consumer on every run.
+
+**Fixed:** the `build` script no longer passes `--source-map`, so the released `dist/` ships only `index.js` + `licenses.txt`. `pnpm build:debug` keeps `--source-map` for local bundle debugging (never shipped — `release-v1` uses `pnpm build`). See [build-and-release](./build-and-release.md).
 
 ## E — Analytics failures logged at debug level ([#162](https://github.com/testglance/action/issues/162))
 

@@ -65,7 +65,7 @@ The published artifact is `dist/index.js` — a single `@vercel/ncc` bundle. Tru
 
 ### Supply-chain warts
 
-- **Source map shipped to consumers.** `pnpm build` runs `ncc … --source-map` (`package.json` `build` script), so a large source map ships inside the published `dist/`. It exposes original `src/` paths/contents to anyone resolving the action. Not a secret leak (the source is open), but it is bundle bloat and surface area — see [known-issues](./known-issues.md#d).
+- **Source map no longer shipped** (was a wart, now fixed — [#161](https://github.com/testglance/action/issues/161)). `pnpm build` dropped `--source-map`, so the published `dist/` ships only `index.js` + `licenses.txt` (no `index.js.map`, no `sourcemap-register.js`). `pnpm build:debug` still emits the map for local bundle debugging but is never used by `release-v1`, so nothing ships to consumers — see [known-issues](./known-issues.md#d).
 - **Renovate automerge is scoped to lower-risk updates.** `renovate.json` auto-merges `devDependencies` (patch/minor), linters/testers/`@types`, `github-actions` (digest re-pins + patch/minor), and `lockFileMaintenance`. Production `dependencies` - the packages ncc bundles into `dist/` - are explicitly **excluded** (`automerge: false`) and require human review. All third-party actions are **SHA-pinned** via `helpers:pinGitHubActionDigests` (see below), so an auto-merged action update is an immutable digest bump, not a mutable-tag hijack. Gated by `minimumReleaseAge: "3 days"` and `internalChecksFilter: "strict"`. Resolved [#159](https://github.com/testglance/action/issues/159); see [known-issues](./known-issues.md#b).
 
 ## Invariants when touching this area
