@@ -5,14 +5,14 @@
 
 These were surfaced during the AI-native docs revamp. Each has a tracking issue on `testglance/action`. Docs elsewhere in `.agents/` link here instead of pretending the behavior is ideal.
 
-| #   | Issue                                                                                                                 | Area          | Severity | Status |
-| --- | --------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ------ |
-| A   | [#158 — Add LICENSE file (MIT) to match README badge](https://github.com/testglance/action/issues/158)                | Licensing     | Medium   | Open   |
-| B   | [#159 — Reconsider Renovate auto-merge of devDeps + GitHub Actions](https://github.com/testglance/action/issues/159)  | Supply chain  | Medium   | Open   |
-| C   | [#160 — Add test coverage collection and thresholds in CI](https://github.com/testglance/action/issues/160)           | Testing       | Low      | Open   |
-| D   | [#161 — Stop shipping the ~6.5MB source map in published dist/](https://github.com/testglance/action/issues/161)      | Build/perf    | Low      | Open   |
-| E   | [#162 — Promote silent analytics failures from debug() to warning()](https://github.com/testglance/action/issues/162) | Observability | Medium   | Open   |
-| F   | [#163 — Clarify index.test.ts is an orchestration unit test](https://github.com/testglance/action/issues/163)         | Testing/docs  | Low      | Open   |
+| #   | Issue                                                                                                                 | Area          | Severity | Status   |
+| --- | --------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | -------- |
+| A   | [#158 — Add LICENSE file (MIT) to match README badge](https://github.com/testglance/action/issues/158)                | Licensing     | Medium   | Open     |
+| B   | [#159 — Reconsider Renovate auto-merge of devDeps + GitHub Actions](https://github.com/testglance/action/issues/159)  | Supply chain  | Medium   | Open     |
+| C   | [#160 — Add test coverage collection and thresholds in CI](https://github.com/testglance/action/issues/160)           | Testing       | Low      | Resolved |
+| D   | [#161 — Stop shipping the ~6.5MB source map in published dist/](https://github.com/testglance/action/issues/161)      | Build/perf    | Low      | Open     |
+| E   | [#162 — Promote silent analytics failures from debug() to warning()](https://github.com/testglance/action/issues/162) | Observability | Medium   | Open     |
+| F   | [#163 — Clarify index.test.ts is an orchestration unit test](https://github.com/testglance/action/issues/163)         | Testing/docs  | Low      | Open     |
 
 ---
 
@@ -24,9 +24,12 @@ The README shows an MIT badge linking to `/LICENSE`, but no `LICENSE` file exist
 
 `renovate.json` auto-merges patch/minor updates for `devDependencies` and the `github-actions` manager without review (`minimumReleaseAge: 3 days` mitigates but does not eliminate). For a widely-consumed action whose `v1` bundle is CI-built from `main`, an unreviewed compromised dep/tag is a supply-chain risk. See [security](./security.md) and [build-and-release](./build-and-release.md).
 
-## C — No coverage thresholds ([#160](https://github.com/testglance/action/issues/160))
+## C — Coverage collection & thresholds ([#160](https://github.com/testglance/action/issues/160)) — Resolved
 
-`vitest.config.ts` has no coverage config and CI doesn't gate on coverage despite a large suite. Add `--coverage` (v8) and enforce minimums in the `test` job. See [testing](./testing.md).
+`vitest.config.ts` now configures the v8 coverage provider with global thresholds
+(statements 93 / branches 81 / functions 97 / lines 94, seeded at then-current levels), and
+the CI `test` job runs `vitest run --coverage`, so coverage regressions fail the build. See
+[testing](./testing.md).
 
 ## D — Source map shipped to consumers ([#161](https://github.com/testglance/action/issues/161))
 
