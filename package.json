@@ -2,6 +2,7 @@
   "name": "testglance-action",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "TestGlance GitHub Action - Track test suite health over time",
   "main": "dist/index.js",
   "packageManager": "pnpm@11.9.0",
