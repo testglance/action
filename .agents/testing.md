@@ -8,17 +8,23 @@
 - Vitest (`vitest run`). Config is `vitest.config.ts`:
   - `globals: true` (`vitest.config.ts:5`) — `describe`/`it`/`expect`/`vi` are global; tests still import them explicitly.
   - `testTimeout: 30_000` (`vitest.config.ts:6`) — 30s per test, generous for the large-fixture perf tests.
-- No coverage gate is configured (no `coverage` block, no threshold in CI). Coverage is not enforced — see [known-issues](./known-issues.md).
+- Coverage uses the **v8** provider (`vitest.config.ts` → `test.coverage`). It reports over
+  `src/**/*.ts` (excluding `__tests__`/`*.test.ts`) and enforces **global thresholds**
+  (statements 93 / branches 81 / functions 97 / lines 94) — seeded at the levels current
+  when #160 landed, so coverage can't silently regress. Dropping below any threshold makes
+  `vitest run --coverage` exit non-zero, failing the CI `test` job. Reports land in the
+  gitignored `coverage/` (`text` in the CI log, plus `html`/`json-summary` for local use).
 
 ### Commands
 
-| Command           | What                                                     |
-| ----------------- | -------------------------------------------------------- |
-| `pnpm test`       | `vitest run` (single pass) — `package.json:10`           |
-| `pnpm test:watch` | `vitest` watch mode — `package.json:11`                  |
-| `pnpm e2e:act`    | local bundled-action smoke via `act` — `package.json:12` |
+| Command              | What                                                     |
+| -------------------- | -------------------------------------------------------- |
+| `pnpm test`          | `vitest run` (single pass) — `package.json:10`           |
+| `pnpm test:watch`    | `vitest` watch mode — `package.json:11`                  |
+| `pnpm test:coverage` | `vitest run --coverage` (v8, enforces thresholds)        |
+| `pnpm e2e:act`       | local bundled-action smoke via `act` — `package.json:12` |
 
-CI runs the suite with `pnpm exec vitest run --reporter=default --reporter=junit --outputFile=test-results/vitest.xml` (`.github/workflows/ci.yml:56`) so the action can dogfood its own JUnit output (see [self-test](#real-integration--self-test--e2e) below).
+CI runs the suite with `pnpm exec vitest run --coverage --reporter=default --reporter=junit --outputFile=test-results/vitest.xml` (`.github/workflows/ci.yml:56`) so the action can dogfood its own JUnit output (and gate on coverage) (see [self-test](#real-integration--self-test--e2e) below).
 
 ## Layout
 
