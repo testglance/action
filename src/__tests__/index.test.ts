@@ -1,5 +1,9 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
+vi.hoisted(() => {
+  process.env.TESTGLANCE_SKIP_AUTO_RUN = 'true';
+});
+
 const mockGetInput = vi.fn();
 const mockInfo = vi.fn();
 const mockWarning = vi.fn();

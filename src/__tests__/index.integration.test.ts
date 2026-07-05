@@ -35,9 +35,10 @@ describe('run() real integration (unmocked pipeline)', () => {
     writeFileSync(summaryFile, '');
 
     vi.stubEnv('GITHUB_STEP_SUMMARY', summaryFile);
+    vi.stubEnv('TESTGLANCE_SKIP_AUTO_RUN', 'true');
     vi.stubEnv('INPUT_API-KEY', ''); // local-only mode → no API submission
     vi.stubEnv('INPUT_HISTORY', 'false'); // skip @actions/cache round-trip
-    // github-token intentionally unset → no check-run / PR-comment network calls
+    vi.stubEnv('GITHUB_TOKEN', ''); // keep github-token fallback from posting comments
   });
 
   afterEach(() => {
