@@ -175245,7 +175245,11 @@ async function run() {
         return { history: null };
     }
 }
-run();
+// Allows tests to import this module side-effect-free while keeping the bundled Action
+// auto-invoked for normal consumers.
+if (process.env.TESTGLANCE_SKIP_AUTO_RUN !== 'true') {
+    run();
+}
 
 })();
 
