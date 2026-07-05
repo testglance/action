@@ -49,7 +49,7 @@ src/
   __tests__/
     index.test.ts       # Integration tests for full run() pipeline
 fixtures/               # Test fixtures (XML + JSON). Large fixtures generated at test time.
-dist/                   # Compiled output (COMMITTED — GitHub Actions requirement)
+dist/                   # Compiled output (gitignored; built and committed to main by CI, never per-PR)
 action.yml              # Action metadata (inputs, runtime)
 ```
 
