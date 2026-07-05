@@ -104,11 +104,9 @@ export async function sendTestRun(
         };
       }
 
-      const errorBody = (await response.json().catch(
-        (): ApiErrorBody => ({
-          error: { code: 'UNKNOWN', message: `HTTP ${response.status}` },
-        }),
-      )) as ApiErrorBody;
+      const errorBody = (await response.json().catch((): ApiErrorBody => ({
+        error: { code: 'UNKNOWN', message: `HTTP ${response.status}` },
+      }))) as ApiErrorBody;
 
       const errorCode = errorBody.error?.code ?? 'UNKNOWN';
       const errorMessage = errorBody.error?.message ?? `HTTP ${response.status}`;
