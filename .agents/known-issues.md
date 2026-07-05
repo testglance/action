@@ -7,18 +7,16 @@ These were surfaced during the AI-native docs revamp. Each has a tracking issue 
 
 | #   | Issue                                                                                                                 | Area          | Severity | Status   |
 | --- | --------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | -------- |
-| A   | [#158 — Add LICENSE file (MIT) to match README badge](https://github.com/testglance/action/issues/158)                | Licensing     | Medium   | Open     |
-| B   | [#159 — Reconsider Renovate auto-merge of devDeps + GitHub Actions](https://github.com/testglance/action/issues/159)  | Supply chain  | Medium   | Resolved |
-| C   | [#160 — Add test coverage collection and thresholds in CI](https://github.com/testglance/action/issues/160)           | Testing       | Low      | Open     |
-| D   | [#161 — Stop shipping the ~6.5MB source map in published dist/](https://github.com/testglance/action/issues/161)      | Build/perf    | Low      | Open     |
-| E   | [#162 — Promote silent analytics failures from debug() to warning()](https://github.com/testglance/action/issues/162) | Observability | Medium   | Open     |
-| F   | [#163 — Clarify index.test.ts is an orchestration unit test](https://github.com/testglance/action/issues/163)         | Testing/docs  | Low      | Open     |
+| C   | [#160 — Add test coverage collection and thresholds in CI](https://github.com/testglance/action/issues/160)           | Testing       | Low      | Open   |
+| D   | [#161 — Stop shipping the ~6.5MB source map in published dist/](https://github.com/testglance/action/issues/161)      | Build/perf    | Low      | Open   |
+| E   | [#162 — Promote silent analytics failures from debug() to warning()](https://github.com/testglance/action/issues/162) | Observability | Medium   | Open   |
+| F   | [#163 — Clarify index.test.ts is an orchestration unit test](https://github.com/testglance/action/issues/163)         | Testing/docs  | Low      | Open   |
 
 ---
 
 ## A — No LICENSE file ([#158](https://github.com/testglance/action/issues/158))
 
-The README shows an MIT badge linking to `/LICENSE`, but no `LICENSE` file exists. Default with no license is "all rights reserved", contradicting the badge. Add the MIT text with the correct holder/year.
+**Fixed:** a top-level `LICENSE` file with the standard MIT text (holder: TestGlance) now exists, and `package.json` declares `"license": "MIT"`. Originally: the README showed an MIT badge linking to `/LICENSE`, but no `LICENSE` file existed, so the default was "all rights reserved".
 
 ## B — Renovate auto-merge posture (Resolved, [#159](https://github.com/testglance/action/issues/159))
 
