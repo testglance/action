@@ -3,10 +3,22 @@ import type { ParsedTestRun } from '../../types';
 
 const mockWarning = vi.fn();
 const mockSetFailed = vi.fn();
+const mockInfo = vi.fn();
+const mockError = vi.fn();
+const mockDebug = vi.fn();
+const mockSummaryAddRaw = vi.fn();
+const mockSummaryWrite = vi.fn();
 
 vi.mock('@actions/core', () => ({
   warning: (...args: unknown[]) => mockWarning(...args),
   setFailed: (...args: unknown[]) => mockSetFailed(...args),
+  info: (...args: unknown[]) => mockInfo(...args),
+  error: (...args: unknown[]) => mockError(...args),
+  debug: (...args: unknown[]) => mockDebug(...args),
+  summary: {
+    addRaw: (...args: unknown[]) => mockSummaryAddRaw(...args),
+    write: (...args: unknown[]) => mockSummaryWrite(...args),
+  },
 }));
 
 const mockChecksCreate = vi.fn();
@@ -70,6 +82,7 @@ function makeParsed(overrides: Partial<ParsedTestRun> = {}): ParsedTestRun {
 beforeEach(() => {
   vi.clearAllMocks();
   mockChecksCreate.mockResolvedValue({ data: { id: 1 } });
+  mockSummaryWrite.mockResolvedValue(undefined);
   mockContext.payload = { pull_request: { head: { sha: 'pr-sha-abc123' } } };
   mockContext.sha = 'push-sha-def456';
 });
@@ -395,7 +408,7 @@ describe('createCheckRun', () => {
     );
   });
 
-  it('warns about permissions on 403 error', async () => {
+  it('warns about permissions on 403 error and does not retry', async () => {
     const error = new Error('Resource not accessible by integration');
     (error as Record<string, unknown>).status = 403;
     mockChecksCreate.mockRejectedValue(error);
@@ -406,13 +419,15 @@ describe('createCheckRun', () => {
       parsed: makeParsed(),
     });
 
+    expect(mockChecksCreate).toHaveBeenCalledTimes(1);
     expect(mockWarning).toHaveBeenCalledWith(
       expect.stringContaining('checks: write permission is required'),
     );
+    expect(mockError).not.toHaveBeenCalled();
   });
 
-  it('warns generically on other errors', async () => {
-    mockChecksCreate.mockRejectedValue(new Error('Network failure'));
+  it('escalates to core.error (not warning) when a non-permission error persists', async () => {
+    mockChecksCreate.mockRejectedValue(new Error('Bad request'));
 
     await createCheckRun({
       githubToken: 'ghp_test',
@@ -420,7 +435,91 @@ describe('createCheckRun', () => {
       parsed: makeParsed(),
     });
 
-    expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('Failed to create Check Run'));
+    expect(mockError).toHaveBeenCalledWith(expect.stringContaining('Failed to create Check Run'));
+    expect(mockSummaryAddRaw).toHaveBeenCalledWith(expect.stringContaining('could not post'));
+    expect(mockSummaryWrite).toHaveBeenCalled();
+  });
+
+  it('logs a success line with id and conclusion after creating the check run', async () => {
+    mockChecksCreate.mockResolvedValue({ data: { id: 4242 } });
+
+    await createCheckRun({
+      githubToken: 'ghp_test',
+      checkName: 'Unit Tests',
+      parsed: makeParsed(),
+    });
+
+    expect(mockInfo).toHaveBeenCalledWith(
+      expect.stringContaining('Created check run "Unit Tests" (id=4242, conclusion=failure)'),
+    );
+  });
+
+  it('retries a transient 5xx and then succeeds', async () => {
+    vi.useFakeTimers();
+    try {
+      const error = Object.assign(new Error('Server Error'), { status: 500 });
+      mockChecksCreate.mockRejectedValueOnce(error).mockResolvedValueOnce({ data: { id: 9 } });
+
+      const promise = createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Tests',
+        parsed: makeParsed(),
+      });
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockChecksCreate).toHaveBeenCalledTimes(2);
+      expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('Created check run "Tests"'));
+      expect(mockError).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries a secondary-rate-limit 403 (retry-after header), not treating it as a permission error', async () => {
+    vi.useFakeTimers();
+    try {
+      const error = Object.assign(new Error('You have exceeded a secondary rate limit'), {
+        status: 403,
+        response: { headers: { 'retry-after': '1' } },
+      });
+      mockChecksCreate.mockRejectedValueOnce(error).mockResolvedValueOnce({ data: { id: 11 } });
+
+      const promise = createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Tests',
+        parsed: makeParsed(),
+      });
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockChecksCreate).toHaveBeenCalledTimes(2);
+      expect(mockWarning).not.toHaveBeenCalled();
+      expect(mockError).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('exhausts retries on persistent 5xx, escalates to core.error, and never calls setFailed', async () => {
+    vi.useFakeTimers();
+    try {
+      mockChecksCreate.mockRejectedValue(Object.assign(new Error('Server Error'), { status: 503 }));
+
+      const promise = createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Tests',
+        parsed: makeParsed(),
+      });
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockChecksCreate).toHaveBeenCalledTimes(4);
+      expect(mockError).toHaveBeenCalledWith(expect.stringContaining('Failed to create Check Run'));
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('never calls core.setFailed', async () => {
