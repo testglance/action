@@ -130274,6 +130274,66 @@ function parseFileLocation(stackTrace) {
 
 
 const MAX_ANNOTATIONS = 50;
+const MAX_CHECK_RUN_ATTEMPTS = 4;
+const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 15_000;
+function check_run_sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function errorHeaders(err) {
+    const response = err.response;
+    return response?.headers ?? {};
+}
+// GitHub signals secondary rate limits with a `retry-after` header and/or an "exhausted a
+// secondary rate limit" message; primary limits set `x-ratelimit-remaining: 0`. A 403 without any
+// of these is a permissions failure, which is NOT worth retrying.
+function isRateLimited(err) {
+    const status = err.status;
+    const headers = errorHeaders(err);
+    const message = String(err.message ?? '').toLowerCase();
+    if (headers['retry-after'] != null)
+        return true;
+    if (message.includes('rate limit') || message.includes('secondary rate'))
+        return true;
+    if ((status === 403 || status === 429) && headers['x-ratelimit-remaining'] === '0')
+        return true;
+    return status === 429;
+}
+function isRetryable(err) {
+    const status = err.status;
+    const code = err.code;
+    if (code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'ENOTFOUND' || code === 'EAI_AGAIN')
+        return true;
+    if (isRateLimited(err))
+        return true;
+    return typeof status === 'number' && status >= 500 && status <= 599;
+}
+function retryDelayMs(err, attempt) {
+    const retryAfter = Number(errorHeaders(err)['retry-after']);
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        return Math.min(retryAfter * 1000, MAX_RETRY_DELAY_MS);
+    }
+    // Exponential backoff with jitter so concurrent jobs don't retry in lockstep.
+    const base = INITIAL_RETRY_DELAY_MS * 2 ** (attempt - 1);
+    const jitter = Math.random() * INITIAL_RETRY_DELAY_MS;
+    return Math.min(base + jitter, MAX_RETRY_DELAY_MS);
+}
+async function reportCheckRunFailure(checkName, err) {
+    const status = err.status;
+    if (status === 403 && !isRateLimited(err)) {
+        warning(`Unable to create Check Run "${checkName}" — checks: write permission is required. For forked PRs, use the workflow_run event pattern.`);
+        return;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    core_error(`Failed to create Check Run "${checkName}" after ${MAX_CHECK_RUN_ATTEMPTS} attempts: ${message}. If this check is a required status check the PR will stay blocked until it posts — re-run the job or investigate the GitHub Checks API.`);
+    try {
+        summary_summary.addRaw(`\n> ⚠️ **TestGlance could not post the "${checkName}" check run** after ${MAX_CHECK_RUN_ATTEMPTS} attempts (${message}). A required check may be missing on this commit.\n`);
+        await summary_summary.write();
+    }
+    catch {
+        // Job-summary write is best-effort — never let it break the action.
+    }
+}
 function resolveLocation(test) {
     if (test.file) {
         return { path: normalizePath(test.file), line: test.line ?? 1 };
@@ -130318,28 +130378,40 @@ async function createCheckRun(options) {
             if (annotations.length >= MAX_ANNOTATIONS)
                 break;
         }
-        await octokit.rest.checks.create({
-            owner,
-            repo,
-            name: checkName,
-            head_sha: headSha,
-            status: 'completed',
-            conclusion,
-            output: {
-                title,
-                summary: summaryText,
-                annotations,
-            },
-        });
+        let lastError;
+        for (let attempt = 1; attempt <= MAX_CHECK_RUN_ATTEMPTS; attempt++) {
+            try {
+                const response = await octokit.rest.checks.create({
+                    owner,
+                    repo,
+                    name: checkName,
+                    head_sha: headSha,
+                    status: 'completed',
+                    conclusion,
+                    output: {
+                        title,
+                        summary: summaryText,
+                        annotations,
+                    },
+                });
+                info(`Created check run "${checkName}" (id=${response?.data?.id}, conclusion=${conclusion})`);
+                return;
+            }
+            catch (err) {
+                lastError = err;
+                if (isRetryable(err) && attempt < MAX_CHECK_RUN_ATTEMPTS) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    core_debug(`Check Run "${checkName}" attempt ${attempt}/${MAX_CHECK_RUN_ATTEMPTS} failed: ${message} — retrying`);
+                    await check_run_sleep(retryDelayMs(err, attempt));
+                    continue;
+                }
+                break;
+            }
+        }
+        await reportCheckRunFailure(checkName, lastError);
     }
     catch (err) {
-        const status = err.status;
-        if (status === 403) {
-            warning('Unable to create Check Run — checks: write permission is required. For forked PRs, use the workflow_run event pattern.');
-        }
-        else {
-            warning(`Failed to create Check Run: ${err.message}`);
-        }
+        warning(`Failed to create Check Run: ${err.message}`);
     }
 }
 
