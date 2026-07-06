@@ -27,13 +27,13 @@ when an `api-key` is set. Everything else is GitHub Actions log output via `@act
 | `core.warning` | ALL user-facing errors + invalid inputs + analytics-step failures | every handler in `errors.ts`; invalid-input fallbacks (e.g. `src/index.ts:44`); per-file parse failure `src/index.ts:209`; "all files failed" `src/index.ts:216`; output-step failures (summary, PR comment, HTML); analytics failures (delta, tests-changed, flaky, perf, trends, base-branch) each `… section skipped`; cache-hit-but-missing-file in `actions-cache-storage.ts` |
 | `core.debug`   | verbose tracing + "not enough runs yet" notes                     | "need 5 runs for flaky detection"; "perf baseline collecting"; "need 3 runs for perf"; cache miss / load-save success traces in `actions-cache-storage.ts`                                                                                                                                                                                                                         |
 
-- **No `core.notice`** anywhere. **No `core.error`** anywhere. (`core.error` would print a red annotation but still not fail; the project deliberately uses `warning` instead — verified absent in `src/`.)
+- **No `core.notice`** anywhere. `core.error` is used in exactly **one** place: when the `check-name` check run fails to post after retries (`src/output/check-run.ts`). This is deliberate — a _required_ check run that silently never posts blocks the PR forever, so that specific failure escalates from `warning` to a red `error` annotation (plus a job-summary note). It still **never** fails the step (no `setFailed`, exit 0). Everywhere else, user-facing failures use `core.warning`.
 - `core.debug` output is **only visible when the consumer enables step debug logging** (the `ACTIONS_STEP_DEBUG` secret / runner debug). On a normal run it is invisible.
 
 ### Picking a level for new code
 
 - Did something the user asked for succeed, or are you reporting normal progress? → `core.info`.
-- Did a feature the user can see (summary, PR comment, check run, submission, parsing, an input) fail or get skipped? → `core.warning`. The user should be able to notice and fix it.
+- Did a feature the user can see (summary, PR comment, check run, submission, parsing, an input) fail or get skipped? → `core.warning`. The user should be able to notice and fix it. (Sole exception: a `check-name` check run that fails to post after retries uses `core.error` — see above — because a missing _required_ check silently blocks merges.)
 - Did an _optional history/analytics_ computation **fail** (throw), dropping a user-visible section? → `core.warning`, naming the section that was skipped (e.g. `… delta section skipped.`). This is data-affecting and must be visible on a normal run.
 - Did an analytics step get skipped only because there is **not enough data yet** ("need N runs"), or is it pure verbose tracing? → `core.debug`.
 
@@ -83,7 +83,7 @@ The guarantee is enforced by assertions, not just convention. `@actions/core` is
 
 - `src/__tests__/index.test.ts:354` — `describe('critical: core.setFailed is NEVER called (AC7)')`, covering happy path, no-files, parse error, API-error, and unexpected-exception cases. The empty-`api-key` (local-only) case lives separately at `src/__tests__/index.test.ts:2053`.
 - `src/utils/__tests__/errors.test.ts:66` — every `errors.ts` handler asserted not to call `setFailed`.
-- `src/output/__tests__/check-run.test.ts:426` and `src/output/__tests__/post-pr-comment.test.ts:141` — output modules likewise never fail.
+- `src/output/__tests__/check-run.test.ts` (`'never calls core.setFailed'`, and the exhausted-retry escalation test) and `src/output/__tests__/post-pr-comment.test.ts:141` — output modules likewise never fail.
 
 When you add an error path, add a matching `expect(mockSetFailed).not.toHaveBeenCalled()`
 case. See [testing](./testing.md) for the mocking setup.
