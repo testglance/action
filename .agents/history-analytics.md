@@ -111,6 +111,7 @@ Constructed with a `HistoryStorage` and `historyLimit`. Typical lifecycle in `sr
 `computeTrends(entries)` (`trends.ts:33`) → `TrendIndicators` (`types.ts:83`): `passRate`, `duration`, `testCount` blocks.
 
 - Compares the current entry against the **average** of all previous entries (pass rate and duration). `testCount.delta` compares only against the immediately previous entry (`trends.ts:53`).
+- **PR baseline override:** on `pull_request` builds the orchestrator replaces this current-branch `trends` object with `computeBaseBranchTrends(baseHistory.entries, currentEntry, baseBranch)` (`trends.ts`), which baselines **all three** metrics against the compare branch's **latest** run (one consistent baseline — no mixed avg/previous split). The result carries `baselineLabel` (the compare branch), and every renderer prefixes the output with `` vs `<branch>` ``. Falls back to the current-branch `computeTrends` when the compare branch has no history. See [Cross-branch](#cross-branch-comparison-base-branch-delta).
 - `classifyDirection(delta, threshold)` (`trends.ts:27`) → `up | down | stable`. Thresholds: `PASS_RATE_THRESHOLD = 1.0` (points), `DURATION_THRESHOLD = 5.0` (percent) — `trends.ts:4`-`5`.
 - **Sparklines** (`buildSparkline`, `trends.ts:8`): 8-level block chars `▁▂▃▄▅▆▇█`. Only emitted when `entries.length >= MIN_SPARKLINE_ENTRIES` (`= 5`, `trends.ts:6`); otherwise empty string (`trends.ts:65`, `trends.ts:72`). All-equal values render as the mid char.
 
@@ -120,7 +121,7 @@ Constructed with a `HistoryStorage` and `historyLimit`. Typical lifecycle in `sr
 
 On PRs, the action loads the **base branch's** history with a separate `ActionsCacheStorage` and diffs head-vs-base latest entries (`src/index.ts:331`-`354`).
 
-- `baseBranch` = `process.env.GITHUB_BASE_REF` (stripped of `refs/heads/`). Empty for non-PR events.
+- `baseBranch` = the `compare-branch` input if set, else `process.env.GITHUB_BASE_REF` (stripped of `refs/heads/`), gated by `isPullRequest` so it is empty for non-PR events (`src/index.ts:339`-`344`). The `compare-branch` input therefore drives **both** this base-branch delta and the PR trend baseline. A self-compare (`baseBranch === headBranch`) skips the trend override (the base storage has no `runId`, so it would re-load the head history and double-count).
 - A fresh `ActionsCacheStorage(baseBranch, reportPathHash)` is built **without a `runId`** (`src/index.ts:340`) — so its `cacheKey` has no run suffix and it restores the base branch's existing history rather than reserving a new key.
 - Same `reportPathHash` as the head run, so head and base align on the same report path.
 - `baseDelta = computeDelta(baseLatest, currentEntry)` (`src/index.ts:347`), only when base history has `entries.length > 0`.

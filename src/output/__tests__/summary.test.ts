@@ -2114,6 +2114,17 @@ describe('renderTrendsSection', () => {
     expect(output).toContain('**Tests:** 97 (-3)');
   });
 
+  it('labels the baseline in the heading when baselined against a compare branch', () => {
+    const output = renderTrendsSection(makeTrends({ baselineLabel: 'main' }));
+    expect(output).toContain('### 📈 Trends (vs `main`)');
+  });
+
+  it('uses the plain heading when no baseline label is set', () => {
+    const output = renderTrendsSection(makeTrends());
+    expect(output).toContain('### 📈 Trends\n');
+    expect(output).not.toContain('vs `');
+  });
+
   it('is wired into generateSummary when trends present', async () => {
     mockSummary.addHeading.mockClear();
     mockSummary.addTable.mockClear();

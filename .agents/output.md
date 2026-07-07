@@ -29,7 +29,7 @@ Default rendering order:
 3. Progress bar (`renderProgressBar`).
 4. Metrics line: duration, `N reports merged` (when `reportFileCount > 1`), health score (`🏥 N/100`, or `available after 5 runs`).
 5. Health-score "how is this scored?" `<details>` (only with a real score).
-6. Flaky count, highlights, trends.
+6. Flaky count, highlights, trends. On `pull_request` builds the trend line/blocks are baselined against the compare branch and prefixed `` vs `<branch>` `` (via `TrendIndicators.baselineLabel`); see [history-analytics → Trends](./history-analytics.md).
 7. `---` divider, then delta, tests-changed, flaky, perf-regression sections.
 8. Suite breakdown (`renderSuiteBreakdown`, `src/output/summary.ts:271`).
 9. All-tests section (conditional — see below).

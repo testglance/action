@@ -270,8 +270,12 @@ function renderTrends(trends: TrendIndicators): string {
   const countSign = trends.testCount.delta >= 0 ? '+' : '';
   const countLine = `<strong>Tests:</strong> ${trends.testCount.current} (${countSign}${trends.testCount.delta})`;
 
+  const heading = trends.baselineLabel
+    ? `&#x1F4C8; Trends <small>vs <code>${escapeHtml(trends.baselineLabel)}</code></small>`
+    : '&#x1F4C8; Trends';
+
   return `<section>
-  <h2>&#x1F4C8; Trends</h2>
+  <h2>${heading}</h2>
   <p>${passLine}</p>
   <p>${durLine}</p>
   <p>${countLine}</p>

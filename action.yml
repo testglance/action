@@ -70,6 +70,10 @@ inputs:
     description: 'Maximum number of runs to keep in history'
     required: false
     default: '20'
+  compare-branch:
+    description: 'On pull_request builds, baseline the trend line / trend blocks and the "vs base" comparison against this branch (e.g. main). Defaults to the PR base branch (GITHUB_BASE_REF). Ignored on push builds.'
+    required: false
+    default: ''
   html-report:
     description: 'Generate a self-contained HTML report and upload as a workflow artifact'
     required: false

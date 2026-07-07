@@ -30,7 +30,7 @@ import type {
 import { computeDelta, computeTestsChanged } from './history/comparison';
 import { detectFlakyTests } from './history/flaky-detection';
 import { detectPerfRegressions } from './history/perf-regression';
-import { computeTrends } from './history/trends';
+import { computeTrends, computeBaseBranchTrends } from './history/trends';
 
 const DEFAULT_SLOWEST_TESTS = 10;
 const DEFAULT_FLAKY_THRESHOLD = 2;
@@ -173,6 +173,7 @@ export async function run(): Promise<RunResult> {
       );
     }
     const historyLimit = Math.max(1, historyLimitParsed || 20);
+    const compareBranchInput = core.getInput('compare-branch').trim();
 
     let files: string[];
 
@@ -227,13 +228,15 @@ export async function run(): Promise<RunResult> {
     let delta: DeltaComparison | null = null;
     let testsChanged: TestsChangedReport | null = null;
 
+    const headBranch = (
+      process.env.GITHUB_HEAD_REF ||
+      process.env.GITHUB_REF_NAME ||
+      'unknown'
+    ).replace(/^refs\/heads\//, '');
+
     if (historyEnabled) {
       try {
-        const branch = (
-          process.env.GITHUB_HEAD_REF ||
-          process.env.GITHUB_REF_NAME ||
-          'unknown'
-        ).replace(/^refs\/heads\//, '');
+        const branch = headBranch;
         const reportPathHash = createHash('sha256')
           .update(reportPath || 'auto')
           .digest('hex')
@@ -333,9 +336,15 @@ export async function run(): Promise<RunResult> {
     }
 
     let baseDelta: DeltaComparison | null = null;
-    const baseBranch = (process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '');
+    const isPullRequest =
+      (process.env.GITHUB_EVENT_NAME || '').startsWith('pull_request') ||
+      !!process.env.GITHUB_BASE_REF;
+    const baseBranch = isPullRequest
+      ? (compareBranchInput || process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '')
+      : '';
+    const shouldCompareBaseBranch = baseBranch !== '' && baseBranch !== headBranch;
 
-    if (historyEnabled && baseBranch && loadedHistory) {
+    if (historyEnabled && shouldCompareBaseBranch && loadedHistory) {
       try {
         const reportPathHash = createHash('sha256')
           .update(reportPath || 'auto')
@@ -349,6 +358,10 @@ export async function run(): Promise<RunResult> {
           const baseLatest = baseHistory.entries[baseHistory.entries.length - 1];
           const currentEntry = loadedHistory.entries[loadedHistory.entries.length - 1];
           baseDelta = computeDelta(baseLatest, currentEntry);
+
+          // On PRs, baseline the trend line against the compare branch instead of
+          // the current branch's own history.
+          trends = computeBaseBranchTrends(baseHistory.entries, currentEntry, baseBranch);
         }
       } catch (err) {
         core.warning(
@@ -502,8 +515,8 @@ export async function run(): Promise<RunResult> {
             flaky,
             perfRegression,
             trends,
-            baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
-            baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
+            baseDelta: historyEnabled && shouldCompareBaseBranch ? baseDelta : undefined,
+            baseBranch: historyEnabled && shouldCompareBaseBranch ? baseBranch : undefined,
             artifactUrl,
             parsed,
             delta,

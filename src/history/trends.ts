@@ -30,6 +30,10 @@ function classifyDirection(delta: number, threshold: number): TrendDirection {
   return 'stable';
 }
 
+function passRateOf(entry: HistoryEntry): number {
+  return entry.summary.total > 0 ? (entry.summary.passed / entry.summary.total) * 100 : 0;
+}
+
 export function computeTrends(entries: HistoryEntry[]): TrendIndicators {
   const current = entries[entries.length - 1];
   const previous = entries.slice(0, -1);
@@ -75,5 +79,53 @@ export function computeTrends(entries: HistoryEntry[]): TrendIndicators {
       current: current.summary.total,
       delta: testCountDelta,
     },
+  };
+}
+
+/**
+ * Trend indicators baselined against another branch's latest run (the compare
+ * branch, e.g. the PR base). Unlike {@link computeTrends}, every metric shares a
+ * single baseline — the compare branch's most recent entry — so the pass-rate,
+ * duration, and test-count deltas are all "vs that run".
+ */
+export function computeBaseBranchTrends(
+  baseEntries: HistoryEntry[],
+  current: HistoryEntry,
+  baselineLabel: string,
+): TrendIndicators {
+  const baseLatest = baseEntries[baseEntries.length - 1];
+
+  const currentPassRate = passRateOf(current);
+  const passRateDelta = currentPassRate - passRateOf(baseLatest);
+
+  const currentDuration = current.summary.duration;
+  const baseDuration = baseLatest.summary.duration;
+  const durationDelta = currentDuration - baseDuration;
+  const durationDeltaPercent = baseDuration > 0 ? (durationDelta / baseDuration) * 100 : 0;
+
+  const testCountDelta = current.summary.total - baseLatest.summary.total;
+
+  const series = [...baseEntries, current];
+  const showSparkline = series.length >= MIN_SPARKLINE_ENTRIES;
+
+  return {
+    passRate: {
+      direction: classifyDirection(passRateDelta, PASS_RATE_THRESHOLD),
+      current: currentPassRate,
+      delta: passRateDelta,
+      sparkline: showSparkline ? buildSparkline(series.map(passRateOf)) : '',
+    },
+    duration: {
+      direction: classifyDirection(durationDeltaPercent, DURATION_THRESHOLD),
+      current: currentDuration,
+      delta: durationDelta,
+      deltaPercent: durationDeltaPercent,
+      sparkline: showSparkline ? buildSparkline(series.map((e) => e.summary.duration)) : '',
+    },
+    testCount: {
+      current: current.summary.total,
+      delta: testCountDelta,
+    },
+    baselineLabel,
   };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeTrends, buildSparkline } from '../trends';
+import { computeTrends, computeBaseBranchTrends, buildSparkline } from '../trends';
 import type { HistoryEntry } from '../types';
 
 function makeSummaryEntry(overrides: Partial<HistoryEntry['summary']> = {}): HistoryEntry {
@@ -260,5 +260,75 @@ describe('buildSparkline', () => {
   it('handles two values', () => {
     const result = buildSparkline([0, 100]);
     expect(result).toBe('▁█');
+  });
+});
+
+describe('computeBaseBranchTrends', () => {
+  it('baselines all three metrics against the compare branch latest run', () => {
+    const baseEntries = [
+      makeSummaryEntry({ total: 200, passed: 190, duration: 60 }),
+      makeSummaryEntry({ total: 557, passed: 557, duration: 90.4 }),
+    ];
+    const current = makeSummaryEntry({ total: 290, passed: 282, duration: 167.7 });
+
+    const trends = computeBaseBranchTrends(baseEntries, current, 'main');
+
+    // Compared to base LATEST (557 tests, 100%), not to the average of base history.
+    expect(trends.passRate.current).toBeCloseTo((282 / 290) * 100, 5);
+    expect(trends.passRate.delta).toBeCloseTo((282 / 290) * 100 - 100, 5);
+    expect(trends.passRate.direction).toBe('down');
+    expect(trends.duration.current).toBe(167.7);
+    expect(trends.duration.delta).toBeCloseTo(167.7 - 90.4, 5);
+    expect(trends.duration.deltaPercent).toBeCloseTo(((167.7 - 90.4) / 90.4) * 100, 5);
+    expect(trends.duration.direction).toBe('up');
+    expect(trends.testCount.current).toBe(290);
+    expect(trends.testCount.delta).toBe(290 - 557);
+    expect(trends.baselineLabel).toBe('main');
+  });
+
+  it('classifies direction against a single base entry', () => {
+    const base = [makeSummaryEntry({ total: 100, passed: 95, duration: 10 })];
+
+    expect(
+      computeBaseBranchTrends(base, makeSummaryEntry({ total: 100, passed: 98 }), 'main').passRate
+        .direction,
+    ).toBe('up');
+    expect(
+      computeBaseBranchTrends(base, makeSummaryEntry({ total: 100, passed: 90 }), 'main').passRate
+        .direction,
+    ).toBe('down');
+    expect(
+      computeBaseBranchTrends(base, makeSummaryEntry({ total: 100, passed: 95 }), 'main').passRate
+        .direction,
+    ).toBe('stable');
+  });
+
+  it('guards against a zero-duration baseline', () => {
+    const base = [makeSummaryEntry({ duration: 0 })];
+    const trends = computeBaseBranchTrends(base, makeSummaryEntry({ duration: 42 }), 'main');
+    expect(trends.duration.deltaPercent).toBe(0);
+  });
+
+  it('emits sparklines only once the combined series reaches the minimum length', () => {
+    // 3 base entries + current = 4 points → still below the 5-entry threshold.
+    const shortBase = [makeSummaryEntry(), makeSummaryEntry(), makeSummaryEntry()];
+    const shortTrends = computeBaseBranchTrends(shortBase, makeSummaryEntry(), 'main');
+    expect(shortTrends.passRate.sparkline).toBe('');
+    expect(shortTrends.duration.sparkline).toBe('');
+
+    // 4 base entries + current = 5 points → sparkline rendered.
+    const longBase = [
+      makeSummaryEntry({ passed: 90, duration: 10 }),
+      makeSummaryEntry({ passed: 92, duration: 11 }),
+      makeSummaryEntry({ passed: 94, duration: 12 }),
+      makeSummaryEntry({ passed: 96, duration: 13 }),
+    ];
+    const longTrends = computeBaseBranchTrends(
+      longBase,
+      makeSummaryEntry({ passed: 98, duration: 14 }),
+      'main',
+    );
+    expect(longTrends.passRate.sparkline).toHaveLength(5);
+    expect(longTrends.duration.sparkline).toHaveLength(5);
   });
 });
