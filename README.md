@@ -185,6 +185,7 @@ See [`examples/reusable-workflow.yml`](examples/reusable-workflow.yml) for a `wo
 | `comment-template`  |    No    | `''`                         | Path to a Handlebars template that replaces the default PR comment body. See [Custom Templates](docs/custom-templates.md). |
 | `history`           |    No    | `true`                       | Track run history via GitHub Actions Cache. Powers flaky and performance-regression detection.                             |
 | `history-limit`     |    No    | `20`                         | Maximum number of runs kept in history                                                                                     |
+| `compare-branch`    |    No    | `''`                         | On PRs, baseline the trend line and "vs base" comparison against this branch (e.g. `main`). Defaults to the PR base branch |
 | `flaky-threshold`   |    No    | `2`                          | Minimum pass/fail status flips over the last 10 runs to flag a test as flaky                                               |
 | `perf-threshold`    |    No    | `200`                        | Percent increase over a test's median historical duration to flag as a regression (`200` = 3× slower)                      |
 | `html-report`       |    No    | `true`                       | Generate a self-contained HTML report and upload it as a workflow artifact                                                 |
@@ -247,7 +248,7 @@ On by default, with no account and no external service: each run's results are s
 
 - **Flaky test detection** — a test that flips between pass and fail at least `flaky-threshold` times (default `2`) within the last 10 runs is flagged, with its recent status pattern and flip rate.
 - **Performance regressions** — a test whose duration exceeds its median across previous runs by more than `perf-threshold` percent (default `200`, i.e. 3× slower) is flagged. Requires at least 3 previous recorded durations for that test.
-- **Trends** — pass-rate and duration indicators across recent runs, including a duration sparkline.
+- **Trends** — pass-rate and duration indicators across recent runs, including a duration sparkline. On pull requests these are baselined against the base branch (labeled `` vs `main` ``) so you see how the PR moves the needle relative to where it's merging, not just against its own branch history. Override the branch with `compare-branch`.
 
 History uses Actions Cache under the hood, so it needs no extra permissions and stores nothing outside your repository. Set `history: false` to turn it off.
 

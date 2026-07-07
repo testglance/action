@@ -625,7 +625,10 @@ const TREND_ARROW: Record<string, string> = {
 };
 
 export function renderTrendsSection(trends: TrendIndicators): string {
-  const lines: string[] = ['### 📈 Trends\n\n'];
+  const heading = trends.baselineLabel
+    ? `### 📈 Trends (vs \`${trends.baselineLabel}\`)`
+    : '### 📈 Trends';
+  const lines: string[] = [`${heading}\n\n`];
 
   const passSign = trends.passRate.delta >= 0 ? '+' : '';
   const passArrow = TREND_ARROW[trends.passRate.direction];

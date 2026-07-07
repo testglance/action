@@ -409,6 +409,21 @@ describe('generateHtmlReport', () => {
       const html = generateHtmlReport(makeOptions({ trends: null }));
       expect(html).not.toContain('Trends');
     });
+
+    it('labels the baseline branch when set', () => {
+      const html = generateHtmlReport(
+        makeOptions({ trends: { ...trends, baselineLabel: 'main' } }),
+      );
+      expect(html).toContain('vs <code>main</code>');
+    });
+
+    it('escapes the baseline label', () => {
+      const html = generateHtmlReport(
+        makeOptions({ trends: { ...trends, baselineLabel: '<script>' } }),
+      );
+      expect(html).toContain('vs <code>&lt;script&gt;</code>');
+      expect(html).not.toContain('vs <code><script></code>');
+    });
   });
 
   describe('delta comparison section', () => {

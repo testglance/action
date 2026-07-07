@@ -853,6 +853,16 @@ describe('renderTrendLine', () => {
     expect(line).toContain('Duration: 15.0s ↑');
     expect(line).toContain('Tests: 97 (-3)');
   });
+
+  it('labels the baseline when trends are baselined against a compare branch', () => {
+    const line = renderTrendLine(makeTrends({ baselineLabel: 'main' }));
+    expect(line).toContain('📈 vs `main` ·');
+  });
+
+  it('omits the baseline label when unset (current-branch trends)', () => {
+    const line = renderTrendLine(makeTrends());
+    expect(line).not.toContain('vs `');
+  });
 });
 
 describe('custom comment template', () => {

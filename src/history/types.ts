@@ -98,6 +98,8 @@ export interface TrendIndicators {
     current: number;
     delta: number;
   };
+  /** When set, the trend is baselined against this branch (e.g. `main`) rather than the current branch's own history. */
+  baselineLabel?: string;
 }
 
 export interface DeltaComparison {

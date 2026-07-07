@@ -1284,6 +1284,41 @@ describe('run() orchestration (all collaborators mocked)', () => {
       expect(prCommentCall.section.baseDelta.passRateCurr).toBe(50);
     });
 
+    it('baselines the trend line against the base branch on PRs', async () => {
+      await setupBaseBranchComparison();
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      expect(prCommentCall.section.trends).not.toBeNull();
+      expect(prCommentCall.section.trends.baselineLabel).toBe('main');
+      // Baseline is the base branch's latest run (100% pass), not the head branch history.
+      expect(prCommentCall.section.trends.passRate.direction).toBe('down');
+    });
+
+    it('compare-branch input overrides GITHUB_BASE_REF for the baseline', async () => {
+      await setupBaseBranchComparison();
+      setupInputs({ history: 'true', 'github-token': 'gh_token', 'compare-branch': 'develop' });
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      expect(prCommentCall.section.baseBranch).toBe('develop');
+      expect(prCommentCall.section.trends.baselineLabel).toBe('develop');
+    });
+
+    it('does not baseline against itself when compare-branch equals the head branch', async () => {
+      await setupBaseBranchComparison();
+      setupInputs({ history: 'true', 'github-token': 'gh_token', 'compare-branch': 'feature-x' });
+
+      await run();
+
+      const prCommentCall = mockPostPrComment.mock.calls[0]?.[0];
+      expect(prCommentCall.section.trends?.baselineLabel).toBeUndefined();
+      expect(prCommentCall.section.baseDelta).toBeUndefined();
+      expect(prCommentCall.section.baseBranch).toBeUndefined();
+    });
+
     it('baseDelta is null when GITHUB_BASE_REF is not set (push event)', async () => {
       setupInputs({ history: 'true', 'github-token': 'gh_token' });
       process.env.GITHUB_REF_NAME = 'main';

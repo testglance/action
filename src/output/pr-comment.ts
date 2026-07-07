@@ -257,7 +257,8 @@ export function renderTrendLine(trends: TrendIndicators): string {
   const countSign = trends.testCount.delta >= 0 ? '+' : '';
   const countStr = `Tests: ${trends.testCount.current} (${countSign}${trends.testCount.delta})`;
 
-  return `📈 ${passStr} · ${durStr} · ${countStr}`;
+  const baseline = trends.baselineLabel ? `vs \`${trends.baselineLabel}\` · ` : '';
+  return `📈 ${baseline}${passStr} · ${durStr} · ${countStr}`;
 }
 
 function renderTestsChangedCompact(report: TestsChangedReport): string {
