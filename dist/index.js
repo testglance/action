@@ -125254,7 +125254,10 @@ const TREND_ARROW = {
     down: '↓',
 };
 function renderTrendsSection(trends) {
-    const lines = ['### 📈 Trends\n\n'];
+    const heading = trends.baselineLabel
+        ? `### 📈 Trends (vs \`${trends.baselineLabel}\`)`
+        : '### 📈 Trends';
+    const lines = [`${heading}\n\n`];
     const passSign = trends.passRate.delta >= 0 ? '+' : '';
     const passArrow = TREND_ARROW[trends.passRate.direction];
     let passLine = `**Pass rate:** `;
@@ -129797,7 +129800,8 @@ function renderTrendLine(trends) {
     const durStr = `Duration: ${formatDuration(trends.duration.current)} ${durArrow} (${durSign}${formatDuration(Math.abs(trends.duration.delta))}, ${durSign}${trends.duration.deltaPercent.toFixed(1)}%)`;
     const countSign = trends.testCount.delta >= 0 ? '+' : '';
     const countStr = `Tests: ${trends.testCount.current} (${countSign}${trends.testCount.delta})`;
-    return `📈 ${passStr} · ${durStr} · ${countStr}`;
+    const baseline = trends.baselineLabel ? `vs \`${trends.baselineLabel}\` · ` : '';
+    return `📈 ${baseline}${passStr} · ${durStr} · ${countStr}`;
 }
 function renderTestsChangedCompact(report) {
     const parts = [];
@@ -130592,8 +130596,11 @@ function renderTrends(trends) {
     durLine += `${formatDuration(trends.duration.current)} ${durArrow} (${durSign}${formatDuration(Math.abs(trends.duration.delta))})`;
     const countSign = trends.testCount.delta >= 0 ? '+' : '';
     const countLine = `<strong>Tests:</strong> ${trends.testCount.current} (${countSign}${trends.testCount.delta})`;
+    const heading = trends.baselineLabel
+        ? `&#x1F4C8; Trends <small>vs <code>${escapeHtml(trends.baselineLabel)}</code></small>`
+        : '&#x1F4C8; Trends';
     return `<section>
-  <h2>&#x1F4C8; Trends</h2>
+  <h2>${heading}</h2>
   <p>${passLine}</p>
   <p>${durLine}</p>
   <p>${countLine}</p>
@@ -174782,6 +174789,9 @@ function classifyDirection(delta, threshold) {
         return 'down';
     return 'stable';
 }
+function passRateOf(entry) {
+    return entry.summary.total > 0 ? (entry.summary.passed / entry.summary.total) * 100 : 0;
+}
 function computeTrends(entries) {
     const current = entries[entries.length - 1];
     const previous = entries.slice(0, -1);
@@ -174816,6 +174826,44 @@ function computeTrends(entries) {
             current: current.summary.total,
             delta: testCountDelta,
         },
+    };
+}
+/**
+ * Trend indicators baselined against another branch's latest run (the compare
+ * branch, e.g. the PR base). Unlike {@link computeTrends}, every metric shares a
+ * single baseline — the compare branch's most recent entry — so the pass-rate,
+ * duration, and test-count deltas are all "vs that run".
+ */
+function computeBaseBranchTrends(baseEntries, current, baselineLabel) {
+    const baseLatest = baseEntries[baseEntries.length - 1];
+    const currentPassRate = passRateOf(current);
+    const passRateDelta = currentPassRate - passRateOf(baseLatest);
+    const currentDuration = current.summary.duration;
+    const baseDuration = baseLatest.summary.duration;
+    const durationDelta = currentDuration - baseDuration;
+    const durationDeltaPercent = baseDuration > 0 ? (durationDelta / baseDuration) * 100 : 0;
+    const testCountDelta = current.summary.total - baseLatest.summary.total;
+    const series = [...baseEntries, current];
+    const showSparkline = series.length >= MIN_SPARKLINE_ENTRIES;
+    return {
+        passRate: {
+            direction: classifyDirection(passRateDelta, PASS_RATE_THRESHOLD),
+            current: currentPassRate,
+            delta: passRateDelta,
+            sparkline: showSparkline ? buildSparkline(series.map(passRateOf)) : '',
+        },
+        duration: {
+            direction: classifyDirection(durationDeltaPercent, DURATION_THRESHOLD),
+            current: currentDuration,
+            delta: durationDelta,
+            deltaPercent: durationDeltaPercent,
+            sparkline: showSparkline ? buildSparkline(series.map((e) => e.summary.duration)) : '',
+        },
+        testCount: {
+            current: current.summary.total,
+            delta: testCountDelta,
+        },
+        baselineLabel,
     };
 }
 
@@ -175016,6 +175064,7 @@ async function run() {
             warning(`Invalid "history-limit" input "${historyLimitRaw}". Expected a positive integer; defaulting to 20.`);
         }
         const historyLimit = Math.max(1, historyLimitParsed || 20);
+        const compareBranchInput = getInput('compare-branch').trim();
         let files;
         if (reportPath) {
             files = await discoverReportFiles(reportPath);
@@ -175055,11 +175104,12 @@ async function run() {
         let loadedHistory = null;
         let delta = null;
         let testsChanged = null;
+        const headBranch = (process.env.GITHUB_HEAD_REF ||
+            process.env.GITHUB_REF_NAME ||
+            'unknown').replace(/^refs\/heads\//, '');
         if (historyEnabled) {
             try {
-                const branch = (process.env.GITHUB_HEAD_REF ||
-                    process.env.GITHUB_REF_NAME ||
-                    'unknown').replace(/^refs\/heads\//, '');
+                const branch = headBranch;
                 const reportPathHash = (0,external_node_crypto_.createHash)('sha256')
                     .update(reportPath || 'auto')
                     .digest('hex')
@@ -175136,8 +175186,13 @@ async function run() {
             }
         }
         let baseDelta = null;
-        const baseBranch = (process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '');
-        if (historyEnabled && baseBranch && loadedHistory) {
+        const isPullRequest = (process.env.GITHUB_EVENT_NAME || '').startsWith('pull_request') ||
+            !!process.env.GITHUB_BASE_REF;
+        const baseBranch = isPullRequest
+            ? (compareBranchInput || process.env.GITHUB_BASE_REF || '').replace(/^refs\/heads\//, '')
+            : '';
+        const shouldCompareBaseBranch = baseBranch !== '' && baseBranch !== headBranch;
+        if (historyEnabled && shouldCompareBaseBranch && loadedHistory) {
             try {
                 const reportPathHash = (0,external_node_crypto_.createHash)('sha256')
                     .update(reportPath || 'auto')
@@ -175150,6 +175205,9 @@ async function run() {
                     const baseLatest = baseHistory.entries[baseHistory.entries.length - 1];
                     const currentEntry = loadedHistory.entries[loadedHistory.entries.length - 1];
                     baseDelta = computeDelta(baseLatest, currentEntry);
+                    // On PRs, baseline the trend line against the compare branch instead of
+                    // the current branch's own history.
+                    trends = computeBaseBranchTrends(baseHistory.entries, currentEntry, baseBranch);
                 }
             }
             catch (err) {
@@ -175288,8 +175346,8 @@ async function run() {
                         flaky,
                         perfRegression,
                         trends,
-                        baseDelta: historyEnabled && baseBranch ? baseDelta : undefined,
-                        baseBranch: historyEnabled && baseBranch ? baseBranch : undefined,
+                        baseDelta: historyEnabled && shouldCompareBaseBranch ? baseDelta : undefined,
+                        baseBranch: historyEnabled && shouldCompareBaseBranch ? baseBranch : undefined,
                         artifactUrl,
                         parsed,
                         delta,
