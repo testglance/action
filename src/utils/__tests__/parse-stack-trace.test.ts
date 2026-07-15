@@ -37,13 +37,21 @@ AssertionError: 1 != 2`;
     });
   });
 
-  describe('Java stack traces', () => {
+  describe('Java/Kotlin stack traces', () => {
     it('parses at package.Class(File.java:N) format', () => {
       const trace = `java.lang.AssertionError: expected:<3> but was:<4>
 	at com.example.FooTest.testAdd(FooTest.java:42)
 	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)`;
 
       expect(parseFileLocation(trace)).toEqual({ path: 'FooTest.java', line: 42 });
+    });
+
+    it('parses at package.Class(File.kt:N) format', () => {
+      const trace = `java.lang.AssertionError: expected:<3> but was:<4>
+	at com.example.FooTest.testAdd(FooTest.kt:42)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)`;
+
+      expect(parseFileLocation(trace)).toEqual({ path: 'FooTest.kt', line: 42 });
     });
   });
 
