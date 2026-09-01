@@ -5,7 +5,7 @@
   "license": "MIT",
   "description": "TestGlance GitHub Action - Track test suite health over time",
   "main": "dist/index.js",
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@11.25.0",
   "scripts": {
     "build": "ncc build src/index.ts --out dist --license licenses.txt",
     "build:debug": "ncc build src/index.ts --out dist --source-map --license licenses.txt",
