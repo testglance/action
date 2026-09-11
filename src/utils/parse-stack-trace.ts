@@ -33,9 +33,9 @@ const PATTERNS: PatternExtractor[] = [
     return { path: match[1], line: Number.parseInt(match[2], 10) };
   },
 
-  // Java: at package.Class(File.java:N)
+  // Java/Kotlin: at package.Class(File.java:N) or at package.Class(File.kt:N)
   (line) => {
-    const match = line.match(/at\s+[\w.$]+\(([A-Za-z][\w]*\.java):(\d+)\)/);
+    const match = line.match(/at\s+[\w.$]+\(([A-Za-z][\w]*\.(?:java|kt)):(\d+)\)/);
     if (!match) return null;
     return { path: match[1], line: Number.parseInt(match[2], 10) };
   },
