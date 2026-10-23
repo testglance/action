@@ -20,7 +20,7 @@ The released bundle ships **no source map** (issue [#161](https://github.com/tes
 
 Toolchain:
 
-- Runtime: GitHub Actions `node24` (`action.yml:90`). Build-time engine constraint is `node >=20` (`package.json:53-55`).
+- Runtime: GitHub Actions `node24` (`action.yml:90`). Build-time engine constraint is `node >=24` (`package.json:57-59`).
 - Package manager is pinned via `packageManager: pnpm@11.5.2` (`package.json:7`). Use pnpm, never npm/yarn. CI installs with `pnpm install --frozen-lockfile`.
 
 ## Why `dist/` is gitignored (and how this repo squares it)
