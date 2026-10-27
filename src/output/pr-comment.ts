@@ -111,22 +111,21 @@ function sanitizeMarkerName(name: string): string {
   return stripped.length > 0 ? stripped : 'tests';
 }
 
-function stripMarkers(body: string): string {
-  // Loop to a fixpoint: removing one marker can splice its neighbours into a new one
-  // (e.g. `<!-<!-- tj: -->- tj-data:… -->`).
-  let current = body;
-  for (;;) {
-    const next = current.replace(MARKER_STRIP_PATTERN, '');
-    if (next === current) return current;
-    current = next;
-  }
-}
-
 // Test names come from the report, so they must never be able to open an HTML comment that
 // the blob/marker regexes would later read back as job state. A zero-width space keeps the
 // rendered text identical.
 function neutralizeMarkers(value: string): string {
   return value.replace(/<!--/g, '<!-\u200B-');
+}
+
+function stripMarkers(body: string): string {
+  // Removing one marker can splice its neighbours into a new one (e.g.
+  // `<!-<!-- tj: -->- tj-data:… -->`). Re-stripping until nothing changes is quadratic in the
+  // nesting depth, so when a single pass leaves a marker behind, disarm every comment opener.
+  const stripped = body.replace(MARKER_STRIP_PATTERN, '');
+  return new RegExp(MARKER_STRIP_PATTERN.source).test(stripped)
+    ? neutralizeMarkers(stripped)
+    : stripped;
 }
 
 function escapeTableCell(value: string): string {

@@ -70,21 +70,28 @@ export function resolveRunIdentity(): RunIdentity {
 
   const pr = payload.pull_request as PullRequestPayload | undefined;
 
-  if (eventName === 'issue_comment' && !pr) {
+  // On a PR the comment doesn't say which commit was tested; on a plain issue the run is
+  // on the default branch, exactly like a push.
+  if (eventName === 'issue_comment' && !pr && payload.issue?.pull_request) {
     return {
       checkRunSha: null,
-      historyBranch: payload.issue?.pull_request ? null : envBranch || 'unknown',
+      historyBranch: null,
       commitSha: envSha || 'unknown',
       displayBranch: envBranch || 'unknown',
     };
   }
 
+  // pull_request_target runs in the base repository's cache scope with GITHUB_SHA at the base
+  // branch HEAD; pull_request runs in the PR's own merge-ref scope, so an unknown head repo
+  // there can't reach the base branch's history.
+  const isPrTarget = eventName === 'pull_request_target';
+  const prHeadSha = nonEmpty(pr?.head?.sha);
   return {
-    checkRunSha: nonEmpty(pr?.head?.sha) ?? nonEmpty(github.context.sha),
+    checkRunSha: prHeadSha ?? nonEmpty(github.context.sha),
     historyBranch: pr
-      ? qualifyForkBranch(envBranch || 'unknown', pr.head?.repo, false)
+      ? qualifyForkBranch(envBranch || 'unknown', pr.head?.repo, isPrTarget)
       : envBranch || 'unknown',
-    commitSha: envSha || 'unknown',
+    commitSha: (isPrTarget ? prHeadSha : null) ?? (envSha || 'unknown'),
     displayBranch: envBranch || 'unknown',
   };
 }

@@ -10,9 +10,12 @@ function isWithin(child: string, parent: string): boolean {
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
+// realpathSync.native resolves `..` after following symlinks, as the kernel does when the
+// file is opened; the JS realpathSync collapses `..` lexically first and would check the
+// wrong file for a path like `link/../report.xml`.
 function safeRealpath(path: string): string | null {
   try {
-    return realpathSync(path);
+    return realpathSync.native(path);
   } catch {
     return null;
   }
@@ -21,14 +24,16 @@ function safeRealpath(path: string): string | null {
 // The workspace holds the (possibly PR-controlled) checkout, so a planted symlink there must
 // not let the action read files elsewhere on the runner. Paths the workflow author points at
 // outside the workspace (e.g. RUNNER_TEMP) are their explicit choice and stay allowed.
-function escapesWorkspace(file: string): boolean {
+function workspaceEscapeCheck(): (file: string) => boolean {
   const workspace = resolve(process.env.GITHUB_WORKSPACE || process.cwd());
   const workspaceReal = safeRealpath(workspace) ?? workspace;
-  const lexical = resolve(file);
-  if (!isWithin(lexical, workspace) && !isWithin(lexical, workspaceReal)) return false;
+  return (file) => {
+    const lexical = resolve(file);
+    if (!isWithin(lexical, workspace) && !isWithin(lexical, workspaceReal)) return false;
 
-  const real = safeRealpath(lexical);
-  return real === null || !isWithin(real, workspaceReal);
+    const real = safeRealpath(file);
+    return real === null || !isWithin(real, workspaceReal);
+  };
 }
 
 function isRegularFile(path: string): boolean {
@@ -40,6 +45,7 @@ function isRegularFile(path: string): boolean {
 }
 
 function confineToWorkspace(files: string[]): string[] {
+  const escapesWorkspace = workspaceEscapeCheck();
   return files.filter((file) => {
     if (!escapesWorkspace(file)) return true;
     core.warning(`Skipping report file ${file}: it resolves outside the workspace.`);

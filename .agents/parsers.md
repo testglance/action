@@ -140,7 +140,7 @@ When `report-format: auto` and the extension yields `null`, `parseFile` (`src/in
 - Glob detection via `GLOB_CHARS = /[*?{[]/`.
 - **No glob chars** → treat as a single literal path: return `[pattern]` if it `existsSync`, else `[]` (no error).
 - **Has glob chars** → `fast-glob` with `{ absolute: true, onlyFiles: false, followSymbolicLinks: false }` (directory symlinks are not traversed), filtered to regular files, results `.sort()`ed.
-- **Workspace confinement** (both paths): a match whose path lies inside `GITHUB_WORKSPACE` (or `cwd`) but whose realpath escapes it (a planted symlink) is dropped with a warning. Paths the workflow author points at _outside_ the workspace (e.g. `RUNNER_TEMP`) are still read.
+- **Workspace confinement** (both paths): a match whose path lies inside `GITHUB_WORKSPACE` (or `cwd`) but whose realpath escapes it (a planted symlink) is dropped with a warning. The realpath is taken with `realpathSync.native`, which resolves `..` after symlinks as the kernel does (`link/../x.xml`). Paths the workflow author points at _outside_ the workspace (e.g. `RUNNER_TEMP`) are still read.
 
 ## Auto-detect — `src/utils/auto-detect.ts`
 

@@ -15,19 +15,18 @@ const mockListComments = vi.fn();
 const mockCreateComment = vi.fn();
 const mockUpdateComment = vi.fn();
 const mockGraphql = vi.fn();
-const mockPaginate = vi.fn(
-  async (
-    method: (params: Record<string, unknown>) => Promise<{ data: unknown[] }>,
-    params: Record<string, unknown>,
-  ) => {
-    const all: unknown[] = [];
-    for (let page = 1; ; page++) {
-      const { data } = await method({ ...params, page });
-      all.push(...data);
-      if (data.length < ((params.per_page as number) ?? 30)) return all;
-    }
-  },
-);
+type ListPage = { data: unknown[] };
+type ListMethod = (params: Record<string, unknown>) => Promise<ListPage>;
+
+async function* iteratePages(method: ListMethod, params: Record<string, unknown>) {
+  for (let page = 1; ; page++) {
+    const response = await method({ ...params, page });
+    yield response;
+    if (response.data.length < ((params.per_page as number) ?? 30)) return;
+  }
+}
+
+const mockPaginate = { iterator: vi.fn(iteratePages) };
 
 const mockGetOctokit = vi.fn(() => ({
   graphql: mockGraphql,
@@ -234,6 +233,47 @@ describe('postPrComment', () => {
 
       expect(mockUpdateComment).not.toHaveBeenCalled();
       expect(mockCreateComment).toHaveBeenCalled();
+    });
+
+    it('stops paging once its own comment is found', async () => {
+      const all = Array.from({ length: 250 }, (_, i) =>
+        i === 5 ? botComment(5) : { id: i, user: { login: 'chatty', type: 'User' }, body: 'noise' },
+      );
+      mockListComments.mockImplementation(
+        async ({ page = 1, per_page = 30 }: { page?: number; per_page?: number }) => ({
+          data: all.slice((page - 1) * per_page, page * per_page),
+        }),
+      );
+
+      await postPrComment({ githubToken: 'ghs_test', section: makeSection() });
+
+      expect(mockListComments).toHaveBeenCalledTimes(1);
+      expect(mockUpdateComment).toHaveBeenCalledWith(expect.objectContaining({ comment_id: 5 }));
+    });
+
+    it('does not query the token identity when no comment carries the marker', async () => {
+      mockListComments.mockResolvedValue({
+        data: [{ id: 1, user: { login: 'chatty', type: 'User' }, body: 'noise' }],
+      });
+
+      await postPrComment({ githubToken: 'ghs_test', section: makeSection() });
+
+      expect(mockGraphql).not.toHaveBeenCalled();
+      expect(mockCreateComment).toHaveBeenCalled();
+    });
+
+    it('warns when an unverifiable token identity makes it skip an existing summary comment', async () => {
+      mockGraphql.mockRejectedValue(new Error('Resource not accessible by integration'));
+      mockListComments.mockResolvedValue({
+        data: [botComment(3, { login: 'my-app[bot]', type: 'Bot' })],
+      });
+
+      await postPrComment({ githubToken: 'ghs_test', section: makeSection() });
+
+      expect(mockCreateComment).toHaveBeenCalled();
+      expect(mockWarning).toHaveBeenCalledWith(
+        expect.stringMatching(/could not verify.*Resource not accessible.*my-app\[bot\]/i),
+      );
     });
 
     it('finds its own comment beyond the first page of comments', async () => {

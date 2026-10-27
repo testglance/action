@@ -28,6 +28,7 @@ const mockReadFileSync = vi.fn();
 const mockExistsSync = vi.fn();
 const mockLstatSync = vi.fn();
 const mockChmodSync = vi.fn();
+const mockRmSync = vi.fn();
 
 vi.mock('node:fs', () => ({
   mkdirSync: (...args: unknown[]) => mockMkdirSync(...args),
@@ -36,6 +37,7 @@ vi.mock('node:fs', () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
   lstatSync: (...args: unknown[]) => mockLstatSync(...args),
   chmodSync: (...args: unknown[]) => mockChmodSync(...args),
+  rmSync: (...args: unknown[]) => mockRmSync(...args),
 }));
 
 import { join } from 'node:path';
@@ -215,6 +217,7 @@ describe('ActionsCacheStorage', () => {
       mockExistsSync.mockImplementation(fs.existsSync);
       mockLstatSync.mockImplementation(fs.lstatSync as never);
       mockChmodSync.mockImplementation(fs.chmodSync);
+      mockRmSync.mockImplementation(fs.rmSync);
       mockSaveCache.mockResolvedValue(1);
       const { tmpdir } = await vi.importActual<typeof import('node:os')>('node:os');
       base = fs.mkdtempSync(join(tmpdir(), 'tg-shared-tmp-'));
@@ -284,6 +287,35 @@ describe('ActionsCacheStorage', () => {
       new ActionsCacheStorage('main', 'hash1', '1');
 
       expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+    });
+
+    it('removes a planted history.json symlink instead of writing through it', async () => {
+      const dir = join(base, 'testglance-history-main-hash1');
+      fs.mkdirSync(dir);
+      fs.chmodSync(dir, 0o777);
+      const victim = join(base, 'victim');
+      fs.writeFileSync(victim, 'victim');
+      fs.symlinkSync(victim, join(dir, 'history.json'));
+
+      const storage = new ActionsCacheStorage('main', 'hash1', '1');
+      await storage.save(SAMPLE_HISTORY);
+
+      expect(fs.readFileSync(victim, 'utf-8')).toBe('victim');
+      expect(fs.lstatSync(join(dir, 'history.json')).isFile()).toBe(true);
+    });
+
+    it('does not read a history.json left in the dir when the restore extracts nothing', async () => {
+      const dir = join(base, 'testglance-history-main-hash1');
+      fs.mkdirSync(dir);
+      fs.writeFileSync(
+        join(dir, 'history.json'),
+        JSON.stringify({ ...SAMPLE_HISTORY, branch: 'planted' }),
+      );
+      mockRestoreCache.mockResolvedValue('testglance-history-main-hash1-0');
+
+      const storage = new ActionsCacheStorage('main', 'hash1', '1');
+
+      expect(await storage.load()).toBeNull();
     });
 
     it('keeps the cache path stable across runs (cache version depends on it)', () => {

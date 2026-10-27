@@ -129,6 +129,25 @@ describe('discoverReportFiles', () => {
       expect(result).toEqual([join(workspace, 'reports', 'alias.xml')]);
     });
 
+    it('skips a `..` path that climbs out through a symlinked directory', async () => {
+      mkdirSync(join(outside, 'deep'));
+      symlinkSync(join(outside, 'deep'), join(workspace, 'reports'), 'dir');
+      writeFileSync(join(workspace, 'secret.xml'), '<decoy/>');
+
+      // join() would normalize the `..` away; the kernel resolves it after the symlink.
+      const result = await discoverReportFiles(`${workspace}/reports/../secret.xml`);
+
+      expect(result).toEqual([]);
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('outside the workspace'));
+    });
+
+    it('keeps a `..` path through a real directory inside the workspace', async () => {
+      mkdirSync(join(workspace, 'reports'));
+      const path = `${workspace}/reports/../real.xml`;
+
+      expect(await discoverReportFiles(path)).toEqual([path]);
+    });
+
     it('still reads an explicit path outside the workspace (e.g. RUNNER_TEMP)', async () => {
       const result = await discoverReportFiles(join(outside, 'secret.xml'));
 

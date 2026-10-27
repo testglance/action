@@ -31,6 +31,7 @@ vi.mock('node:fs', () => ({
     mode: 0o40700,
   })),
   chmodSync: vi.fn(),
+  rmSync: vi.fn(),
 }));
 
 const mockGithubContext = vi.hoisted(() => ({
@@ -1070,6 +1071,8 @@ describe('run() orchestration (all collaborators mocked)', () => {
     afterEach(() => {
       mockGithubContext.eventName = 'push';
       mockGithubContext.payload = {};
+      delete process.env.GITHUB_HEAD_REF;
+      delete process.env.GITHUB_BASE_REF;
     });
 
     async function savedCacheKeys(): Promise<string[]> {

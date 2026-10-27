@@ -1,7 +1,15 @@
 import * as cache from '@actions/cache';
 import { ReserveCacheError } from '@actions/cache';
 import * as core from '@actions/core';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, chmodSync } from 'node:fs';
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  lstatSync,
+  chmodSync,
+  rmSync,
+} from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { HistoryFile, HistoryStorage } from './types';
@@ -37,6 +45,18 @@ function preparePrivateDir(base: string, dir: string): string | null {
   return null;
 }
 
+// Whatever sits at the file path predates this run: a symlink or hard link planted while the
+// dir was still writable by others, or a stale file a failed restore would leave to be read.
+// The restore always extracts a fresh copy, so remove it (unlinking never follows a symlink).
+function removeLeftoverFile(filePath: string): string | null {
+  try {
+    rmSync(filePath, { force: true });
+    return null;
+  } catch (err) {
+    return `cannot remove leftover ${filePath}: ${(err as Error).message}`;
+  }
+}
+
 export class ActionsCacheStorage implements HistoryStorage {
   private readonly cacheKey: string;
   private readonly restoreKeys: string[];
@@ -54,7 +74,8 @@ export class ActionsCacheStorage implements HistoryStorage {
     const base = tmpdir();
     this.tempDir = join(base, `testglance-history-${branch}-${reportPathHash}`);
     this.filePath = join(this.tempDir, HISTORY_FILENAME);
-    this.unusableReason = preparePrivateDir(base, this.tempDir);
+    this.unusableReason =
+      preparePrivateDir(base, this.tempDir) ?? removeLeftoverFile(this.filePath);
     if (this.unusableReason) {
       core.warning(
         `History disabled: ${this.unusableReason}. Refusing to use a history dir another user could control.`,

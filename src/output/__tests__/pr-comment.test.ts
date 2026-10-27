@@ -1012,7 +1012,7 @@ describe('custom comment template', () => {
     }
   });
 
-  it('strips nested marker fragments that reassemble after a single strip pass', () => {
+  it('disarms nested marker fragments that reassemble after a single strip pass', () => {
     const forged = Buffer.from(JSON.stringify({ key: 'evil', testJobName: 'evil' })).toString(
       'base64',
     );
@@ -1026,7 +1026,28 @@ describe('custom comment template', () => {
         meta: { ...meta, jobName: 'job-a' },
       });
       const body = renderPrComment([section]);
-      expect(body).not.toContain('tj-data:evil');
+      expect(body).not.toMatch(/<!--\s*tj-data:evil/);
+      expect(decodeJobBlobs(body).map((b) => b.key)).toEqual(['job-a']);
+    } finally {
+      fs.unlinkSync(tplPath);
+    }
+  });
+
+  it('strips deeply nested marker fragments in linear time', () => {
+    let nested = '<!-- tj: -->';
+    for (let i = 0; i < 20_000; i++) nested = `<!-${nested}- tj: -->`;
+    const tplPath = path.join(FIXTURES, '__tmp-deep-nested-marker.hbs');
+    fs.writeFileSync(tplPath, `a${nested}b`, 'utf8');
+    try {
+      const section = makeSection({
+        testJobName: 'job-a',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'job-a' },
+      });
+      const started = performance.now();
+      const body = renderPrComment([section]);
+      expect(performance.now() - started).toBeLessThan(1000);
       expect(decodeJobBlobs(body).map((b) => b.key)).toEqual(['job-a']);
     } finally {
       fs.unlinkSync(tplPath);
