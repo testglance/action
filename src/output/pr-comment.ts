@@ -83,6 +83,7 @@ export interface StoredJobData {
 const SUMMARY_MARKER = '<!-- testglance-pr-summary -->';
 const MAX_RENDERED_COMMENT_BYTES = 60_000;
 const TJ_DATA_PATTERN = /<!--\s*tj-data:(\S+)\s+([A-Za-z0-9+/=]+)\s*-->/g;
+const TJ_DATA_LINE_PATTERN = /^<!--\s*tj-data:.*-->$/;
 const MARKER_STRIP_PATTERN = /<!--\s*\/?\s*tj(?:-data)?:[^>]*-->/g;
 // Pre-blob comments wrapped each job in <!-- tj:KEY -->…<!-- /tj:KEY -->. Used to
 // preserve those jobs (as opaque standalone blocks) when migrating an existing
@@ -111,7 +112,21 @@ function sanitizeMarkerName(name: string): string {
 }
 
 function stripMarkers(body: string): string {
-  return body.replace(MARKER_STRIP_PATTERN, '');
+  // Loop to a fixpoint: removing one marker can splice its neighbours into a new one
+  // (e.g. `<!-<!-- tj: -->- tj-data:… -->`).
+  let current = body;
+  for (;;) {
+    const next = current.replace(MARKER_STRIP_PATTERN, '');
+    if (next === current) return current;
+    current = next;
+  }
+}
+
+// Test names come from the report, so they must never be able to open an HTML comment that
+// the blob/marker regexes would later read back as job state. A zero-width space keeps the
+// rendered text identical.
+function neutralizeMarkers(value: string): string {
+  return value.replace(/<!--/g, '<!-\u200B-');
 }
 
 function escapeTableCell(value: string): string {
@@ -149,7 +164,7 @@ function renderHighlightRow(h: Highlight): string {
       const tests = (data.tests as Array<{ name: string }>) ?? [];
       const names = tests
         .slice(0, 3)
-        .map((t) => `\`${t.name}\``)
+        .map((t) => toInlineCode(t.name))
         .join(', ');
       const suffix = tests.length > 3 ? `, +${tests.length - 3} more` : '';
       details = `${tests.length} new failure(s): ${names}${suffix}`;
@@ -219,7 +234,7 @@ export function renderBaseBranchSection(
   if (baseDelta.newlyFailing.length > 0) {
     const names = baseDelta.newlyFailing
       .slice(0, 5)
-      .map((t) => `\`${t.name}\``)
+      .map((t) => toInlineCode(t.name))
       .join(', ');
     const suffix =
       baseDelta.newlyFailing.length > 5 ? `, and ${baseDelta.newlyFailing.length - 5} more` : '';
@@ -229,7 +244,7 @@ export function renderBaseBranchSection(
   if (baseDelta.newlyPassing.length > 0) {
     const names = baseDelta.newlyPassing
       .slice(0, 5)
-      .map((t) => `\`${t.name}\``)
+      .map((t) => toInlineCode(t.name))
       .join(', ');
     const suffix =
       baseDelta.newlyPassing.length > 5 ? `, and ${baseDelta.newlyPassing.length - 5} more` : '';
@@ -285,7 +300,7 @@ function renderTestsChangedCompact(report: TestsChangedReport): string {
 const MAX_FLAKY_COMPACT = 5;
 
 function toInlineCode(value: string): string {
-  const normalized = value.replace(/\r?\n/g, ' ');
+  const normalized = neutralizeMarkers(value.replace(/\r?\n/g, ' '));
   const runs = normalized.match(/`+/g);
   const longestRun = runs ? Math.max(...runs.map((r) => r.length)) : 0;
   const fence = '`'.repeat(longestRun + 1);
@@ -411,15 +426,38 @@ function encodeJobBlobs(jobs: StoredJobData[]): string {
   return jobs.map((j) => encodeJobBlob(summaryOnlyJob(j))).join('\n');
 }
 
+// Blobs are always appended as the final lines of the comment, after the visible body. Only
+// that trailing block is trusted: a blob-shaped string anywhere else came from rendered,
+// report-derived text and must not be read back as job state.
+function trailingBlobSection(body: string): string {
+  const lines = body.split(/\r?\n/);
+  let end = lines.length;
+  while (end > 0 && lines[end - 1].trim() === '') end--;
+  let start = end;
+  while (start > 0 && TJ_DATA_LINE_PATTERN.test(lines[start - 1].trim())) start--;
+  return lines.slice(start, end).join('\n');
+}
+
+function isStoredJobData(data: unknown): data is StoredJobData {
+  if (!data || typeof data !== 'object') return false;
+  const job = data as Record<string, unknown>;
+  return (
+    typeof job.key === 'string' &&
+    typeof job.testJobName === 'string' &&
+    (job.customBody === undefined || typeof job.customBody === 'string')
+  );
+}
+
 export function decodeJobBlobs(body: string): StoredJobData[] {
   const out: StoredJobData[] = [];
   const re = new RegExp(TJ_DATA_PATTERN.source, 'g');
+  const section = trailingBlobSection(body);
   let match: RegExpExecArray | null;
-  while ((match = re.exec(body)) !== null) {
+  while ((match = re.exec(section)) !== null) {
     try {
       const json = Buffer.from(match[2], 'base64').toString('utf8');
-      const data = JSON.parse(json) as StoredJobData;
-      if (data && typeof data.key === 'string') out.push(data);
+      const data: unknown = JSON.parse(json);
+      if (isStoredJobData(data)) out.push({ ...data, key: sanitizeMarkerName(data.key) });
     } catch {
       // Malformed or legacy blob — skip; the owning job repopulates on its next run.
     }

@@ -50,14 +50,14 @@ The whole sections 8–11 block is wrapped in `try/catch`; on error it warns `En
 
 ## 2. PR comment — `src/output/pr-comment.ts` + `post-pr-comment.ts`
 
-`postPrComment` (`src/output/post-pr-comment.ts:13`) resolves the PR number from the event payload, lists up to 100 comments, finds the one containing the marker `<!-- testglance-pr-summary -->`, and **find-or-creates**:
+`postPrComment` (`src/output/post-pr-comment.ts:13`) resolves the PR number from the event payload, lists all comments (paginated), finds the one containing the marker `<!-- testglance-pr-summary -->` **that was written by the token's own identity** (GraphQL `viewer.login`; if that can't be resolved, only `github-actions[bot]` with `type: Bot`), and **find-or-creates**:
 
 - found → `mergeTestJobSection(existing.body, section)` → `octokit.rest.issues.updateComment`.
 - not found → `renderPrComment([section])` → `octokit.rest.issues.createComment`.
 
 **Multi-job consolidation.** Each Action invocation only knows its own job, so per-job state is persisted inside the comment as hidden base64 `tj-data` blobs (`StoredJobData`, `src/output/pr-comment.ts:60`). On every merge the comment is fully re-rendered from the decoded blobs of _all_ jobs:
 
-- `decodeJobBlobs` (`src/output/pr-comment.ts:413`) recovers each job from `<!-- tj-data:KEY b64 -->`.
+- `decodeJobBlobs` recovers each job from `<!-- tj-data:KEY b64 -->`, reading **only the trailing block of blob lines** at the end of the comment. A blob-shaped string anywhere in the visible body came from rendered (report-derived) text and is ignored. Test names are additionally rendered through `toInlineCode`, which breaks any `<!--` with a zero-width space, and `stripMarkers` runs to a fixpoint on custom-template output.
 - `mergeTestJobSection` (`src/output/pr-comment.ts:652`) replaces the blob with the matching `key` (or appends), then `renderCommentFromStored` rebuilds rollup line + per-job table + per-job `<details>` + re-encoded blobs.
 - Job names are sanitized to a whitespace-free `key` via `sanitizeMarkerName` (`src/output/pr-comment.ts:104`) so matrix names like `test (ubuntu-latest)` survive the marker regex.
 - Legacy pre-blob comments (`<!-- tj:KEY -->…<!-- /tj:KEY -->`) are migrated via `decodeLegacySections` (`src/output/pr-comment.ts:433`) and kept as opaque standalone blocks until each job re-runs.
@@ -70,7 +70,7 @@ The whole sections 8–11 block is wrapped in `try/catch`; on error it warns `En
 
 `createCheckRun` (`src/output/check-run.ts:27`) calls `octokit.rest.checks.create` with `status: 'completed'`.
 
-- **head SHA:** `pull_request.head.sha` if present, else `github.context.sha`.
+- **head SHA:** resolved by `resolveRunIdentity()` (`src/utils/run-context.ts`): `pull_request.head.sha` if present; under `workflow_run`, `workflow_run.head_sha`; otherwise `github.context.sha`. Under `issue_comment` (and `workflow_run` without a `head_sha`) the check run is **skipped with a warning**, because `GITHUB_SHA` there is the default-branch HEAD, not the commit under test.
 - **conclusion:** `'failure'` when `summary.failed > 0 || summary.errored > 0`, else `'success'` (`src/output/check-run.ts:38`).
 - **annotations:** one per failed/errored test, hard-capped at `MAX_ANNOTATIONS = 50`.
 - **`annotation_level`:** from the `annotation-level` input, default `'failure'` (also accepts `warning`, `notice`).

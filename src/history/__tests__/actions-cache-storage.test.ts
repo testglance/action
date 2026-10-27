@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 const mockRestoreCache = vi.fn();
 const mockSaveCache = vi.fn();
@@ -26,14 +26,19 @@ const mockMkdirSync = vi.fn();
 const mockWriteFileSync = vi.fn();
 const mockReadFileSync = vi.fn();
 const mockExistsSync = vi.fn();
+const mockLstatSync = vi.fn();
+const mockChmodSync = vi.fn();
 
 vi.mock('node:fs', () => ({
   mkdirSync: (...args: unknown[]) => mockMkdirSync(...args),
   writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args),
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
+  lstatSync: (...args: unknown[]) => mockLstatSync(...args),
+  chmodSync: (...args: unknown[]) => mockChmodSync(...args),
 }));
 
+import { join } from 'node:path';
 import { ActionsCacheStorage } from '../actions-cache-storage';
 import type { HistoryFile } from '../types';
 
@@ -54,6 +59,11 @@ describe('ActionsCacheStorage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(false);
+    mockLstatSync.mockReturnValue({
+      isDirectory: () => true,
+      uid: process.getuid?.() ?? 0,
+      mode: 0o40700,
+    });
   });
 
   it('cache key format includes branch, hash, and runId', () => {
@@ -61,7 +71,7 @@ describe('ActionsCacheStorage', () => {
 
     expect(mockMkdirSync).toHaveBeenCalledWith(
       expect.stringContaining('testglance-history-main-ab12cd34'),
-      { recursive: true },
+      expect.anything(),
     );
 
     mockRestoreCache.mockResolvedValue(undefined);
@@ -189,5 +199,104 @@ describe('ActionsCacheStorage', () => {
     await storage.clear();
 
     expect(mockDebug).toHaveBeenCalledWith(expect.stringContaining('no-op'));
+  });
+
+  describe('temp dir on a shared tmpdir (real filesystem)', () => {
+    type Fs = typeof import('node:fs');
+    let fs: Fs;
+    let base: string;
+    let prevTmpdir: string | undefined;
+
+    beforeEach(async () => {
+      fs = await vi.importActual<Fs>('node:fs');
+      mockMkdirSync.mockImplementation(fs.mkdirSync as never);
+      mockWriteFileSync.mockImplementation(fs.writeFileSync as never);
+      mockReadFileSync.mockImplementation(fs.readFileSync as never);
+      mockExistsSync.mockImplementation(fs.existsSync);
+      mockLstatSync.mockImplementation(fs.lstatSync as never);
+      mockChmodSync.mockImplementation(fs.chmodSync);
+      mockSaveCache.mockResolvedValue(1);
+      const { tmpdir } = await vi.importActual<typeof import('node:os')>('node:os');
+      base = fs.mkdtempSync(join(tmpdir(), 'tg-shared-tmp-'));
+      prevTmpdir = process.env.TMPDIR;
+      process.env.TMPDIR = base;
+    });
+
+    afterEach(() => {
+      if (prevTmpdir === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = prevTmpdir;
+      fs.rmSync(base, { recursive: true, force: true });
+    });
+
+    it('refuses a pre-planted symlink in place of the history dir', async () => {
+      const attacker = join(base, 'attacker');
+      fs.mkdirSync(attacker);
+      fs.symlinkSync(attacker, join(base, 'testglance-history-main-hash1'), 'dir');
+
+      const storage = new ActionsCacheStorage('main', 'hash1', '1');
+      await storage.save(SAMPLE_HISTORY);
+
+      expect(fs.existsSync(join(attacker, 'history.json'))).toBe(false);
+      expect(mockSaveCache).not.toHaveBeenCalled();
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('History disabled'));
+    });
+
+    it('refuses a pre-planted symlink at an intermediate path segment', async () => {
+      const attacker = join(base, 'attacker');
+      fs.mkdirSync(attacker);
+      fs.symlinkSync(attacker, join(base, 'testglance-history-feat'), 'dir');
+
+      const storage = new ActionsCacheStorage('feat/x', 'hash1', '1');
+      await storage.save(SAMPLE_HISTORY);
+
+      expect(fs.existsSync(join(attacker, 'x-hash1', 'history.json'))).toBe(false);
+      expect(mockSaveCache).not.toHaveBeenCalled();
+    });
+
+    it('does not read history from a refused dir', async () => {
+      const attacker = join(base, 'attacker');
+      fs.mkdirSync(attacker);
+      fs.writeFileSync(join(attacker, 'history.json'), JSON.stringify(SAMPLE_HISTORY));
+      fs.symlinkSync(attacker, join(base, 'testglance-history-main-hash1'), 'dir');
+      mockRestoreCache.mockResolvedValue('testglance-history-main-hash1');
+
+      const storage = new ActionsCacheStorage('main', 'hash1', '1');
+
+      expect(await storage.load()).toBeNull();
+      expect(mockRestoreCache).not.toHaveBeenCalled();
+    });
+
+    it('creates the history dir private to the runner user', async () => {
+      const storage = new ActionsCacheStorage('main', 'hash1', '1');
+      await storage.save(SAMPLE_HISTORY);
+
+      const dir = join(base, 'testglance-history-main-hash1');
+      expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+      expect(fs.existsSync(join(dir, 'history.json'))).toBe(true);
+      expect(mockSaveCache).toHaveBeenCalled();
+    });
+
+    it('tightens a pre-existing world-writable dir it owns', async () => {
+      const dir = join(base, 'testglance-history-main-hash1');
+      fs.mkdirSync(dir);
+      fs.chmodSync(dir, 0o777);
+
+      new ActionsCacheStorage('main', 'hash1', '1');
+
+      expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+    });
+
+    it('keeps the cache path stable across runs (cache version depends on it)', () => {
+      const a = new ActionsCacheStorage('main', 'hash1', '1');
+      const b = new ActionsCacheStorage('main', 'hash1', '2');
+      mockRestoreCache.mockResolvedValue(undefined);
+      void a.load();
+      void b.load();
+
+      const [pathsA] = mockRestoreCache.mock.calls[0];
+      const [pathsB] = mockRestoreCache.mock.calls[1];
+      expect(pathsA).toEqual([join(base, 'testglance-history-main-hash1', 'history.json')]);
+      expect(pathsB).toEqual(pathsA);
+    });
   });
 });

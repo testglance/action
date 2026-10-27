@@ -42,7 +42,8 @@ restoreKeys = [ testglance-history-<branch>-<reportPathHash>-,
 
 - `reportPathHash` = first 8 hex chars of `sha256(reportPath || 'auto')`, computed in `src/index.ts:237`.
 - The per-run `suffix` makes each run's save key unique, so the same run never clashes; `restoreKeys` are prefix fallbacks so a run restores the most recent matching cache (Actions Cache restore is prefix-matched). This is the standard "save under a unique key, restore by prefix" pattern.
-- Temp file: `<os.tmpdir()>/testglance-history-<branch>-<reportPathHash>/history.json` (`actions-cache-storage.ts:24`-`26`). The dir is `mkdir -p`'d in the constructor.
+- Temp file: `<os.tmpdir()>/testglance-history-<branch>-<reportPathHash>/history.json`. The path must stay identical across runs (`@actions/cache` hashes the path into the cache version), so it is not randomized; instead every segment created under `tmpdir()` must be a real directory owned by the runner user and is `chmod 0700`'d. A symlink or foreign-owned segment (pre-planted on a shared `/tmp`) disables history for the run with a warning.
+- **History branch** comes from `resolveRunIdentity()` (`src/utils/run-context.ts`), not raw env: under `workflow_run` it is `workflow_run.head_branch`; for fork heads (`workflow_run`, `pull_request*`) it is qualified as `<owner>/<repo>~<branch>` (`~` is illegal in git refs, so it can't collide with a real branch). When the event doesn't identify the branch (`issue_comment` on a PR, `workflow_run` without `head_branch`) history is skipped rather than written to the default branch.
 
 **`load()`** (`actions-cache-storage.ts:29`): `restoreCache` → on cache miss returns `null` (`core.debug`); on a cache hit whose history file is missing on disk returns `null` with a `core.warning` (data loss despite a hit). Any thrown error is caught, `core.warning`'d, and returns `null`.
 

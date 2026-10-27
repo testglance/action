@@ -37,6 +37,7 @@ const mockContext = vi.hoisted(() => ({
     pull_request: { head: { sha: 'pr-sha-abc123' } },
   } as Record<string, unknown>,
   sha: 'push-sha-def456',
+  eventName: 'pull_request',
 }));
 
 vi.mock('@actions/github', () => ({
@@ -85,6 +86,7 @@ beforeEach(() => {
   mockSummaryWrite.mockResolvedValue(undefined);
   mockContext.payload = { pull_request: { head: { sha: 'pr-sha-abc123' } } };
   mockContext.sha = 'push-sha-def456';
+  mockContext.eventName = 'pull_request';
 });
 
 describe('createCheckRun', () => {
@@ -406,6 +408,40 @@ describe('createCheckRun', () => {
     expect(mockChecksCreate).toHaveBeenCalledWith(
       expect.objectContaining({ head_sha: 'push-sha-def456' }),
     );
+  });
+
+  describe('events whose GITHUB_SHA is not the commit under test', () => {
+    it("attaches the check run to the triggering run's head_sha under workflow_run", async () => {
+      mockContext.eventName = 'workflow_run';
+      mockContext.payload = { workflow_run: { head_sha: 'fork-head-sha', head_branch: 'feat' } };
+
+      await createCheckRun({ githubToken: 'ghp_test', checkName: 'Tests', parsed: makeParsed() });
+
+      expect(mockChecksCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ head_sha: 'fork-head-sha' }),
+      );
+    });
+
+    it('skips the check run under workflow_run when the payload has no head_sha', async () => {
+      mockContext.eventName = 'workflow_run';
+      mockContext.payload = { workflow_run: {} };
+
+      await createCheckRun({ githubToken: 'ghp_test', checkName: 'Tests', parsed: makeParsed() });
+
+      expect(mockChecksCreate).not.toHaveBeenCalled();
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('Skipping Check Run'));
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    });
+
+    it('skips the check run for issue_comment events instead of using the default-branch HEAD', async () => {
+      mockContext.eventName = 'issue_comment';
+      mockContext.payload = { issue: { number: 7, pull_request: { url: 'https://x' } } };
+
+      await createCheckRun({ githubToken: 'ghp_test', checkName: 'Tests', parsed: makeParsed() });
+
+      expect(mockChecksCreate).not.toHaveBeenCalled();
+      expect(mockWarning).toHaveBeenCalledWith(expect.stringContaining('Skipping Check Run'));
+    });
   });
 
   it('warns about permissions on 403 error and does not retry', async () => {

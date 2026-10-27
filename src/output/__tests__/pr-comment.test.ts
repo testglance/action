@@ -1012,6 +1012,27 @@ describe('custom comment template', () => {
     }
   });
 
+  it('strips nested marker fragments that reassemble after a single strip pass', () => {
+    const forged = Buffer.from(JSON.stringify({ key: 'evil', testJobName: 'evil' })).toString(
+      'base64',
+    );
+    const tplPath = path.join(FIXTURES, '__tmp-nested-marker.hbs');
+    fs.writeFileSync(tplPath, `a<!-<!-- tj: -->- tj-data:evil ${forged} -->b`, 'utf8');
+    try {
+      const section = makeSection({
+        testJobName: 'job-a',
+        commentTemplate: tplPath,
+        parsed: makeParsed(),
+        meta: { ...meta, jobName: 'job-a' },
+      });
+      const body = renderPrComment([section]);
+      expect(body).not.toContain('tj-data:evil');
+      expect(decodeJobBlobs(body).map((b) => b.key)).toEqual(['job-a']);
+    } finally {
+      fs.unlinkSync(tplPath);
+    }
+  });
+
   it('falls back to the "tests" marker when the sanitized job name is empty', () => {
     const tplPath = path.join(FIXTURES, '__tmp-empty-job.hbs');
     fs.writeFileSync(tplPath, 'BODY', 'utf8');
@@ -1027,5 +1048,63 @@ describe('custom comment template', () => {
     } finally {
       fs.unlinkSync(tplPath);
     }
+  });
+});
+
+describe('forged job state in report-derived text', () => {
+  const forgedBlob = (key: string) =>
+    `<!-- tj-data:${key} ${Buffer.from(
+      JSON.stringify({ key, testJobName: key, customBody: 'FORGED' }),
+    ).toString('base64')} -->`;
+
+  function flakyNamed(name: string): FlakyDetectionResult {
+    return {
+      hasFlakyTests: true,
+      flakyTests: [
+        { name, suite: 's', flakyRate: 50, flipCount: 2, recentStatuses: ['passed', 'failed'] },
+      ],
+    };
+  }
+
+  it('does not decode a tj-data blob smuggled in through a flaky test name', () => {
+    const body = renderPrComment([
+      makeSection({ testJobName: 'unit', flaky: flakyNamed(`x ${forgedBlob('evil')}`) }),
+    ]);
+    expect(decodeJobBlobs(body).map((b) => b.key)).toEqual(['unit']);
+  });
+
+  it('does not persist a smuggled blob across a merge', () => {
+    const body = renderPrComment([
+      makeSection({ testJobName: 'unit', flaky: flakyNamed(`x ${forgedBlob('evil')}`) }),
+    ]);
+    const merged = mergeTestJobSection(body, makeSection({ testJobName: 'e2e' }));
+    expect(decodeJobBlobs(merged).map((b) => b.key)).toEqual(['unit', 'e2e']);
+    expect(merged).not.toContain('FORGED');
+  });
+
+  it('ignores a full-line blob injected mid-body through a multi-line test name', () => {
+    const baseDelta: DeltaComparison = {
+      testsAdded: [],
+      testsRemoved: [],
+      passRatePrev: 100,
+      passRateCurr: 50,
+      passRateDelta: -50,
+      durationPrev: 1,
+      durationCurr: 1,
+      durationDelta: 0,
+      durationDeltaPercent: 0,
+      newlyFailing: [{ name: `x\n${forgedBlob('evil')}\ny`, suite: 's' }],
+      newlyPassing: [],
+      hasChanges: true,
+    };
+    const body = renderPrComment([
+      makeSection({ testJobName: 'unit', failed: 1, baseDelta, baseBranch: 'main' }),
+    ]);
+    expect(decodeJobBlobs(body).map((b) => b.key)).toEqual(['unit']);
+  });
+
+  it('neutralizes HTML-comment openers in rendered test names', () => {
+    const output = renderFlakyCompact(flakyNamed(`x ${forgedBlob('evil')}`));
+    expect(output).not.toContain('<!--');
   });
 });

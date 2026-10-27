@@ -8,6 +8,7 @@ import { detectFormat } from './utils/detect-format';
 import { detectFramework } from './utils/detect-framework';
 import { discoverReportFiles } from './utils/discover-files';
 import { autoDetectReportFiles } from './utils/auto-detect';
+import { resolveRunIdentity } from './utils/run-context';
 import { mergeTestRuns } from './utils/merge-results';
 import { handleApiUnreachable, handleApiError, handleUnexpectedError } from './utils/errors';
 import { generateSummary } from './output/summary';
@@ -228,20 +229,23 @@ export async function run(): Promise<RunResult> {
     let delta: DeltaComparison | null = null;
     let testsChanged: TestsChangedReport | null = null;
 
-    const headBranch = (
-      process.env.GITHUB_HEAD_REF ||
-      process.env.GITHUB_REF_NAME ||
-      'unknown'
-    ).replace(/^refs\/heads\//, '');
+    const identity = resolveRunIdentity();
+    const headBranch = identity.historyBranch ?? identity.displayBranch;
 
-    if (historyEnabled) {
+    if (historyEnabled && !identity.historyBranch) {
+      core.info(
+        `History skipped: the "${process.env.GITHUB_EVENT_NAME || 'current'}" event does not identify the branch under test, so results would otherwise be recorded as default-branch history.`,
+      );
+    }
+
+    if (historyEnabled && identity.historyBranch) {
       try {
-        const branch = headBranch;
+        const branch = identity.historyBranch;
         const reportPathHash = createHash('sha256')
           .update(reportPath || 'auto')
           .digest('hex')
           .slice(0, 8);
-        const commitSha = process.env.GITHUB_SHA || 'unknown';
+        const commitSha = identity.commitSha;
         const runId = process.env.GITHUB_RUN_ID;
 
         const storage = new ActionsCacheStorage(branch, reportPathHash, runId);
@@ -407,7 +411,6 @@ export async function run(): Promise<RunResult> {
 
     if (htmlReport) {
       try {
-        const branch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'unknown';
         const html = generateHtmlReport({
           parsed,
           apiSuccess: result?.success ?? false,
@@ -420,8 +423,8 @@ export async function run(): Promise<RunResult> {
           flaky,
           perfRegression,
           trends,
-          commitSha: process.env.GITHUB_SHA || 'unknown',
-          branch,
+          commitSha: identity.commitSha,
+          branch: identity.displayBranch,
           workflowRunUrl: runUrl,
           timestamp: new Date().toISOString(),
         });
@@ -439,8 +442,8 @@ export async function run(): Promise<RunResult> {
       }
     }
 
-    const summaryBranch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'unknown';
-    const summaryCommitSha = process.env.GITHUB_SHA || 'unknown';
+    const summaryBranch = identity.displayBranch;
+    const summaryCommitSha = identity.commitSha;
     const summaryTimestamp = new Date().toISOString();
     const summaryJobName = testJobName || process.env.GITHUB_JOB || 'tests';
     const historyEntries = loadedHistory?.entries;
