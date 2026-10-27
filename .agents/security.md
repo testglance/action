@@ -35,7 +35,7 @@ Consumers should grant only what they use. The repo's own workflows model this:
 
 - `test` job — `contents: read`, `checks: write`, `pull-requests: write` (`.github/workflows/ci.yml:44-47`); it runs `uses: ./` with `annotate-failures: true`.
 - `e2e` job — `pull-requests: write` only (`.github/workflows/e2e.yml:17-18`); no check runs there.
-- A top-level `permissions: contents: read` applies to every other job (`lint-format`, `typecheck`, `build`, `release-v1`). Omitting `permissions` does **not** mean "no permissions" — it means the repository default, which may be read/write — so the explicit block matters.
+- A top-level `permissions: contents: read` applies to every other job (`lint-format`, `typecheck`, `build`, `build-release`, `release-v1`). Omitting `permissions` does **not** mean "no permissions" — it means the repository default, which may be read/write — so the explicit block matters.
 - Every checkout uses `persist-credentials: false`, so dependency code run by `pnpm install`/lint/test/build can't read a token from `.git/config`.
 
 Guidance for downstream users:
@@ -59,8 +59,8 @@ Guidance for downstream users:
 The published artifact is `dist/index.js` — a single `@vercel/ncc` bundle. Trust model:
 
 - `dist/` is **gitignored** (`.gitignore:14`) and never committed from feature branches.
-- It is built and committed to `main` **only** by the `release-v1` job, authenticated with a **GitHub App token** minted from `REBUILD_BOT_APP_ID` / `REBUILD_BOT_PRIVATE_KEY` only after install and build have finished, and with commit hooks disabled for the push steps (see [build-and-release](./build-and-release.md)). The job never restores the pnpm store cache that PR jobs write. Commit author is `testglance-rebuild-bot[bot]` (`.github/workflows/ci.yml:104-105`).
-- `release-v1` runs only on push to `main` and only after `lint-format`, `typecheck`, `test`, `build` pass (`.github/workflows/ci.yml:82-83`).
+- It is built **only** by the `build-release` job (which never restores the pnpm store cache that PR jobs write) and committed to `main` **only** by the `release-v1` job, which never installs dependencies. That job downloads the built `dist/` artifact and authenticates with a **GitHub App token** minted from `REBUILD_BOT_APP_ID` / `REBUILD_BOT_PRIVATE_KEY`, with commit hooks disabled for the push steps (see [build-and-release](./build-and-release.md)). Keeping the token out of the job that ran dependency code means no leftover process, git config or `.gitattributes` edit from install/build can read it. Commit author is `testglance-rebuild-bot[bot]` (`.github/workflows/ci.yml:104-105`).
+- `build-release` / `release-v1` run only on push to `main` and only after `lint-format`, `typecheck`, `test`, `build` pass (`.github/workflows/ci.yml:82-83`).
 - The job **force-retags `v1`** to the new commit (`git tag -f v1; git push origin v1 --force`, `.github/workflows/ci.yml:114-116`). Consumers reference `testglance/action@v1`, a floating tag — they trust whatever bundle `v1` currently points at. There is no immutable pinning by default. See [build-and-release](./build-and-release.md).
 - **Third-party actions used by our own CI are SHA-pinned.** Every `uses:` in `.github/workflows/*.yml` references a full commit SHA with a `# vX` comment (e.g. `actions/checkout@<sha> # v7`), maintained by Renovate's `helpers:pinGitHubActionDigests`. This eliminates the mutable-tag hijack path into the `dist`-building `release-v1` job (which runs with a `main`-pushing App token).
 

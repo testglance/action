@@ -23,10 +23,10 @@ third-party actions were pinned to mutable major-version tags. The posture is no
 
 - **Third-party actions are SHA-pinned** (`helpers:pinGitHubActionDigests`), and the
   workflow `uses:` lines are pinned to full commit SHAs with a `# vX` comment. Action
-  updates are **not** auto-merged: every action in `ci.yml` also runs in `release-v1`.
+  updates are **not** auto-merged: every action in `ci.yml` also runs in `build-release` or `release-v1`.
 - **Production `dependencies` require human review** - `:automergePatch` was removed and an
   explicit `dependencies → automerge:false` rule added. `lockFileMaintenance` and general
-  devDependencies no longer auto-merge either (they feed the `release-v1` install/build);
+  devDependencies no longer auto-merge either (they feed the `build-release` install/build);
   only linters / testers / `@types` still do.
 - Gates unchanged: `minimumReleaseAge: "3 days"`, `internalChecksFilter: "strict"`.
 

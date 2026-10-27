@@ -30,7 +30,7 @@ GitHub Actions with `using: node24` execute the file at `main:` **directly from 
 This repo instead keeps `dist/` **gitignored** (`.gitignore:14`) and lets CI own it:
 
 - Feature branches never commit `dist/`. Building locally is only for verifying the bundle compiles.
-- The `release-v1` CI job rebuilds `dist/` on every push to `main` and commits it back to `main` (and only `main`).
+- On every push to `main`, the `build-release` CI job rebuilds `dist/` and the `release-v1` job commits it back to `main` (and only `main`).
 - Consumers reference `testglance/action@v1` (not a branch), which always resolves to a commit that _does_ contain `dist/`.
 
 See [conventions](./conventions.md) for the "never commit dist from a branch" rule.
@@ -39,34 +39,43 @@ See [conventions](./conventions.md) for the "never commit dist from a branch" ru
 
 Triggers: push to `main`, and PRs targeting `main` (`ci.yml:3-7`). Concurrency cancels in-progress runs per ref (`ci.yml:9-11`). All jobs use Node 24 + pnpm.
 
-| Job           | Purpose                                    | Notes           |
-| ------------- | ------------------------------------------ | --------------- |
-| `lint-format` | `pnpm lint` + `pnpm format:check`          | `ci.yml:14-26`  |
-| `typecheck`   | `pnpm typecheck` (`tsc --noEmit`)          | `ci.yml:28-39`  |
-| `test`        | run vitest, then build, then **self-test** | `ci.yml:41-65`  |
-| `build`       | `pnpm build` (bundle smoke check)          | `ci.yml:67-78`  |
-| `release-v1`  | rebuild `dist/`, commit, force-retag `v1`  | `ci.yml:80-117` |
+| Job             | Purpose                                    | Notes          |
+| --------------- | ------------------------------------------ | -------------- |
+| `lint-format`   | `pnpm lint` + `pnpm format:check`          | `ci.yml:14-26` |
+| `typecheck`     | `pnpm typecheck` (`tsc --noEmit`)          | `ci.yml:28-39` |
+| `test`          | run vitest, then build, then **self-test** | `ci.yml:41-65` |
+| `build`         | `pnpm build` (bundle smoke check)          | `ci.yml:67-78` |
+| `build-release` | rebuild `dist/`, upload it as an artifact  | `ci.yml`       |
+| `release-v1`    | commit that `dist/`, force-retag `v1`      | `ci.yml`       |
 
 ### `test` job self-test
 
 After running vitest (JUnit reporter to `test-results/vitest.xml`), it runs `pnpm build` then invokes the action against itself via `uses: ./` (`ci.yml:59-65`). Both the build and the self-test use `if: always()` so the action runs even when tests failed (it must report failures). The self-test needs the freshly built `dist/` to exist — hence the build step precedes `uses: ./`. Requires `checks: write` + `pull-requests: write` permissions (`ci.yml:44-47`).
 
-### `release-v1` job
+### `build-release` and `release-v1` jobs
 
-Guarded to push-on-`main` only and gated behind the other four jobs (`ci.yml:82-83`):
+The release is split into two jobs so the App token never shares a runner with dependency
+code. Install/build can leave behind a background process, git config (`core.fsmonitor`,
+clean filters) or `.gitattributes` edits that would read the token once it is in
+`.git/config`; only the built `dist/` artifact crosses from one job to the other.
+
+`build-release` is guarded to push-on-`main` only and gated behind the other four jobs:
 
 ```yaml
 if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 needs: [lint-format, typecheck, test, build]
 ```
 
-Steps (`ci.yml:85-117`):
-
-1. Checkout with `fetch-depth: 0` and `persist-credentials: false` (the job's `GITHUB_TOKEN` is `contents: read`).
+1. Checkout with `persist-credentials: false` (`GITHUB_TOKEN` is `contents: read`).
 2. `pnpm install --frozen-lockfile` + `rm -rf dist` + `pnpm build`, with **no pnpm store cache** (`cache: pnpm` is deliberately absent and `package-manager-cache: false`): the store cache is written by the PR/test jobs, so restoring it here would let lower-privilege jobs pick the bytes bundled into `v1`. The `rm -rf dist` guarantees the committed tree matches a fresh build (so artifacts no longer emitted are dropped, not left stale).
-3. Only then mint the **GitHub App token** via `actions/create-github-app-token` using `REBUILD_BOT_APP_ID` / `REBUILD_BOT_PRIVATE_KEY`, so no dependency code (install scripts, ncc, husky) runs while it exists. The App token (not `GITHUB_TOKEN`) is required to force-push the tag and to commit to `main` under branch protection; it is put into the `origin` URL for the push steps.
-4. Commit `dist/` **only if changed**: `git add -A -f dist/` (force, since gitignored; `-A` stages deletions so removed artifacts are committed), and if `git diff --cached` is non-empty, commit `chore: rebuild dist [skip ci]` as `testglance-rebuild-bot[bot]` and push to `main`. `[skip ci]` prevents a CI loop. Commit and push run with `core.hooksPath=/dev/null` so husky hooks (lint-staged, commitlint, the pre-push test run) don't execute dependency code while the token is present.
-5. Force-retag: `git tag -f v1 && git push origin v1 --force`.
+3. Upload `dist/` as the `dist` artifact (1-day retention).
+
+`release-v1` (`needs: [build-release]`) never installs dependencies:
+
+1. Checkout with `fetch-depth: 0` and `persist-credentials: false`, `rm -rf dist`, then download the `dist` artifact into `dist/`.
+2. Mint the **GitHub App token** via `actions/create-github-app-token` using `REBUILD_BOT_APP_ID` / `REBUILD_BOT_PRIVATE_KEY`. The App token (not `GITHUB_TOKEN`) is required to force-push the tag and to commit to `main` under branch protection; it is put into the `origin` URL for the push steps.
+3. Commit `dist/` **only if changed**: `git add -A -f dist/` (force, since gitignored; `-A` stages deletions so removed artifacts are committed), and if `git diff --cached` is non-empty, commit `chore: rebuild dist [skip ci]` as `testglance-rebuild-bot[bot]` and push to `main`. `[skip ci]` prevents a CI loop. Commit and push run with `core.hooksPath=/dev/null` so no repo hook runs while the token is present.
+4. Force-retag: `git tag -f v1 && git push origin v1 --force`.
 
 All CI jobs default to `permissions: contents: read` (top-level block) and check out with `persist-credentials: false`; only `test` adds `checks: write` + `pull-requests: write`.
 
@@ -111,13 +120,14 @@ It walks `node_modules/@actions/*/package.json` and, for any package whose `expo
 all third-party actions and keeps the pins updated), and the `:automergeLinters` /
 `:automergeTesters` / `:automergeTypes` presets. Automerge applies **only** to linter /
 tester / `@types` updates (the `:automerge*` presets): those packages never run in
-`release-v1` (pnpm only runs the allow-listed `esbuild` build script, and commit hooks are
-disabled there) and ncc doesn't bundle them.
+`build-release` (pnpm only runs the allow-listed `esbuild` build script) and ncc doesn't
+bundle them.
 
 Everything that can reach the released bundle requires human review:
 
 - production `dependencies` (bundled by ncc into `dist/`);
-- `github-actions` updates — every action in `ci.yml` also runs in `release-v1`;
+- `github-actions` updates — every action in `ci.yml` also runs in `build-release` or
+  `release-v1`;
 - `lockFileMaintenance` — it can move any transitive package, including bundled ones;
 - other devDependencies (no automerge rule), with `@vercel/ncc`, `typescript`, `esbuild`,
   `husky` and `pnpm` pinned to `automerge: false` even if a preset would match them.
