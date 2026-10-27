@@ -62,11 +62,13 @@ needs: [lint-format, typecheck, test, build]
 
 Steps (`ci.yml:85-117`):
 
-1. Mint a **GitHub App token** via `actions/create-github-app-token` (`ci.yml:86-90`) using `REBUILD_BOT_APP_ID` / `REBUILD_BOT_PRIVATE_KEY` secrets. The App token (not `GITHUB_TOKEN`) is required to force-push the tag and to commit to `main` under branch protection.
-2. Checkout with `fetch-depth: 0` and the App token (`ci.yml:91-94`).
-3. `rm -rf dist` + `pnpm install --frozen-lockfile` + `pnpm build`. The `rm -rf dist` guarantees the committed tree matches a fresh build (so artifacts no longer emitted are dropped, not left stale).
-4. Commit `dist/` **only if changed**: `git add -A -f dist/` (force, since gitignored; `-A` stages deletions so removed artifacts are committed), and if `git diff --cached` is non-empty, commit `chore: rebuild dist [skip ci]` as `testglance-rebuild-bot[bot]` and push to `main`. `[skip ci]` prevents a CI loop.
-5. Force-retag (`ci.yml:113-116`): `git tag -f v1 && git push origin v1 --force`.
+1. Checkout with `fetch-depth: 0` and `persist-credentials: false` (the job's `GITHUB_TOKEN` is `contents: read`).
+2. `pnpm install --frozen-lockfile` + `rm -rf dist` + `pnpm build`, with **no pnpm store cache** (`cache: pnpm` is deliberately absent and `package-manager-cache: false`): the store cache is written by the PR/test jobs, so restoring it here would let lower-privilege jobs pick the bytes bundled into `v1`. The `rm -rf dist` guarantees the committed tree matches a fresh build (so artifacts no longer emitted are dropped, not left stale).
+3. Only then mint the **GitHub App token** via `actions/create-github-app-token` using `REBUILD_BOT_APP_ID` / `REBUILD_BOT_PRIVATE_KEY`, so no dependency code (install scripts, ncc, husky) runs while it exists. The App token (not `GITHUB_TOKEN`) is required to force-push the tag and to commit to `main` under branch protection; it is put into the `origin` URL for the push steps.
+4. Commit `dist/` **only if changed**: `git add -A -f dist/` (force, since gitignored; `-A` stages deletions so removed artifacts are committed), and if `git diff --cached` is non-empty, commit `chore: rebuild dist [skip ci]` as `testglance-rebuild-bot[bot]` and push to `main`. `[skip ci]` prevents a CI loop. Commit and push run with `core.hooksPath=/dev/null` so husky hooks (lint-staged, commitlint, the pre-push test run) don't execute dependency code while the token is present.
+5. Force-retag: `git tag -f v1 && git push origin v1 --force`.
+
+All CI jobs default to `permissions: contents: read` (top-level block) and check out with `persist-credentials: false`; only `test` adds `checks: write` + `pull-requests: write`.
 
 ## Floating `v1` tag
 
@@ -107,17 +109,18 @@ It walks `node_modules/@actions/*/package.json` and, for any package whose `expo
 
 `renovate.json` extends `config:recommended`, `helpers:pinGitHubActionDigests` (SHA-pins
 all third-party actions and keeps the pins updated), and the `:automergeLinters` /
-`:automergeTesters` / `:automergeTypes` presets. Automerge applies to:
+`:automergeTesters` / `:automergeTypes` presets. Automerge applies **only** to linter /
+tester / `@types` updates (the `:automerge*` presets): those packages never run in
+`release-v1` (pnpm only runs the allow-listed `esbuild` build script, and commit hooks are
+disabled there) and ncc doesn't bundle them.
 
-- devDependency patch/minor updates (`renovate.json` `packageRules`)
-- linter / tester / `@types` updates (the `:automerge*` presets)
-- `github-actions` **digest re-pins** + patch/minor tag moves (`renovate.json` `packageRules`)
-- `lockFileMaintenance`
+Everything that can reach the released bundle requires human review:
 
-Automerge does **not** apply to production `dependencies` - the packages ncc bundles into
-`dist/` - which carry an explicit `automerge: false` rule and require human review.
-`:automergePatch` (which previously covered prod-dep patches) and `:automergeDigest` were
-removed for this reason.
+- production `dependencies` (bundled by ncc into `dist/`);
+- `github-actions` updates — every action in `ci.yml` also runs in `release-v1`;
+- `lockFileMaintenance` — it can move any transitive package, including bundled ones;
+- other devDependencies (no automerge rule), with `@vercel/ncc`, `typescript`, `esbuild`,
+  `husky` and `pnpm` pinned to `automerge: false` even if a preset would match them.
 
 `minimumReleaseAge: "3 days"` and `internalChecksFilter: "strict"` gate all updates. The
 first Renovate run after enabling `helpers:pinGitHubActionDigests` opens a one-time "Pin

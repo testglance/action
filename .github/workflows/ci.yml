@@ -10,12 +10,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Every job installs and runs third-party dependency code, so the default GITHUB_TOKEN is
+# read-only and never persisted to .git/config. Jobs opt into extra scopes individually.
+permissions:
+  contents: read
+
 jobs:
   lint-format:
     name: Lint & Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -30,6 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -47,6 +56,8 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -69,6 +80,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -82,36 +95,47 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [lint-format, typecheck, test, build]
     runs-on: ubuntu-latest
+    # The App token (minted after the build) does the pushing; GITHUB_TOKEN only reads.
+    permissions:
+      contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      # No `cache: pnpm`: the store cache is written by the PR/test jobs, and restoring it here
+      # would let lower-privilege jobs choose the bytes that get bundled into v1.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: rm -rf dist
+      - run: pnpm build
+      # Minted only after install/build so no dependency code runs while it exists.
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         id: app-token
         with:
           app-id: ${{ secrets.REBUILD_BOT_APP_ID }}
           private-key: ${{ secrets.REBUILD_BOT_PRIVATE_KEY }}
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: rm -rf dist
-      - run: pnpm build
+      # core.hooksPath=/dev/null: husky hooks (lint-staged, commitlint, pre-push tests) would
+      # otherwise run dependency code while the App token is in the remote URL.
       - name: Commit dist/ if changed
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           git config user.name "testglance-rebuild-bot[bot]"
           git config user.email "282057382+testglance-rebuild-bot[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git add -A -f dist/
           if git diff --cached --quiet; then
             echo "dist/ unchanged — nothing to commit."
           else
-            git commit -m "chore: rebuild dist [skip ci]"
-            git push origin HEAD:main
+            git -c core.hooksPath=/dev/null commit -m "chore: rebuild dist [skip ci]"
+            git -c core.hooksPath=/dev/null push origin HEAD:main
           fi
       - name: Force-retag v1 to HEAD
         run: |
           git tag -f v1
-          git push origin v1 --force
+          git -c core.hooksPath=/dev/null push origin v1 --force

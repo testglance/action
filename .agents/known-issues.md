@@ -22,11 +22,12 @@ updates (including production `dependencies`, which ncc bundles into `dist/`), a
 third-party actions were pinned to mutable major-version tags. The posture is now:
 
 - **Third-party actions are SHA-pinned** (`helpers:pinGitHubActionDigests`), and the
-  workflow `uses:` lines are pinned to full commit SHAs with a `# vX` comment. Auto-merge
-  applies only to immutable digest re-pins + patch/minor tag moves.
+  workflow `uses:` lines are pinned to full commit SHAs with a `# vX` comment. Action
+  updates are **not** auto-merged: every action in `ci.yml` also runs in `release-v1`.
 - **Production `dependencies` require human review** - `:automergePatch` was removed and an
-  explicit `dependencies → automerge:false` rule added. devDependencies / linters / testers
-  / `@types` and `lockFileMaintenance` still auto-merge.
+  explicit `dependencies → automerge:false` rule added. `lockFileMaintenance` and general
+  devDependencies no longer auto-merge either (they feed the `release-v1` install/build);
+  only linters / testers / `@types` still do.
 - Gates unchanged: `minimumReleaseAge: "3 days"`, `internalChecksFilter: "strict"`.
 
 See [security](./security.md) and [build-and-release](./build-and-release.md).
