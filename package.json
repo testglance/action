@@ -5,7 +5,7 @@
   "license": "MIT",
   "description": "TestGlance GitHub Action - Track test suite health over time",
   "main": "dist/index.js",
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@11.28.8",
   "scripts": {
     "build": "ncc build src/index.ts --out dist --license licenses.txt",
     "build:debug": "ncc build src/index.ts --out dist --source-map --license licenses.txt",
@@ -42,7 +42,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.0.0",
     "@commitlint/config-conventional": "^21.0.0",
-    "@types/node": "^25.6.0",
+    "@types/node": "^26.0.0",
     "@vercel/ncc": "^0.45.0",
     "@vitest/coverage-v8": "^5.0.0",
     "eslint": "^10.2.1",
