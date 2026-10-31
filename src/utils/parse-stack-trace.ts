@@ -4,6 +4,40 @@ function isDependencyPath(filePath: string): boolean {
   return DEPENDENCY_DIRS.some((dir) => filePath.includes(dir));
 }
 
+// JVM frames carry only a bare file name, so DEPENDENCY_DIRS can't see library code;
+// filter on the frame's package instead.
+const JVM_LIBRARY_PACKAGES = [
+  'java.',
+  'javax.',
+  'jdk.',
+  'sun.',
+  'com.sun.',
+  'kotlin.',
+  'kotlinx.',
+  'scala.',
+  'groovy.',
+  'org.codehaus.groovy.',
+  'org.junit.',
+  'junit.',
+  'org.opentest4j.',
+  'org.testng.',
+  'org.gradle.',
+  'org.apache.maven.',
+  'io.kotest.',
+  'io.mockk.',
+  'org.mockito.',
+  'org.assertj.',
+  'org.hamcrest.',
+  'assertk.',
+  'strikt.',
+  'org.spockframework.',
+  'org.scalatest.',
+];
+
+function isJvmLibraryFrame(frame: string): boolean {
+  return JVM_LIBRARY_PACKAGES.some((pkg) => frame.startsWith(pkg));
+}
+
 export function normalizePath(filePath: string): string {
   let p = filePath;
   if (p.startsWith('./')) p = p.slice(2);
@@ -33,11 +67,13 @@ const PATTERNS: PatternExtractor[] = [
     return { path: match[1], line: Number.parseInt(match[2], 10) };
   },
 
-  // Java/Kotlin: at package.Class(File.java:N) or at package.Class(File.kt:N)
+  // JVM: at [loader//]pkg.Class.method(File.java:N) — also .kt, .kts, .scala, .groovy
   (line) => {
-    const match = line.match(/at\s+[\w.$]+\(([A-Za-z][\w]*\.(?:java|kt)):(\d+)\)/);
-    if (!match) return null;
-    return { path: match[1], line: Number.parseInt(match[2], 10) };
+    const match = line.match(
+      /^\s*at\s+(?:[^\s/()]*\/)*([^()/]+)\(([\w$][\w$.-]*\.(?:java|kts?|scala|groovy)):(\d+)\)/,
+    );
+    if (!match || isJvmLibraryFrame(match[1])) return null;
+    return { path: match[2], line: Number.parseInt(match[3], 10) };
   },
 
   // Go: path/file.go:N
