@@ -1,6 +1,7 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { parseFileLocation, normalizePath } from '../utils/parse-stack-trace';
+import { resolveRunIdentity } from '../utils/run-context';
 import { formatDuration, renderMetricsStrip } from './format';
 import type { ParsedTestRun, ParsedTestCase } from '../types';
 
@@ -103,8 +104,13 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
     const octokit = github.getOctokit(githubToken);
     const { owner, repo } = github.context.repo;
 
-    const pr = github.context.payload.pull_request as { head?: { sha?: string } } | undefined;
-    const headSha = pr?.head?.sha ?? github.context.sha;
+    const headSha = resolveRunIdentity().checkRunSha;
+    if (!headSha) {
+      core.warning(
+        `Skipping Check Run "${checkName}": the "${github.context.eventName}" event does not identify the commit under test, and attaching results to the default-branch HEAD would mislabel them.`,
+      );
+      return;
+    }
 
     const { summary } = parsed;
     const conclusion = summary.failed > 0 || summary.errored > 0 ? 'failure' : 'success';

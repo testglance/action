@@ -35,7 +35,8 @@ Consumers should grant only what they use. The repo's own workflows model this:
 
 - `test` job — `contents: read`, `checks: write`, `pull-requests: write` (`.github/workflows/ci.yml:44-47`); it runs `uses: ./` with `annotate-failures: true`.
 - `e2e` job — `pull-requests: write` only (`.github/workflows/e2e.yml:17-18`); no check runs there.
-- `lint-format`, `typecheck`, `build` jobs declare **no** `permissions` block — they need none.
+- A top-level `permissions: contents: read` applies to every other job (`lint-format`, `typecheck`, `build`, `build-release`, `release-v1`). Omitting `permissions` does **not** mean "no permissions" — it means the repository default, which may be read/write — so the explicit block matters.
+- Every checkout uses `persist-credentials: false`, so dependency code run by `pnpm install`/lint/test/build can't read a token from `.git/config`.
 
 Guidance for downstream users:
 
@@ -58,15 +59,15 @@ Guidance for downstream users:
 The published artifact is `dist/index.js` — a single `@vercel/ncc` bundle. Trust model:
 
 - `dist/` is **gitignored** (`.gitignore:14`) and never committed from feature branches.
-- It is built and committed to `main` **only** by the `release-v1` job, authenticated with a **GitHub App token** minted at job time from `REBUILD_BOT_APP_ID` / `REBUILD_BOT_PRIVATE_KEY` (`.github/workflows/ci.yml:86-94`). Commit author is `testglance-rebuild-bot[bot]` (`.github/workflows/ci.yml:104-105`).
-- `release-v1` runs only on push to `main` and only after `lint-format`, `typecheck`, `test`, `build` pass (`.github/workflows/ci.yml:82-83`).
+- It is built **only** by the `build-release` job (which never restores the pnpm store cache that PR jobs write) and committed to `main` **only** by the `release-v1` job, which never installs dependencies. That job downloads the built `dist/` artifact and authenticates with a **GitHub App token** minted from `REBUILD_BOT_APP_ID` / `REBUILD_BOT_PRIVATE_KEY`, with commit hooks disabled for the push steps (see [build-and-release](./build-and-release.md)). Keeping the token out of the job that ran dependency code means no leftover process, git config or `.gitattributes` edit from install/build can read it. Commit author is `testglance-rebuild-bot[bot]` (`.github/workflows/ci.yml:104-105`).
+- `build-release` / `release-v1` run only on push to `main` and only after `lint-format`, `typecheck`, `test`, `build` pass (`.github/workflows/ci.yml:82-83`).
 - The job **force-retags `v1`** to the new commit (`git tag -f v1; git push origin v1 --force`, `.github/workflows/ci.yml:114-116`). Consumers reference `testglance/action@v1`, a floating tag — they trust whatever bundle `v1` currently points at. There is no immutable pinning by default. See [build-and-release](./build-and-release.md).
 - **Third-party actions used by our own CI are SHA-pinned.** Every `uses:` in `.github/workflows/*.yml` references a full commit SHA with a `# vX` comment (e.g. `actions/checkout@<sha> # v7`), maintained by Renovate's `helpers:pinGitHubActionDigests`. This eliminates the mutable-tag hijack path into the `dist`-building `release-v1` job (which runs with a `main`-pushing App token).
 
 ### Supply-chain warts
 
 - **Source map no longer shipped** (was a wart, now fixed — [#161](https://github.com/testglance/action/issues/161)). `pnpm build` dropped `--source-map`, so the published `dist/` ships only `index.js` + `licenses.txt` (no `index.js.map`, no `sourcemap-register.js`). `pnpm build:debug` still emits the map for local bundle debugging but is never used by `release-v1`, so nothing ships to consumers — see [known-issues](./known-issues.md#d).
-- **Renovate automerge is scoped to lower-risk updates.** `renovate.json` auto-merges `devDependencies` (patch/minor), linters/testers/`@types`, `github-actions` (digest re-pins + patch/minor), and `lockFileMaintenance`. Production `dependencies` - the packages ncc bundles into `dist/` - are explicitly **excluded** (`automerge: false`) and require human review. All third-party actions are **SHA-pinned** via `helpers:pinGitHubActionDigests` (see below), so an auto-merged action update is an immutable digest bump, not a mutable-tag hijack. Gated by `minimumReleaseAge: "3 days"` and `internalChecksFilter: "strict"`. Resolved [#159](https://github.com/testglance/action/issues/159); see [known-issues](./known-issues.md#b).
+- **Renovate automerge is limited to linters/testers/`@types`**, which never execute in `release-v1` and aren't bundled. Lockfile maintenance, other devDependencies and `github-actions` updates now need human review (they feed the `release-v1` install/build). Previously `renovate.json` auto-merged `devDependencies` (patch/minor), linters/testers/`@types`, `github-actions` (digest re-pins + patch/minor), and `lockFileMaintenance`. Production `dependencies` - the packages ncc bundles into `dist/` - are explicitly **excluded** (`automerge: false`) and require human review. All third-party actions are **SHA-pinned** via `helpers:pinGitHubActionDigests` (see below), so an action update is an immutable digest bump, not a mutable-tag hijack. Gated by `minimumReleaseAge: "3 days"` and `internalChecksFilter: "strict"`. Resolved [#159](https://github.com/testglance/action/issues/159); see [known-issues](./known-issues.md#b).
 
 ## Invariants when touching this area
 

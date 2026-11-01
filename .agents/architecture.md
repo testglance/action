@@ -92,7 +92,7 @@ No `api-key` → `localOnly = true` → `sendResults` forced false (`src/index.t
 
 ### Multi-job PR comment consolidation
 
-Multiple jobs (each its own action invocation) share **one** PR comment, keyed by the marker `<!-- testglance-pr-summary -->` (`src/output/pr-comment.ts:83`). `postPrComment` lists comments, and if a marked one exists it calls `mergeTestJobSection` (`src/output/pr-comment.ts:652`) to update that job's section in place; otherwise `renderPrComment([section])` creates it (`src/output/post-pr-comment.ts:47`). Each section is identified by `testJobName`.
+Multiple jobs (each its own action invocation) share **one** PR comment, keyed by the marker `<!-- testglance-pr-summary -->` (`src/output/pr-comment.ts:83`). `postPrComment` lists comments, and if a marked one authored by the token's own identity exists it calls `mergeTestJobSection` (`src/output/pr-comment.ts:652`) to update that job's section in place; otherwise `renderPrComment([section])` creates it (`src/output/post-pr-comment.ts:47`). Each section is identified by `testJobName`.
 
 ### Handlebars templating
 

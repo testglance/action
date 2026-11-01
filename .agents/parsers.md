@@ -139,7 +139,8 @@ When `report-format: auto` and the extension yields `null`, `parseFile` (`src/in
 
 - Glob detection via `GLOB_CHARS = /[*?{[]/`.
 - **No glob chars** → treat as a single literal path: return `[pattern]` if it `existsSync`, else `[]` (no error).
-- **Has glob chars** → `fast-glob` with `{ absolute: true, onlyFiles: true }`, results `.sort()`ed.
+- **Has glob chars** → `fast-glob` with `{ absolute: true, onlyFiles: false, followSymbolicLinks: false }` (directory symlinks are not traversed), filtered to regular files, results `.sort()`ed.
+- **Workspace confinement** (both paths): a match whose path lies inside `GITHUB_WORKSPACE` (or `cwd`) but whose realpath escapes it (a planted symlink) is dropped with a warning. The realpath is taken with `realpathSync.native`, which resolves `..` after symlinks as the kernel does (`link/../x.xml`). Paths the workflow author points at _outside_ the workspace (e.g. `RUNNER_TEMP`) are still read.
 
 ## Auto-detect — `src/utils/auto-detect.ts`
 
@@ -174,23 +175,24 @@ Note: `ParsedTestCase` does not carry its origin file across the merge — a doc
 
 ## Stack-trace location — `src/utils/parse-stack-trace.ts`
 
-`parseFileLocation(stackTrace)` (`src/utils/parse-stack-trace.ts:65`) extracts the first usable `{ path, line }` from a stack trace, used to place failure annotations on the right source line. See [output](./output.md).
+`parseFileLocation(stackTrace)` (`src/utils/parse-stack-trace.ts:101`) extracts the first usable `{ path, line }` from a stack trace, used to place failure annotations on the right source line. See [output](./output.md).
 
-- Splits on newlines; for each line, tries each `PatternExtractor` in `PATTERNS` order (`src/utils/parse-stack-trace.ts:21`).
+- Splits on newlines; for each line, tries each `PatternExtractor` in `PATTERNS` order (`src/utils/parse-stack-trace.ts:55`).
 - Skips any match whose path is inside a dependency dir — `DEPENDENCY_DIRS = ['node_modules/', 'site-packages/', '.gradle/', 'vendor/', '_vendor/']` (`src/utils/parse-stack-trace.ts:1`) — and keeps scanning.
-- `normalizePath` (`src/utils/parse-stack-trace.ts:7`) strips a leading `./` then a leading `/`.
+- JVM frames carry only a bare file name, so the JVM pattern filters on the frame's package instead — `JVM_LIBRARY_PACKAGES` (`src/utils/parse-stack-trace.ts:9`) covers the JDK, Kotlin/Scala/Groovy runtimes, and common test frameworks. Extend this list when a library frame gets annotated instead of user code.
+- `normalizePath` (`src/utils/parse-stack-trace.ts:41`) strips a leading `./` then a leading `/`.
 - Returns `null` if no non-dependency match is found.
 
 Supported language patterns (in priority order):
 
-| Lang   | Matches                                       |
-| ------ | --------------------------------------------- |
-| JS/TS  | `at Fn (path:line:col)` or `at path:line:col` |
-| Python | `File "path", line N`                         |
-| Java   | `at pkg.Class(File.java:N)`                   |
-| Go     | `path/file.go:N`                              |
-| Ruby   | `path/file.rb:N`                              |
-| .NET   | `in /path/File.cs:line N`                     |
+| Lang   | Matches                                                                              |
+| ------ | ------------------------------------------------------------------------------------ |
+| JS/TS  | `at Fn (path:line:col)` or `at path:line:col`                                        |
+| Python | `File "path", line N`                                                                |
+| JVM    | `at [loader//]pkg.Class.method(File.ext:N)` — `java`, `kt`, `kts`, `scala`, `groovy` |
+| Go     | `path/file.go:N`                                                                     |
+| Ruby   | `path/file.rb:N`                                                                     |
+| .NET   | `in /path/File.cs:line N`                                                            |
 
 ---
 

@@ -131805,22 +131805,75 @@ function detectFramework(reportPath, format, ctrfToolName) {
     return undefined;
 }
 
+// EXTERNAL MODULE: external "node:path"
+var external_node_path_ = __nccwpck_require__(76760);
 // EXTERNAL MODULE: ./node_modules/.pnpm/fast-glob@3.3.3/node_modules/fast-glob/out/index.js
 var out = __nccwpck_require__(75161);
 var out_default = /*#__PURE__*/__nccwpck_require__.n(out);
 ;// CONCATENATED MODULE: ./src/utils/discover-files.ts
 
+
+
+
 const GLOB_CHARS = /[*?{[]/;
+function isWithin(child, parent) {
+    const rel = (0,external_node_path_.relative)(parent, child);
+    return rel === '' || (rel !== '..' && !rel.startsWith(`..${external_node_path_.sep}`) && !(0,external_node_path_.isAbsolute)(rel));
+}
+// realpathSync.native resolves `..` after following symlinks, as the kernel does when the
+// file is opened; the JS realpathSync collapses `..` lexically first and would check the
+// wrong file for a path like `link/../report.xml`.
+function safeRealpath(path) {
+    try {
+        return external_node_fs_.realpathSync.native(path);
+    }
+    catch {
+        return null;
+    }
+}
+// The workspace holds the (possibly PR-controlled) checkout, so a planted symlink there must
+// not let the action read files elsewhere on the runner. Paths the workflow author points at
+// outside the workspace (e.g. RUNNER_TEMP) are their explicit choice and stay allowed.
+function workspaceEscapeCheck() {
+    const workspace = (0,external_node_path_.resolve)(process.env.GITHUB_WORKSPACE || process.cwd());
+    const workspaceReal = safeRealpath(workspace) ?? workspace;
+    return (file) => {
+        const lexical = (0,external_node_path_.resolve)(file);
+        if (!isWithin(lexical, workspace) && !isWithin(lexical, workspaceReal))
+            return false;
+        const real = safeRealpath(file);
+        return real === null || !isWithin(real, workspaceReal);
+    };
+}
+function isRegularFile(path) {
+    try {
+        return (0,external_node_fs_.statSync)(path).isFile();
+    }
+    catch {
+        return false;
+    }
+}
+function confineToWorkspace(files) {
+    const escapesWorkspace = workspaceEscapeCheck();
+    return files.filter((file) => {
+        if (!escapesWorkspace(file))
+            return true;
+        warning(`Skipping report file ${file}: it resolves outside the workspace.`);
+        return false;
+    });
+}
 async function discoverReportFiles(pattern) {
     if (!GLOB_CHARS.test(pattern)) {
-        const { existsSync } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 73024, 23));
-        if (existsSync(pattern)) {
-            return [pattern];
-        }
-        return [];
+        return (0,external_node_fs_.existsSync)(pattern) ? confineToWorkspace([pattern]) : [];
     }
-    const files = await out_default()(pattern, { absolute: true, onlyFiles: true });
-    return files.sort();
+    // Directory symlinks are not traversed, but file symlinks are still matched (onlyFiles would
+    // drop them) so they can be confined below instead of silently ignored.
+    const entries = await out_default()(pattern, {
+        absolute: true,
+        onlyFiles: false,
+        followSymbolicLinks: false,
+    });
+    return confineToWorkspace(entries.filter(isRegularFile)).sort();
 }
 
 ;// CONCATENATED MODULE: ./src/utils/auto-detect.ts
@@ -131846,932 +131899,6 @@ async function autoDetectReportFiles() {
         files: [...seen].sort(),
         scannedPatterns: [...AUTO_DETECT_PATTERNS],
     };
-}
-
-// EXTERNAL MODULE: external "node:path"
-var external_node_path_ = __nccwpck_require__(76760);
-;// CONCATENATED MODULE: ./src/utils/merge-results.ts
-
-function mergeTestRuns(runs) {
-    if (runs.length === 1) {
-        return runs[0].parsed;
-    }
-    const allSuites = [];
-    let toolName;
-    for (const { filePath, parsed } of runs) {
-        toolName ??= parsed.toolName;
-        for (const suite of parsed.suites) {
-            const isGenericName = parsed.toolName && suite.name === parsed.toolName;
-            const isSingleSuite = parsed.suites.length === 1;
-            if (isGenericName && isSingleSuite) {
-                allSuites.push({ ...suite, name: (0,external_node_path_.basename)(filePath) });
-            }
-            else {
-                allSuites.push(suite);
-            }
-        }
-    }
-    let total = 0;
-    let passed = 0;
-    let failed = 0;
-    let skipped = 0;
-    let errored = 0;
-    let duration = 0;
-    for (const suite of allSuites) {
-        duration += suite.duration;
-        for (const test of suite.tests) {
-            total++;
-            if (test.status === 'passed')
-                passed++;
-            else if (test.status === 'failed')
-                failed++;
-            else if (test.status === 'skipped')
-                skipped++;
-            else if (test.status === 'errored')
-                errored++;
-        }
-    }
-    return {
-        summary: { total, passed, failed, skipped, errored, duration },
-        suites: allSuites,
-        toolName,
-    };
-}
-
-;// CONCATENATED MODULE: ./src/output/format.ts
-function escapeHtml(value) {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-function formatDuration(seconds) {
-    if (seconds < 1)
-        return `${Math.round(seconds * 1000)}ms`;
-    if (seconds < 60)
-        return `${seconds.toFixed(1)}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs.toFixed(1)}s`;
-}
-function formatDurationPair(a, b) {
-    const scale = Math.max(a, b);
-    if (scale < 1)
-        return [formatDuration(a), formatDuration(b)];
-    if (scale < 60)
-        return [`${a.toFixed(1)}s`, `${b.toFixed(1)}s`];
-    return [formatDuration(a), formatDuration(b)];
-}
-function truncate(str, maxLen) {
-    if (str.length <= maxLen)
-        return str;
-    return str.slice(0, maxLen - 3) + '...';
-}
-function renderProgressBar(passRate, width = 16) {
-    const clamped = Math.max(0, Math.min(100, passRate));
-    const filled = clamped === 100 ? width : Math.floor((clamped / 100) * width);
-    const empty = width - filled;
-    return `${'█'.repeat(filled)}${'░'.repeat(empty)} ${clamped.toFixed(1)}%`;
-}
-function statusEmoji(failed) {
-    return failed > 0 ? '🔴' : '✅';
-}
-function renderMetricsStrip(summary) {
-    const parts = [`✅ ${summary.passed} passed`];
-    if (summary.failed > 0)
-        parts.push(`❌ ${summary.failed} failed`);
-    if (summary.skipped > 0)
-        parts.push(`⏭️ ${summary.skipped} skipped`);
-    if (summary.errored > 0)
-        parts.push(`💥 ${summary.errored} errored`);
-    return parts.join(' · ');
-}
-const HEALTH_SCORE_FACTORS = [
-    { label: 'Pass rate', weight: '70%', detail: 'share of tests passing' },
-    { label: 'Flakiness', weight: '20%', detail: 'fewer flaky tests scores higher' },
-    {
-        label: 'Runtime trend',
-        weight: '10%',
-        detail: 'getting faster scores above neutral, slower below',
-    },
-];
-const HEALTH_SCORE_FOOTNOTE = 'A fully green, stable suite scores ~95; the final points require a measurably improving runtime trend. Needs at least 5 runs.';
-function renderHealthScoreDetails() {
-    const factors = HEALTH_SCORE_FACTORS.map((f) => `- **${f.label} (${f.weight})** — ${f.detail}`).join('\n');
-    return [
-        '<details><summary>ⓘ How is this scored?</summary>',
-        '',
-        'Health Score (0–100), blended over the last 30 days:',
-        '',
-        factors,
-        '',
-        HEALTH_SCORE_FOOTNOTE,
-        '</details>',
-    ].join('\n');
-}
-function renderHealthScoreTooltipHtml() {
-    const factors = HEALTH_SCORE_FACTORS.map((f) => `<li><strong>${escapeHtml(f.label)} (${f.weight})</strong> — ${escapeHtml(f.detail)}</li>`).join('');
-    return (`<span class="health-info" tabindex="0" aria-label="How the health score is calculated">&#9432;` +
-        `<span class="health-tooltip">` +
-        `<strong>Health Score (0&ndash;100)</strong>, blended over the last 30 days:` +
-        `<ul>${factors}</ul>` +
-        `<span class="health-foot">${escapeHtml(HEALTH_SCORE_FOOTNOTE)}</span>` +
-        `</span></span>`);
-}
-function compareSuitesByHealth(a, b) {
-    if (a.passRate < 0 && b.passRate >= 0)
-        return 1;
-    if (b.passRate < 0 && a.passRate >= 0)
-        return -1;
-    if (a.passRate !== b.passRate)
-        return a.passRate - b.passRate;
-    if (a.failed !== b.failed)
-        return b.failed - a.failed;
-    if (a.skipped !== b.skipped)
-        return b.skipped - a.skipped;
-    return b.duration - a.duration;
-}
-
-// EXTERNAL MODULE: ./node_modules/.pnpm/handlebars@4.7.10/node_modules/handlebars/lib/index.js
-var lib = __nccwpck_require__(87979);
-var lib_default = /*#__PURE__*/__nccwpck_require__.n(lib);
-;// CONCATENATED MODULE: ./src/output/template-renderer.ts
-
-
-
-
-
-const DEFAULT_SLOWEST_LIMIT = 10;
-const MAX_TEMPLATE_FILE_BYTES = 1024 * 1024;
-const handlebars = lib_default().create();
-const compileCache = new Map();
-function computePassRate(passed, total) {
-    if (total <= 0)
-        return '0.0';
-    return ((passed / total) * 100).toFixed(1);
-}
-handlebars.registerHelper('formatDuration', (seconds) => {
-    if (typeof seconds !== 'number' || !Number.isFinite(seconds))
-        return '';
-    return formatDuration(seconds);
-});
-handlebars.registerHelper('truncate', (str, maxLen) => {
-    if (typeof str !== 'string')
-        return '';
-    const limit = typeof maxLen === 'number' && Number.isFinite(maxLen) ? maxLen : 100;
-    return truncate(str, limit);
-});
-handlebars.registerHelper('escapeHtml', (value) => {
-    if (typeof value !== 'string')
-        return '';
-    return escapeHtml(value);
-});
-handlebars.registerHelper('passRate', (passed, total) => {
-    if (typeof passed !== 'number' || typeof total !== 'number')
-        return '0.0';
-    return computePassRate(passed, total);
-});
-handlebars.registerHelper('limit', (arr, n) => {
-    if (!Array.isArray(arr))
-        return [];
-    const count = typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : arr.length;
-    return arr.slice(0, count);
-});
-function collectFailures(parsed) {
-    const failed = [];
-    for (const suite of parsed.suites) {
-        for (const test of suite.tests) {
-            if (test.status === 'failed' || test.status === 'errored') {
-                failed.push({
-                    name: test.name,
-                    suite: test.suite,
-                    errorMessage: test.errorMessage ?? '',
-                    stackTrace: test.stackTrace ?? '',
-                    duration: test.duration,
-                });
-            }
-        }
-    }
-    return failed;
-}
-function collectSlowest(parsed, limit) {
-    if (limit <= 0)
-        return [];
-    const all = parsed.suites.flatMap((s) => s.tests);
-    return [...all]
-        .sort((a, b) => b.duration - a.duration)
-        .slice(0, limit)
-        .map((t) => ({ name: t.name, suite: t.suite, duration: t.duration }));
-}
-function summariseSuites(parsed) {
-    return parsed.suites.map((s) => {
-        const total = s.tests.length;
-        const passed = s.tests.filter((t) => t.status === 'passed').length;
-        const failed = s.tests.filter((t) => t.status === 'failed').length;
-        const skipped = s.tests.filter((t) => t.status === 'skipped').length;
-        const errored = s.tests.filter((t) => t.status === 'errored').length;
-        return { name: s.name, total, passed, failed, skipped, errored, duration: s.duration };
-    });
-}
-function flattenFlaky(flaky) {
-    if (!flaky || !flaky.hasFlakyTests)
-        return undefined;
-    return flaky.flakyTests.map((t) => ({
-        name: t.name,
-        suite: t.suite,
-        flipCount: t.flipCount,
-        flakyRate: t.flakyRate,
-    }));
-}
-function flattenHistory(history) {
-    if (!history || history.length === 0)
-        return undefined;
-    return history.map((entry) => ({
-        sha: entry.commitSha,
-        passRate: computePassRate(entry.summary.passed, entry.summary.total),
-        duration: entry.summary.duration,
-        timestamp: entry.timestamp,
-    }));
-}
-function buildTemplateContext(input) {
-    const { parsed, meta, delta, flaky, trends, perfRegression, history } = input;
-    const slowestLimit = input.slowestLimit ?? DEFAULT_SLOWEST_LIMIT;
-    const summary = parsed.summary;
-    return {
-        results: {
-            total: summary.total,
-            passed: summary.passed,
-            failed: summary.failed,
-            skipped: summary.skipped,
-            errored: summary.errored,
-            passRate: computePassRate(summary.passed, summary.total),
-            duration: summary.duration,
-        },
-        failures: collectFailures(parsed),
-        slowest: collectSlowest(parsed, slowestLimit),
-        suites: summariseSuites(parsed),
-        history: flattenHistory(history),
-        delta: delta ?? undefined,
-        flaky: flattenFlaky(flaky),
-        trends: trends ?? undefined,
-        perfRegression: perfRegression ?? undefined,
-        meta,
-    };
-}
-function getWorkspace() {
-    const ws = process.env.GITHUB_WORKSPACE;
-    if (typeof ws !== 'string' || ws.length === 0)
-        return null;
-    return ws;
-}
-function sanitizeForLog(value) {
-    return value.replace(/[\r\n]+/g, ' ');
-}
-function resolveTemplatePath(templatePath) {
-    // Kept for backwards compatibility with tests/callers that only need the lexical resolution.
-    if (path.isAbsolute(templatePath))
-        return templatePath;
-    const base = getWorkspace() ?? process.cwd();
-    return path.resolve(base, templatePath);
-}
-function resolveAndValidate(templatePath) {
-    if (/[\r\n]/.test(templatePath)) {
-        return { ok: false, reason: 'template path contains newline characters' };
-    }
-    const workspace = getWorkspace();
-    if (!workspace) {
-        return {
-            ok: false,
-            reason: 'GITHUB_WORKSPACE is not set; refusing to resolve template path',
-        };
-    }
-    const workspaceReal = (() => {
-        try {
-            return (0,external_node_fs_.realpathSync)(workspace);
-        }
-        catch {
-            return external_node_path_.resolve(workspace);
-        }
-    })();
-    const lexical = external_node_path_.isAbsolute(templatePath)
-        ? external_node_path_.resolve(templatePath)
-        : external_node_path_.resolve(workspaceReal, templatePath);
-    let real;
-    let stat;
-    try {
-        real = (0,external_node_fs_.realpathSync)(lexical);
-        stat = (0,external_node_fs_.statSync)(real);
-    }
-    catch (err) {
-        return {
-            ok: false,
-            reason: `cannot read ${sanitizeForLog(lexical)}: ${err instanceof Error ? err.message : String(err)}`,
-        };
-    }
-    const prefix = workspaceReal.endsWith(external_node_path_.sep) ? workspaceReal : workspaceReal + external_node_path_.sep;
-    if (real !== workspaceReal && !real.startsWith(prefix)) {
-        return {
-            ok: false,
-            reason: `template path resolves outside GITHUB_WORKSPACE (${sanitizeForLog(real)})`,
-        };
-    }
-    if (!stat.isFile()) {
-        return {
-            ok: false,
-            reason: `template path is not a regular file: ${sanitizeForLog(real)}`,
-        };
-    }
-    if (stat.size > MAX_TEMPLATE_FILE_BYTES) {
-        return {
-            ok: false,
-            reason: `template file exceeds ${MAX_TEMPLATE_FILE_BYTES} bytes (${stat.size}): ${sanitizeForLog(real)}`,
-        };
-    }
-    return { ok: true, path: real, mtimeMs: stat.mtimeMs, size: stat.size };
-}
-function loadAndCompile(resolved, label) {
-    const cached = compileCache.get(resolved.path);
-    if (cached && cached.mtimeMs === resolved.mtimeMs && cached.size === resolved.size) {
-        return cached.template;
-    }
-    let source;
-    try {
-        source = (0,external_node_fs_.readFileSync)(resolved.path, 'utf8');
-    }
-    catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        warning(`Custom ${label} template failed: cannot read ${sanitizeForLog(resolved.path)}: ${reason}. Falling back to default ${label}.`);
-        return null;
-    }
-    if (source.charCodeAt(0) === 0xfeff) {
-        source = source.slice(1);
-    }
-    try {
-        // Eagerly parse so syntax errors surface here (compile defers parsing until render time).
-        handlebars.parse(source);
-        const compiled = handlebars.compile(source, {
-            strict: false,
-            noEscape: false,
-        });
-        compileCache.set(resolved.path, {
-            mtimeMs: resolved.mtimeMs,
-            size: resolved.size,
-            template: compiled,
-        });
-        return compiled;
-    }
-    catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        warning(`Custom ${label} template failed: parse error in ${sanitizeForLog(resolved.path)}: ${reason}. Falling back to default ${label}.`);
-        return null;
-    }
-}
-function renderTemplate(templatePath, context, options = {}) {
-    const label = options.label ?? 'summary';
-    const resolved = resolveAndValidate(templatePath);
-    if (!resolved.ok) {
-        warning(`Custom ${label} template failed: ${resolved.reason}. Falling back to default ${label}.`);
-        return null;
-    }
-    const compiled = loadAndCompile(resolved, label);
-    if (!compiled)
-        return null;
-    try {
-        return compiled(context, {
-            allowProtoPropertiesByDefault: false,
-            allowProtoMethodsByDefault: false,
-        });
-    }
-    catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        warning(`Custom ${label} template failed: render error in ${sanitizeForLog(resolved.path)}: ${reason}. Falling back to default ${label}.`);
-        return null;
-    }
-}
-function _resetTemplateRendererForTests() {
-    compileCache.clear();
-}
-function _getHandlebarsInstanceForTests() {
-    return handlebars;
-}
-
-;// CONCATENATED MODULE: ./src/output/summary.ts
-
-
-
-
-const MAX_RENDERED_SUMMARY_BYTES = 900_000;
-const MAX_FAILED_TESTS_SHOWN = 25;
-const MAX_ERROR_MESSAGE_LENGTH = 200;
-const MAX_STACK_TRACE_LINES = 30;
-const MAX_ALL_TESTS_BYTES = 400_000;
-const AUTO_ALL_TESTS_MAX_TOTAL = 200;
-const AUTO_ALL_TESTS_SINGLE_SUITE_MAX_TOTAL = 1000;
-const SUITE_OPEN_MAX_TESTS = 25;
-function shouldRenderAllTests(showAllTests, parsed) {
-    if (showAllTests === true)
-        return true;
-    if (showAllTests === false)
-        return false;
-    const total = parsed.summary.total;
-    if (total === 0)
-        return false;
-    if (total <= AUTO_ALL_TESTS_MAX_TOTAL)
-        return true;
-    if (parsed.suites.length === 1 && total <= AUTO_ALL_TESTS_SINGLE_SUITE_MAX_TOTAL)
-        return true;
-    return false;
-}
-async function generateSummary(options) {
-    const { parsed, apiSuccess, localOnly, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, trends, history, summaryTemplate, meta, reportFileCount, showAllTests, } = options;
-    if (summaryTemplate && meta) {
-        const context = buildTemplateContext({
-            parsed,
-            meta,
-            delta,
-            flaky,
-            trends,
-            perfRegression,
-            history,
-            slowestLimit: slowestTests,
-        });
-        const rendered = renderTemplate(summaryTemplate, context, { label: 'summary' });
-        if (rendered !== null) {
-            const capped = rendered.length > MAX_RENDERED_SUMMARY_BYTES
-                ? `${rendered.slice(0, MAX_RENDERED_SUMMARY_BYTES)}\n\n_…rendered summary truncated to ${MAX_RENDERED_SUMMARY_BYTES} chars to fit GitHub Job Summary limit._`
-                : rendered;
-            summary_summary.addRaw(capped);
-            await summary_summary.write();
-            return;
-        }
-    }
-    const { summary } = parsed;
-    const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
-    summary_summary.addRaw(`## ${renderMetricsStrip(summary)} — ${passRate}%\n\n`);
-    if (!apiSuccess && !localOnly) {
-        summary_summary.addRaw('> ⚠️ **API submission failed** — dashboard data not updated\n\n');
-    }
-    summary_summary.addRaw(`${renderProgressBar(Number(passRate))}\n\n`);
-    let metricsLine = `⏱️ ${formatDuration(summary.duration)}`;
-    if (reportFileCount && reportFileCount > 1) {
-        metricsLine += ` · 📄 ${reportFileCount} reports merged`;
-    }
-    const hasHealthScore = apiSuccess && healthScore !== null && healthScore !== undefined;
-    if (hasHealthScore) {
-        metricsLine += ` · 🏥 ${healthScore}/100`;
-    }
-    else if (apiSuccess) {
-        metricsLine += ' · 🏥 available after 5 runs';
-    }
-    summary_summary.addRaw(`${metricsLine}\n\n`);
-    if (hasHealthScore) {
-        summary_summary.addRaw(`${renderHealthScoreDetails()}\n\n`);
-    }
-    if (flakyCount && flakyCount > 0) {
-        summary_summary.addRaw(`**Flaky tests detected:** ${flakyCount}\n\n`);
-    }
-    if (highlights && highlights.length > 0) {
-        summary_summary.addRaw(renderHighlights(highlights, dashboardUrl));
-    }
-    if (trends) {
-        summary_summary.addRaw(renderTrendsSection(trends));
-    }
-    summary_summary.addRaw('---\n\n');
-    if (delta) {
-        summary_summary.addRaw(renderDeltaSection(delta));
-    }
-    if (testsChanged && testsChanged.hasChanges) {
-        summary_summary.addRaw(renderTestsChangedSection(testsChanged));
-    }
-    if (flaky && flaky.hasFlakyTests) {
-        summary_summary.addRaw(renderFlakySection(flaky));
-    }
-    if (perfRegression) {
-        summary_summary.addRaw(renderPerfRegressionSection(perfRegression));
-    }
-    try {
-        renderSuiteBreakdown(parsed.suites);
-        if (shouldRenderAllTests(showAllTests, parsed)) {
-            renderAllTests(parsed.suites);
-        }
-        const failedTests = collectFailedTests(parsed).sort((a, b) => a.suite.localeCompare(b.suite));
-        if (failedTests.length > 0) {
-            summary_summary.addRaw('---\n\n');
-            summary_summary.addRaw('### ❌ Failed Tests\n\n');
-            const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
-            for (const t of shown) {
-                const error = truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH);
-                summary_summary.addRaw(`> [!CAUTION]\n` +
-                    `> **\`${escapeHtml(t.name)}\`** · \`${escapeHtml(t.suite)}\`\n` +
-                    `>\n` +
-                    `> ${escapeHtml(error)}\n\n`);
-                if (t.stackTrace) {
-                    summary_summary.addRaw(renderStackTrace(t.name, t.stackTrace));
-                }
-            }
-            if (failedTests.length > MAX_FAILED_TESTS_SHOWN) {
-                summary_summary.addRaw(`... and ${failedTests.length - MAX_FAILED_TESTS_SHOWN} more failed tests\n\n`);
-            }
-        }
-        if (slowestTests && slowestTests > 0) {
-            const allTests = parsed.suites.flatMap((s) => s.tests);
-            const withDuration = allTests.filter((t) => t.duration >= 0.2);
-            const sorted = [...withDuration].sort((a, b) => b.duration - a.duration);
-            const top = sorted.slice(0, slowestTests);
-            if (top.length > 0) {
-                summary_summary.addRaw('### 🐌 Slowest Tests\n\n');
-                summary_summary.addRaw('<details><summary>Slowest ' +
-                    top.length +
-                    ' tests</summary>\n\n' +
-                    '<table>\n<tr><th>Test</th><th>Suite</th><th>Duration</th></tr>\n' +
-                    top
-                        .map((t) => `<tr><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.suite)}</td><td>${formatDuration(t.duration)}</td></tr>`)
-                        .join('\n') +
-                    '\n</table>\n\n</details>\n\n');
-            }
-        }
-    }
-    catch (err) {
-        warning(`Enhanced summary generation failed, using basic summary: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    if (dashboardUrl) {
-        summary_summary.addLink('View Dashboard', dashboardUrl);
-        summary_summary.addRaw('\n');
-    }
-    if (options.artifactUrl) {
-        summary_summary.addRaw(`📄 [HTML Report — download from Artifacts](${options.artifactUrl})\n`);
-    }
-    await summary_summary.write();
-}
-function renderStackTrace(testName, stackTrace) {
-    const lines = stackTrace.split('\n');
-    let truncated = lines.slice(0, MAX_STACK_TRACE_LINES).join('\n');
-    const safeTestName = escapeHtml(testName);
-    if (lines.length > MAX_STACK_TRACE_LINES) {
-        truncated += `\n... ${lines.length - MAX_STACK_TRACE_LINES} more lines truncated`;
-    }
-    return `<details><summary>Stack trace: ${safeTestName}</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>\n\n`;
-}
-function collectFailedTests(parsed) {
-    return parsed.suites.flatMap((suite) => suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'));
-}
-function renderSuiteBreakdown(suites) {
-    if (suites.length === 0)
-        return;
-    const rows = suites
-        .map((s) => {
-        const total = s.tests.length;
-        const passed = s.tests.filter((t) => t.status === 'passed').length;
-        const failed = s.tests.filter((t) => t.status === 'failed' || t.status === 'errored').length;
-        const skipped = s.tests.filter((t) => t.status === 'skipped').length;
-        const passRate = total > 0 ? (passed / total) * 100 : -1;
-        return { name: s.name, total, passed, failed, skipped, passRate, duration: s.duration };
-    })
-        .sort(compareSuitesByHealth);
-    const cell = (n) => (n > 0 ? `${n}` : '');
-    const suiteIcon = (r) => {
-        if (r.total === 0)
-            return '➖';
-        if (r.failed > 0)
-            return '❌';
-        if (r.skipped > 0)
-            return '⚠️';
-        return '✅';
-    };
-    const tableRows = rows
-        .map((r) => `<tr><td>${suiteIcon(r)}</td><td>${escapeHtml(r.name)}</td><td>${cell(r.passed)}</td><td>${cell(r.failed)}</td><td>${cell(r.skipped)}</td><td>${formatDuration(r.duration)}</td></tr>`)
-        .join('\n');
-    summary_summary.addRaw('### 📋 Suite Breakdown\n\n' +
-        '<table>\n' +
-        '<tr><th></th><th>Suite</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Duration</th></tr>\n' +
-        tableRows +
-        '\n</table>\n\n');
-}
-const TEST_STATUS_EMOJI = {
-    passed: '✅',
-    failed: '❌',
-    errored: '💥',
-    skipped: '⏭️',
-};
-const TEST_STATUS_SORT_ORDER = {
-    failed: 0,
-    errored: 1,
-    skipped: 2,
-    passed: 3,
-};
-function compareTestsForDisplay(a, b) {
-    const aOrder = TEST_STATUS_SORT_ORDER[a.status] ?? 99;
-    const bOrder = TEST_STATUS_SORT_ORDER[b.status] ?? 99;
-    if (aOrder !== bOrder)
-        return aOrder - bOrder;
-    return b.duration - a.duration;
-}
-function renderAllTests(suites) {
-    if (suites.length === 0)
-        return;
-    const ranked = suites
-        .map((s) => {
-        const total = s.tests.length;
-        const failed = s.tests.filter((t) => t.status === 'failed' || t.status === 'errored').length;
-        const skipped = s.tests.filter((t) => t.status === 'skipped').length;
-        const passed = s.tests.filter((t) => t.status === 'passed').length;
-        const passRate = total > 0 ? (passed / total) * 100 : -1;
-        return { suite: s, total, passed, failed, skipped, passRate, duration: s.duration };
-    })
-        .sort(compareSuitesByHealth);
-    let body = '### 🔬 All Tests\n\n';
-    let elided = 0;
-    let budgetExceeded = false;
-    for (const { suite, total, passed, failed, skipped } of ranked) {
-        if (budgetExceeded) {
-            elided++;
-            continue;
-        }
-        const icon = failed > 0 ? '❌' : skipped > 0 ? '⚠️' : total === 0 ? '➖' : '✅';
-        const statsParts = [];
-        if (passed > 0)
-            statsParts.push(`✅ ${passed}`);
-        if (failed > 0)
-            statsParts.push(`❌ ${failed}`);
-        if (skipped > 0)
-            statsParts.push(`⏭️ ${skipped}`);
-        statsParts.push(`⏱️ ${formatDuration(suite.duration)}`);
-        const stats = statsParts.join(' · ');
-        const openAttr = failed > 0 || skipped > 0 || total <= SUITE_OPEN_MAX_TESTS ? ' open' : '';
-        let block = `<details${openAttr}><summary>${icon} <strong>${escapeHtml(suite.name)}</strong> — ${stats}</summary>\n\n`;
-        if (total === 0) {
-            block += '_(no tests)_\n\n</details>\n\n';
-        }
-        else {
-            const sortedTests = [...suite.tests].sort(compareTestsForDisplay);
-            const rows = sortedTests
-                .map((t) => `<tr><td>${TEST_STATUS_EMOJI[t.status] ?? '•'}</td><td>${escapeHtml(t.name)}</td><td>${formatDuration(t.duration)}</td></tr>`)
-                .join('\n');
-            block +=
-                '<table>\n<tr><th></th><th>Test</th><th>Duration</th></tr>\n' +
-                    rows +
-                    '\n</table>\n\n</details>\n\n';
-        }
-        if (body.length + block.length > MAX_ALL_TESTS_BYTES) {
-            budgetExceeded = true;
-            elided++;
-            continue;
-        }
-        body += block;
-    }
-    if (elided > 0) {
-        body += `_…and ${elided} more suite(s) elided to fit GitHub summary size limit._\n\n`;
-    }
-    summary_summary.addRaw(body);
-}
-const MAX_HIGHLIGHTS_SHOWN = 3;
-const MAX_TEST_NAMES_SHOWN = 3;
-const SEVERITY_EMOJI = {
-    critical: '🔴',
-    warning: '🟡',
-    info: '🔵',
-};
-const SEVERITY_ORDER = {
-    critical: 0,
-    warning: 1,
-    info: 2,
-};
-function renderHighlights(highlights, dashboardUrl) {
-    const sorted = [...highlights].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-    const shown = sorted.slice(0, MAX_HIGHLIGHTS_SHOWN);
-    const lines = ['### 💡 Highlights\n\n'];
-    for (const h of shown) {
-        lines.push(`${SEVERITY_EMOJI[h.severity]} ${renderHighlightMessage(h)}\n\n`);
-    }
-    if (sorted.length > MAX_HIGHLIGHTS_SHOWN && dashboardUrl) {
-        lines.push(`**[View all highlights on dashboard →](${dashboardUrl})**\n\n`);
-    }
-    return lines.join('');
-}
-const MAX_DELTA_TESTS_SHOWN = 10;
-const DELTA_STATUS_EMOJI = {
-    added: '🆕 Added',
-    removed: '🗑️ Removed',
-    newlyFailing: '❌ New Failure',
-    newlyPassing: '✅ Now Passing',
-};
-function renderDeltaSection(delta) {
-    const lines = ['### 🔄 Changes Since Last Run\n\n'];
-    const sign = (n) => (n >= 0 ? '+' : '-');
-    if (!delta.hasChanges) {
-        lines.push('✅ No changes since last run\n\n');
-        return lines.join('');
-    }
-    lines.push(`**Pass rate:** ${delta.passRatePrev.toFixed(1)}% → ${delta.passRateCurr.toFixed(1)}% (${sign(delta.passRateDelta)}${Math.abs(delta.passRateDelta).toFixed(1)}%)\n\n`);
-    const durSign = sign(delta.durationDelta);
-    const [prevDur, currDur] = formatDurationPair(delta.durationPrev, delta.durationCurr);
-    lines.push(`**Duration:** ${prevDur} → ${currDur} (${durSign}${formatDuration(Math.abs(delta.durationDelta))}, ${durSign}${Math.abs(delta.durationDeltaPercent).toFixed(1)}%)\n\n`);
-    const categories = [
-        { key: 'added', tests: delta.testsAdded },
-        { key: 'newlyFailing', tests: delta.newlyFailing },
-        { key: 'newlyPassing', tests: delta.newlyPassing },
-        { key: 'removed', tests: delta.testsRemoved },
-    ];
-    const nonEmpty = categories.filter((c) => Array.isArray(c.tests) && c.tests.length > 0);
-    if (nonEmpty.length > 0) {
-        const allRows = [];
-        for (const cat of nonEmpty) {
-            const tests = cat.tests;
-            const shown = tests.slice(0, MAX_DELTA_TESTS_SHOWN);
-            for (const t of shown) {
-                allRows.push(`<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.suite)}</td></tr>`);
-            }
-            if (tests.length > MAX_DELTA_TESTS_SHOWN) {
-                allRows.push(`<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td colspan="2"><em>and ${tests.length - MAX_DELTA_TESTS_SHOWN} more...</em></td></tr>`);
-            }
-        }
-        const totalTests = nonEmpty.reduce((sum, c) => sum + c.tests.length, 0);
-        const needsCollapse = totalTests > MAX_DELTA_TESTS_SHOWN;
-        const table = '<table>\n<tr><th>Status</th><th>Test</th><th>Suite</th></tr>\n' +
-            allRows.join('\n') +
-            '\n</table>\n\n';
-        if (needsCollapse) {
-            lines.push(`<details><summary><strong>Changed tests</strong> (${totalTests} tests)</summary>\n\n${table}</details>\n\n`);
-        }
-        else {
-            lines.push(table);
-        }
-    }
-    return lines.join('');
-}
-const MAX_TESTS_CHANGED_SHOWN = 20;
-const TESTS_CHANGED_STATUS_EMOJI = {
-    passed: '✅',
-    failed: '❌',
-    skipped: '⏭️',
-    errored: '💥',
-};
-function renderTestsChangedSection(report) {
-    if (!report.hasChanges)
-        return '';
-    const lines = ['### 📝 Tests Changed\n\n'];
-    if (report.newTests.length > 0) {
-        lines.push(`#### New Tests (${report.newTests.length})\n\n`);
-        const shown = report.newTests.slice(0, MAX_TESTS_CHANGED_SHOWN);
-        const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} | ${formatDuration(t.duration)} |`);
-        const table = '| Test | Suite | Status | Duration |\n|------|-------|--------|----------|\n' +
-            rows.join('\n') +
-            '\n\n';
-        if (report.newTests.length > MAX_TESTS_CHANGED_SHOWN) {
-            lines.push(`<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.newTests.length} new tests</summary>\n\n${table}and ${report.newTests.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`);
-        }
-        else {
-            lines.push(table);
-        }
-    }
-    if (report.statusChanged.length > 0) {
-        lines.push(`#### Status Changed (${report.statusChanged.length})\n\n`);
-        const shown = report.statusChanged.slice(0, MAX_TESTS_CHANGED_SHOWN);
-        const rows = shown.map((t) => {
-            const prevEmoji = TESTS_CHANGED_STATUS_EMOJI[t.previousStatus ?? ''] ?? '';
-            const currEmoji = TESTS_CHANGED_STATUS_EMOJI[t.status] ?? '';
-            return `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${prevEmoji} → ${currEmoji} |`;
-        });
-        const table = '| Test | Suite | Change |\n|------|-------|--------|\n' + rows.join('\n') + '\n\n';
-        if (report.statusChanged.length > MAX_TESTS_CHANGED_SHOWN) {
-            lines.push(`<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.statusChanged.length} status changes</summary>\n\n${table}and ${report.statusChanged.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`);
-        }
-        else {
-            lines.push(table);
-        }
-    }
-    if (report.removedTests.length > 0) {
-        lines.push(`#### Removed Tests (${report.removedTests.length})\n\n`);
-        const shown = report.removedTests.slice(0, MAX_TESTS_CHANGED_SHOWN);
-        const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} |`);
-        const table = '| Test | Suite | Previous Status |\n|------|-------|-----------------|\n' +
-            rows.join('\n') +
-            '\n\n';
-        if (report.removedTests.length > MAX_TESTS_CHANGED_SHOWN) {
-            lines.push(`<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.removedTests.length} removed tests</summary>\n\n${table}and ${report.removedTests.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`);
-        }
-        else {
-            lines.push(table);
-        }
-    }
-    return lines.join('');
-}
-const MAX_FLAKY_TESTS_SHOWN = 15;
-const FLAKY_STATUS_EMOJI = {
-    passed: '✅',
-    failed: '❌',
-    skipped: '⏭️',
-    errored: '💥',
-};
-function renderFlakySection(result) {
-    if (!result.hasFlakyTests)
-        return '';
-    const lines = ['### 🔀 Potentially Flaky Tests\n\n'];
-    const shown = result.flakyTests.slice(0, MAX_FLAKY_TESTS_SHOWN);
-    const rows = shown.map((t) => {
-        const timeline = t.recentStatuses.map((s) => FLAKY_STATUS_EMOJI[s] ?? '').join('');
-        return `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${Math.round(t.flakyRate)}% | ${t.flipCount} | ${timeline} |`;
-    });
-    const table = '| Test | Suite | Flaky Rate | Flips | Recent Runs |\n|------|-------|------------|-------|-------------|\n' +
-        rows.join('\n') +
-        '\n\n';
-    if (result.flakyTests.length > MAX_FLAKY_TESTS_SHOWN) {
-        lines.push(`<details><summary>Showing ${MAX_FLAKY_TESTS_SHOWN} of ${result.flakyTests.length} flaky tests</summary>\n\n${table}and ${result.flakyTests.length - MAX_FLAKY_TESTS_SHOWN} more...\n\n</details>\n\n`);
-    }
-    else {
-        lines.push(table);
-    }
-    return lines.join('');
-}
-const TREND_ARROW = {
-    up: '↑',
-    stable: '→',
-    down: '↓',
-};
-function renderTrendsSection(trends) {
-    const heading = trends.baselineLabel
-        ? `### 📈 Trends (vs \`${trends.baselineLabel}\`)`
-        : '### 📈 Trends';
-    const lines = [`${heading}\n\n`];
-    const passSign = trends.passRate.delta >= 0 ? '+' : '';
-    const passArrow = TREND_ARROW[trends.passRate.direction];
-    let passLine = `**Pass rate:** `;
-    if (trends.passRate.sparkline) {
-        passLine += `${trends.passRate.sparkline} `;
-    }
-    passLine += `${trends.passRate.current.toFixed(1)}% ${passArrow} (${passSign}${trends.passRate.delta.toFixed(1)}%)\n\n`;
-    lines.push(passLine);
-    const durSign = trends.duration.delta >= 0 ? '+' : '';
-    const durArrow = TREND_ARROW[trends.duration.direction];
-    let durLine = `**Duration:** `;
-    if (trends.duration.sparkline) {
-        durLine += `${trends.duration.sparkline} `;
-    }
-    durLine += `${formatDuration(trends.duration.current)} ${durArrow} (${durSign}${formatDuration(Math.abs(trends.duration.delta))})\n\n`;
-    lines.push(durLine);
-    const countSign = trends.testCount.delta >= 0 ? '+' : '';
-    lines.push(`**Tests:** ${trends.testCount.current} (${countSign}${trends.testCount.delta})\n\n`);
-    return lines.join('');
-}
-const MAX_PERF_REGRESSIONS_SHOWN = 15;
-function renderPerfRegressionSection(result) {
-    const lines = ['### ⚡ Performance Regressions\n\n'];
-    lines.push(`**Duration trend:** ${result.sparkline}\n\n`);
-    if (!result.hasRegressions) {
-        return lines.join('');
-    }
-    const shown = result.regressions.slice(0, MAX_PERF_REGRESSIONS_SHOWN);
-    const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${formatDuration(t.currentDuration)} | ${formatDuration(t.medianDuration)} | +${Math.round(t.increasePercent)}% |`);
-    const table = '| Test | Suite | Current | Median | Increase |\n|------|-------|---------|--------|----------|\n' +
-        rows.join('\n') +
-        '\n\n';
-    if (result.regressions.length > MAX_PERF_REGRESSIONS_SHOWN) {
-        lines.push(`<details><summary>Showing ${MAX_PERF_REGRESSIONS_SHOWN} of ${result.regressions.length} regressions</summary>\n\n${table}and ${result.regressions.length - MAX_PERF_REGRESSIONS_SHOWN} more...\n\n</details>\n\n`);
-    }
-    else {
-        lines.push(table);
-    }
-    return lines.join('');
-}
-function renderHighlightMessage(h) {
-    const data = h.data;
-    switch (h.type) {
-        case 'new_failures': {
-            const tests = data.tests ?? [];
-            const names = tests.slice(0, MAX_TEST_NAMES_SHOWN).map((t) => t.name);
-            const suffix = tests.length > MAX_TEST_NAMES_SHOWN ? `, +${tests.length - MAX_TEST_NAMES_SHOWN} more` : '';
-            return `**NEW FAILURES:** ${names.join(', ')}${suffix}`;
-        }
-        case 'health_score_delta': {
-            const prev = data.previous;
-            const current = data.current;
-            const direction = data.direction;
-            const arrow = direction === 'down' ? '▼' : direction === 'up' ? '▲' : '';
-            return `**Health Score:** ${prev ?? '?'} → ${current ?? '?'} ${arrow}`;
-        }
-        case 'duration_delta': {
-            const currentDuration = data.currentDuration;
-            const deltaPercent = data.deltaPercent;
-            const sign = deltaPercent >= 0 ? '+' : '';
-            return `**Duration:** ${formatDuration(currentDuration)} (${sign}${deltaPercent}% vs baseline)`;
-        }
-        case 'fixed_tests': {
-            const tests = data.tests ?? [];
-            return `**Fixed:** ${tests.length} test(s) now passing`;
-        }
-        case 'new_tests': {
-            const count = data.count ?? 0;
-            return `**${count} new test(s) added**`;
-        }
-        case 'known_flaky': {
-            const tests = data.tests ?? [];
-            return `**${tests.length} known flaky test(s) in this run**`;
-        }
-        default:
-            return h.message;
-    }
 }
 
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@actions+github@9.1.1/node_modules/@actions/github/lib/context.js
@@ -132828,7 +131955,7 @@ class Context {
 }
 //# sourceMappingURL=context.js.map
 // EXTERNAL MODULE: ./node_modules/.pnpm/@actions+http-client@3.0.2/node_modules/@actions/http-client/lib/index.js
-var http_client_lib = __nccwpck_require__(62504);
+var lib = __nccwpck_require__(62504);
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@actions+github@9.1.1/node_modules/@actions/github/lib/internal/utils.js
 var utils_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -132851,11 +131978,11 @@ function getAuthString(token, options) {
     return typeof options.auth === 'string' ? options.auth : `token ${token}`;
 }
 function getProxyAgent(destinationUrl) {
-    const hc = new http_client_lib.HttpClient();
+    const hc = new lib.HttpClient();
     return hc.getAgent(destinationUrl);
 }
 function getProxyAgentDispatcher(destinationUrl) {
-    const hc = new http_client_lib.HttpClient();
+    const hc = new lib.HttpClient();
     return hc.getAgentDispatcher(destinationUrl);
 }
 function getProxyFetch(destinationUrl) {
@@ -137772,6 +136899,992 @@ function getOctokit(token, options, ...additionalPlugins) {
     return new GitHubWithPlugins(getOctokitOptions(token, options));
 }
 //# sourceMappingURL=github.js.map
+;// CONCATENATED MODULE: ./src/utils/run-context.ts
+
+function nonEmpty(value) {
+    return typeof value === 'string' && value.length > 0 ? value : null;
+}
+// workflow_run and pull_request_target jobs run in the base repository's cache scope, so a
+// fork's branch named e.g. `main` would otherwise write into the real `main` history. `~` is
+// not allowed in git ref names, so a qualified name can never collide with a real branch.
+// When `requireRepos` is set and fork-ness can't be determined, return null (skip history)
+// rather than risk writing a fork's branch into the base repository's namespace.
+function qualifyForkBranch(branch, headRepo, requireRepos) {
+    if (!branch)
+        return null;
+    const baseRepo = nonEmpty(github_context.payload.repository?.full_name);
+    const head = nonEmpty(headRepo?.full_name);
+    if (!head || !baseRepo)
+        return requireRepos ? null : branch;
+    return head === baseRepo ? branch : `${head}~${branch}`;
+}
+function resolveRunIdentity() {
+    const { eventName, payload } = github_context;
+    const envBranch = (process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || '').replace(/^refs\/heads\//, '');
+    const envSha = process.env.GITHUB_SHA || '';
+    // GITHUB_SHA / GITHUB_REF_NAME point at the default branch for these events, not at the
+    // commit whose results are being reported.
+    if (eventName === 'workflow_run') {
+        const run = (payload.workflow_run ?? {});
+        const headSha = nonEmpty(run.head_sha);
+        const headBranch = nonEmpty(run.head_branch);
+        return {
+            checkRunSha: headSha,
+            historyBranch: qualifyForkBranch(headBranch, run.head_repository, true),
+            commitSha: headSha ?? 'unknown',
+            displayBranch: headBranch ?? 'unknown',
+        };
+    }
+    const pr = payload.pull_request;
+    // On a PR the comment doesn't say which commit was tested; on a plain issue the run is
+    // on the default branch, exactly like a push.
+    if (eventName === 'issue_comment' && !pr && payload.issue?.pull_request) {
+        return {
+            checkRunSha: null,
+            historyBranch: null,
+            commitSha: envSha || 'unknown',
+            displayBranch: envBranch || 'unknown',
+        };
+    }
+    // pull_request_target runs in the base repository's cache scope with GITHUB_SHA at the base
+    // branch HEAD; pull_request runs in the PR's own merge-ref scope, so an unknown head repo
+    // there can't reach the base branch's history.
+    const isPrTarget = eventName === 'pull_request_target';
+    const prHeadSha = nonEmpty(pr?.head?.sha);
+    return {
+        checkRunSha: prHeadSha ?? nonEmpty(github_context.sha),
+        historyBranch: pr
+            ? qualifyForkBranch(envBranch || 'unknown', pr.head?.repo, isPrTarget)
+            : envBranch || 'unknown',
+        commitSha: (isPrTarget ? prHeadSha : null) ?? (envSha || 'unknown'),
+        displayBranch: envBranch || 'unknown',
+    };
+}
+
+;// CONCATENATED MODULE: ./src/utils/merge-results.ts
+
+function mergeTestRuns(runs) {
+    if (runs.length === 1) {
+        return runs[0].parsed;
+    }
+    const allSuites = [];
+    let toolName;
+    for (const { filePath, parsed } of runs) {
+        toolName ??= parsed.toolName;
+        for (const suite of parsed.suites) {
+            const isGenericName = parsed.toolName && suite.name === parsed.toolName;
+            const isSingleSuite = parsed.suites.length === 1;
+            if (isGenericName && isSingleSuite) {
+                allSuites.push({ ...suite, name: (0,external_node_path_.basename)(filePath) });
+            }
+            else {
+                allSuites.push(suite);
+            }
+        }
+    }
+    let total = 0;
+    let passed = 0;
+    let failed = 0;
+    let skipped = 0;
+    let errored = 0;
+    let duration = 0;
+    for (const suite of allSuites) {
+        duration += suite.duration;
+        for (const test of suite.tests) {
+            total++;
+            if (test.status === 'passed')
+                passed++;
+            else if (test.status === 'failed')
+                failed++;
+            else if (test.status === 'skipped')
+                skipped++;
+            else if (test.status === 'errored')
+                errored++;
+        }
+    }
+    return {
+        summary: { total, passed, failed, skipped, errored, duration },
+        suites: allSuites,
+        toolName,
+    };
+}
+
+;// CONCATENATED MODULE: ./src/output/format.ts
+function escapeHtml(value) {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+function formatDuration(seconds) {
+    if (seconds < 1)
+        return `${Math.round(seconds * 1000)}ms`;
+    if (seconds < 60)
+        return `${seconds.toFixed(1)}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs.toFixed(1)}s`;
+}
+function formatDurationPair(a, b) {
+    const scale = Math.max(a, b);
+    if (scale < 1)
+        return [formatDuration(a), formatDuration(b)];
+    if (scale < 60)
+        return [`${a.toFixed(1)}s`, `${b.toFixed(1)}s`];
+    return [formatDuration(a), formatDuration(b)];
+}
+function truncate(str, maxLen) {
+    if (str.length <= maxLen)
+        return str;
+    return str.slice(0, maxLen - 3) + '...';
+}
+function renderProgressBar(passRate, width = 16) {
+    const clamped = Math.max(0, Math.min(100, passRate));
+    const filled = clamped === 100 ? width : Math.floor((clamped / 100) * width);
+    const empty = width - filled;
+    return `${'█'.repeat(filled)}${'░'.repeat(empty)} ${clamped.toFixed(1)}%`;
+}
+function statusEmoji(failed) {
+    return failed > 0 ? '🔴' : '✅';
+}
+function renderMetricsStrip(summary) {
+    const parts = [`✅ ${summary.passed} passed`];
+    if (summary.failed > 0)
+        parts.push(`❌ ${summary.failed} failed`);
+    if (summary.skipped > 0)
+        parts.push(`⏭️ ${summary.skipped} skipped`);
+    if (summary.errored > 0)
+        parts.push(`💥 ${summary.errored} errored`);
+    return parts.join(' · ');
+}
+const HEALTH_SCORE_FACTORS = [
+    { label: 'Pass rate', weight: '70%', detail: 'share of tests passing' },
+    { label: 'Flakiness', weight: '20%', detail: 'fewer flaky tests scores higher' },
+    {
+        label: 'Runtime trend',
+        weight: '10%',
+        detail: 'getting faster scores above neutral, slower below',
+    },
+];
+const HEALTH_SCORE_FOOTNOTE = 'A fully green, stable suite scores ~95; the final points require a measurably improving runtime trend. Needs at least 5 runs.';
+function renderHealthScoreDetails() {
+    const factors = HEALTH_SCORE_FACTORS.map((f) => `- **${f.label} (${f.weight})** — ${f.detail}`).join('\n');
+    return [
+        '<details><summary>ⓘ How is this scored?</summary>',
+        '',
+        'Health Score (0–100), blended over the last 30 days:',
+        '',
+        factors,
+        '',
+        HEALTH_SCORE_FOOTNOTE,
+        '</details>',
+    ].join('\n');
+}
+function renderHealthScoreTooltipHtml() {
+    const factors = HEALTH_SCORE_FACTORS.map((f) => `<li><strong>${escapeHtml(f.label)} (${f.weight})</strong> — ${escapeHtml(f.detail)}</li>`).join('');
+    return (`<span class="health-info" tabindex="0" aria-label="How the health score is calculated">&#9432;` +
+        `<span class="health-tooltip">` +
+        `<strong>Health Score (0&ndash;100)</strong>, blended over the last 30 days:` +
+        `<ul>${factors}</ul>` +
+        `<span class="health-foot">${escapeHtml(HEALTH_SCORE_FOOTNOTE)}</span>` +
+        `</span></span>`);
+}
+function compareSuitesByHealth(a, b) {
+    if (a.passRate < 0 && b.passRate >= 0)
+        return 1;
+    if (b.passRate < 0 && a.passRate >= 0)
+        return -1;
+    if (a.passRate !== b.passRate)
+        return a.passRate - b.passRate;
+    if (a.failed !== b.failed)
+        return b.failed - a.failed;
+    if (a.skipped !== b.skipped)
+        return b.skipped - a.skipped;
+    return b.duration - a.duration;
+}
+
+// EXTERNAL MODULE: ./node_modules/.pnpm/handlebars@4.7.10/node_modules/handlebars/lib/index.js
+var handlebars_lib = __nccwpck_require__(87979);
+var handlebars_lib_default = /*#__PURE__*/__nccwpck_require__.n(handlebars_lib);
+;// CONCATENATED MODULE: ./src/output/template-renderer.ts
+
+
+
+
+
+const DEFAULT_SLOWEST_LIMIT = 10;
+const MAX_TEMPLATE_FILE_BYTES = 1024 * 1024;
+const handlebars = handlebars_lib_default().create();
+const compileCache = new Map();
+function computePassRate(passed, total) {
+    if (total <= 0)
+        return '0.0';
+    return ((passed / total) * 100).toFixed(1);
+}
+handlebars.registerHelper('formatDuration', (seconds) => {
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds))
+        return '';
+    return formatDuration(seconds);
+});
+handlebars.registerHelper('truncate', (str, maxLen) => {
+    if (typeof str !== 'string')
+        return '';
+    const limit = typeof maxLen === 'number' && Number.isFinite(maxLen) ? maxLen : 100;
+    return truncate(str, limit);
+});
+handlebars.registerHelper('escapeHtml', (value) => {
+    if (typeof value !== 'string')
+        return '';
+    return escapeHtml(value);
+});
+handlebars.registerHelper('passRate', (passed, total) => {
+    if (typeof passed !== 'number' || typeof total !== 'number')
+        return '0.0';
+    return computePassRate(passed, total);
+});
+handlebars.registerHelper('limit', (arr, n) => {
+    if (!Array.isArray(arr))
+        return [];
+    const count = typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : arr.length;
+    return arr.slice(0, count);
+});
+function collectFailures(parsed) {
+    const failed = [];
+    for (const suite of parsed.suites) {
+        for (const test of suite.tests) {
+            if (test.status === 'failed' || test.status === 'errored') {
+                failed.push({
+                    name: test.name,
+                    suite: test.suite,
+                    errorMessage: test.errorMessage ?? '',
+                    stackTrace: test.stackTrace ?? '',
+                    duration: test.duration,
+                });
+            }
+        }
+    }
+    return failed;
+}
+function collectSlowest(parsed, limit) {
+    if (limit <= 0)
+        return [];
+    const all = parsed.suites.flatMap((s) => s.tests);
+    return [...all]
+        .sort((a, b) => b.duration - a.duration)
+        .slice(0, limit)
+        .map((t) => ({ name: t.name, suite: t.suite, duration: t.duration }));
+}
+function summariseSuites(parsed) {
+    return parsed.suites.map((s) => {
+        const total = s.tests.length;
+        const passed = s.tests.filter((t) => t.status === 'passed').length;
+        const failed = s.tests.filter((t) => t.status === 'failed').length;
+        const skipped = s.tests.filter((t) => t.status === 'skipped').length;
+        const errored = s.tests.filter((t) => t.status === 'errored').length;
+        return { name: s.name, total, passed, failed, skipped, errored, duration: s.duration };
+    });
+}
+function flattenFlaky(flaky) {
+    if (!flaky || !flaky.hasFlakyTests)
+        return undefined;
+    return flaky.flakyTests.map((t) => ({
+        name: t.name,
+        suite: t.suite,
+        flipCount: t.flipCount,
+        flakyRate: t.flakyRate,
+    }));
+}
+function flattenHistory(history) {
+    if (!history || history.length === 0)
+        return undefined;
+    return history.map((entry) => ({
+        sha: entry.commitSha,
+        passRate: computePassRate(entry.summary.passed, entry.summary.total),
+        duration: entry.summary.duration,
+        timestamp: entry.timestamp,
+    }));
+}
+function buildTemplateContext(input) {
+    const { parsed, meta, delta, flaky, trends, perfRegression, history } = input;
+    const slowestLimit = input.slowestLimit ?? DEFAULT_SLOWEST_LIMIT;
+    const summary = parsed.summary;
+    return {
+        results: {
+            total: summary.total,
+            passed: summary.passed,
+            failed: summary.failed,
+            skipped: summary.skipped,
+            errored: summary.errored,
+            passRate: computePassRate(summary.passed, summary.total),
+            duration: summary.duration,
+        },
+        failures: collectFailures(parsed),
+        slowest: collectSlowest(parsed, slowestLimit),
+        suites: summariseSuites(parsed),
+        history: flattenHistory(history),
+        delta: delta ?? undefined,
+        flaky: flattenFlaky(flaky),
+        trends: trends ?? undefined,
+        perfRegression: perfRegression ?? undefined,
+        meta,
+    };
+}
+function getWorkspace() {
+    const ws = process.env.GITHUB_WORKSPACE;
+    if (typeof ws !== 'string' || ws.length === 0)
+        return null;
+    return ws;
+}
+function sanitizeForLog(value) {
+    return value.replace(/[\r\n]+/g, ' ');
+}
+function resolveTemplatePath(templatePath) {
+    // Kept for backwards compatibility with tests/callers that only need the lexical resolution.
+    if (path.isAbsolute(templatePath))
+        return templatePath;
+    const base = getWorkspace() ?? process.cwd();
+    return path.resolve(base, templatePath);
+}
+function resolveAndValidate(templatePath) {
+    if (/[\r\n]/.test(templatePath)) {
+        return { ok: false, reason: 'template path contains newline characters' };
+    }
+    const workspace = getWorkspace();
+    if (!workspace) {
+        return {
+            ok: false,
+            reason: 'GITHUB_WORKSPACE is not set; refusing to resolve template path',
+        };
+    }
+    const workspaceReal = (() => {
+        try {
+            return (0,external_node_fs_.realpathSync)(workspace);
+        }
+        catch {
+            return external_node_path_.resolve(workspace);
+        }
+    })();
+    const lexical = external_node_path_.isAbsolute(templatePath)
+        ? external_node_path_.resolve(templatePath)
+        : external_node_path_.resolve(workspaceReal, templatePath);
+    let real;
+    let stat;
+    try {
+        real = (0,external_node_fs_.realpathSync)(lexical);
+        stat = (0,external_node_fs_.statSync)(real);
+    }
+    catch (err) {
+        return {
+            ok: false,
+            reason: `cannot read ${sanitizeForLog(lexical)}: ${err instanceof Error ? err.message : String(err)}`,
+        };
+    }
+    const prefix = workspaceReal.endsWith(external_node_path_.sep) ? workspaceReal : workspaceReal + external_node_path_.sep;
+    if (real !== workspaceReal && !real.startsWith(prefix)) {
+        return {
+            ok: false,
+            reason: `template path resolves outside GITHUB_WORKSPACE (${sanitizeForLog(real)})`,
+        };
+    }
+    if (!stat.isFile()) {
+        return {
+            ok: false,
+            reason: `template path is not a regular file: ${sanitizeForLog(real)}`,
+        };
+    }
+    if (stat.size > MAX_TEMPLATE_FILE_BYTES) {
+        return {
+            ok: false,
+            reason: `template file exceeds ${MAX_TEMPLATE_FILE_BYTES} bytes (${stat.size}): ${sanitizeForLog(real)}`,
+        };
+    }
+    return { ok: true, path: real, mtimeMs: stat.mtimeMs, size: stat.size };
+}
+function loadAndCompile(resolved, label) {
+    const cached = compileCache.get(resolved.path);
+    if (cached && cached.mtimeMs === resolved.mtimeMs && cached.size === resolved.size) {
+        return cached.template;
+    }
+    let source;
+    try {
+        source = (0,external_node_fs_.readFileSync)(resolved.path, 'utf8');
+    }
+    catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        warning(`Custom ${label} template failed: cannot read ${sanitizeForLog(resolved.path)}: ${reason}. Falling back to default ${label}.`);
+        return null;
+    }
+    if (source.charCodeAt(0) === 0xfeff) {
+        source = source.slice(1);
+    }
+    try {
+        // Eagerly parse so syntax errors surface here (compile defers parsing until render time).
+        handlebars.parse(source);
+        const compiled = handlebars.compile(source, {
+            strict: false,
+            noEscape: false,
+        });
+        compileCache.set(resolved.path, {
+            mtimeMs: resolved.mtimeMs,
+            size: resolved.size,
+            template: compiled,
+        });
+        return compiled;
+    }
+    catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        warning(`Custom ${label} template failed: parse error in ${sanitizeForLog(resolved.path)}: ${reason}. Falling back to default ${label}.`);
+        return null;
+    }
+}
+function renderTemplate(templatePath, context, options = {}) {
+    const label = options.label ?? 'summary';
+    const resolved = resolveAndValidate(templatePath);
+    if (!resolved.ok) {
+        warning(`Custom ${label} template failed: ${resolved.reason}. Falling back to default ${label}.`);
+        return null;
+    }
+    const compiled = loadAndCompile(resolved, label);
+    if (!compiled)
+        return null;
+    try {
+        return compiled(context, {
+            allowProtoPropertiesByDefault: false,
+            allowProtoMethodsByDefault: false,
+        });
+    }
+    catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        warning(`Custom ${label} template failed: render error in ${sanitizeForLog(resolved.path)}: ${reason}. Falling back to default ${label}.`);
+        return null;
+    }
+}
+function _resetTemplateRendererForTests() {
+    compileCache.clear();
+}
+function _getHandlebarsInstanceForTests() {
+    return handlebars;
+}
+
+;// CONCATENATED MODULE: ./src/output/summary.ts
+
+
+
+
+const MAX_RENDERED_SUMMARY_BYTES = 900_000;
+const MAX_FAILED_TESTS_SHOWN = 25;
+const MAX_ERROR_MESSAGE_LENGTH = 200;
+const MAX_STACK_TRACE_LINES = 30;
+const MAX_ALL_TESTS_BYTES = 400_000;
+const AUTO_ALL_TESTS_MAX_TOTAL = 200;
+const AUTO_ALL_TESTS_SINGLE_SUITE_MAX_TOTAL = 1000;
+const SUITE_OPEN_MAX_TESTS = 25;
+function shouldRenderAllTests(showAllTests, parsed) {
+    if (showAllTests === true)
+        return true;
+    if (showAllTests === false)
+        return false;
+    const total = parsed.summary.total;
+    if (total === 0)
+        return false;
+    if (total <= AUTO_ALL_TESTS_MAX_TOTAL)
+        return true;
+    if (parsed.suites.length === 1 && total <= AUTO_ALL_TESTS_SINGLE_SUITE_MAX_TOTAL)
+        return true;
+    return false;
+}
+async function generateSummary(options) {
+    const { parsed, apiSuccess, localOnly, healthScore, dashboardUrl, flakyCount, highlights, slowestTests, delta, testsChanged, flaky, perfRegression, trends, history, summaryTemplate, meta, reportFileCount, showAllTests, } = options;
+    if (summaryTemplate && meta) {
+        const context = buildTemplateContext({
+            parsed,
+            meta,
+            delta,
+            flaky,
+            trends,
+            perfRegression,
+            history,
+            slowestLimit: slowestTests,
+        });
+        const rendered = renderTemplate(summaryTemplate, context, { label: 'summary' });
+        if (rendered !== null) {
+            const capped = rendered.length > MAX_RENDERED_SUMMARY_BYTES
+                ? `${rendered.slice(0, MAX_RENDERED_SUMMARY_BYTES)}\n\n_…rendered summary truncated to ${MAX_RENDERED_SUMMARY_BYTES} chars to fit GitHub Job Summary limit._`
+                : rendered;
+            summary_summary.addRaw(capped);
+            await summary_summary.write();
+            return;
+        }
+    }
+    const { summary } = parsed;
+    const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
+    summary_summary.addRaw(`## ${renderMetricsStrip(summary)} — ${passRate}%\n\n`);
+    if (!apiSuccess && !localOnly) {
+        summary_summary.addRaw('> ⚠️ **API submission failed** — dashboard data not updated\n\n');
+    }
+    summary_summary.addRaw(`${renderProgressBar(Number(passRate))}\n\n`);
+    let metricsLine = `⏱️ ${formatDuration(summary.duration)}`;
+    if (reportFileCount && reportFileCount > 1) {
+        metricsLine += ` · 📄 ${reportFileCount} reports merged`;
+    }
+    const hasHealthScore = apiSuccess && healthScore !== null && healthScore !== undefined;
+    if (hasHealthScore) {
+        metricsLine += ` · 🏥 ${healthScore}/100`;
+    }
+    else if (apiSuccess) {
+        metricsLine += ' · 🏥 available after 5 runs';
+    }
+    summary_summary.addRaw(`${metricsLine}\n\n`);
+    if (hasHealthScore) {
+        summary_summary.addRaw(`${renderHealthScoreDetails()}\n\n`);
+    }
+    if (flakyCount && flakyCount > 0) {
+        summary_summary.addRaw(`**Flaky tests detected:** ${flakyCount}\n\n`);
+    }
+    if (highlights && highlights.length > 0) {
+        summary_summary.addRaw(renderHighlights(highlights, dashboardUrl));
+    }
+    if (trends) {
+        summary_summary.addRaw(renderTrendsSection(trends));
+    }
+    summary_summary.addRaw('---\n\n');
+    if (delta) {
+        summary_summary.addRaw(renderDeltaSection(delta));
+    }
+    if (testsChanged && testsChanged.hasChanges) {
+        summary_summary.addRaw(renderTestsChangedSection(testsChanged));
+    }
+    if (flaky && flaky.hasFlakyTests) {
+        summary_summary.addRaw(renderFlakySection(flaky));
+    }
+    if (perfRegression) {
+        summary_summary.addRaw(renderPerfRegressionSection(perfRegression));
+    }
+    try {
+        renderSuiteBreakdown(parsed.suites);
+        if (shouldRenderAllTests(showAllTests, parsed)) {
+            renderAllTests(parsed.suites);
+        }
+        const failedTests = collectFailedTests(parsed).sort((a, b) => a.suite.localeCompare(b.suite));
+        if (failedTests.length > 0) {
+            summary_summary.addRaw('---\n\n');
+            summary_summary.addRaw('### ❌ Failed Tests\n\n');
+            const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
+            for (const t of shown) {
+                const error = truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH);
+                summary_summary.addRaw(`> [!CAUTION]\n` +
+                    `> **\`${escapeHtml(t.name)}\`** · \`${escapeHtml(t.suite)}\`\n` +
+                    `>\n` +
+                    `> ${escapeHtml(error)}\n\n`);
+                if (t.stackTrace) {
+                    summary_summary.addRaw(renderStackTrace(t.name, t.stackTrace));
+                }
+            }
+            if (failedTests.length > MAX_FAILED_TESTS_SHOWN) {
+                summary_summary.addRaw(`... and ${failedTests.length - MAX_FAILED_TESTS_SHOWN} more failed tests\n\n`);
+            }
+        }
+        if (slowestTests && slowestTests > 0) {
+            const allTests = parsed.suites.flatMap((s) => s.tests);
+            const withDuration = allTests.filter((t) => t.duration >= 0.2);
+            const sorted = [...withDuration].sort((a, b) => b.duration - a.duration);
+            const top = sorted.slice(0, slowestTests);
+            if (top.length > 0) {
+                summary_summary.addRaw('### 🐌 Slowest Tests\n\n');
+                summary_summary.addRaw('<details><summary>Slowest ' +
+                    top.length +
+                    ' tests</summary>\n\n' +
+                    '<table>\n<tr><th>Test</th><th>Suite</th><th>Duration</th></tr>\n' +
+                    top
+                        .map((t) => `<tr><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.suite)}</td><td>${formatDuration(t.duration)}</td></tr>`)
+                        .join('\n') +
+                    '\n</table>\n\n</details>\n\n');
+            }
+        }
+    }
+    catch (err) {
+        warning(`Enhanced summary generation failed, using basic summary: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (dashboardUrl) {
+        summary_summary.addLink('View Dashboard', dashboardUrl);
+        summary_summary.addRaw('\n');
+    }
+    if (options.artifactUrl) {
+        summary_summary.addRaw(`📄 [HTML Report — download from Artifacts](${options.artifactUrl})\n`);
+    }
+    await summary_summary.write();
+}
+function renderStackTrace(testName, stackTrace) {
+    const lines = stackTrace.split('\n');
+    let truncated = lines.slice(0, MAX_STACK_TRACE_LINES).join('\n');
+    const safeTestName = escapeHtml(testName);
+    if (lines.length > MAX_STACK_TRACE_LINES) {
+        truncated += `\n... ${lines.length - MAX_STACK_TRACE_LINES} more lines truncated`;
+    }
+    return `<details><summary>Stack trace: ${safeTestName}</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>\n\n`;
+}
+function collectFailedTests(parsed) {
+    return parsed.suites.flatMap((suite) => suite.tests.filter((t) => t.status === 'failed' || t.status === 'errored'));
+}
+function renderSuiteBreakdown(suites) {
+    if (suites.length === 0)
+        return;
+    const rows = suites
+        .map((s) => {
+        const total = s.tests.length;
+        const passed = s.tests.filter((t) => t.status === 'passed').length;
+        const failed = s.tests.filter((t) => t.status === 'failed' || t.status === 'errored').length;
+        const skipped = s.tests.filter((t) => t.status === 'skipped').length;
+        const passRate = total > 0 ? (passed / total) * 100 : -1;
+        return { name: s.name, total, passed, failed, skipped, passRate, duration: s.duration };
+    })
+        .sort(compareSuitesByHealth);
+    const cell = (n) => (n > 0 ? `${n}` : '');
+    const suiteIcon = (r) => {
+        if (r.total === 0)
+            return '➖';
+        if (r.failed > 0)
+            return '❌';
+        if (r.skipped > 0)
+            return '⚠️';
+        return '✅';
+    };
+    const tableRows = rows
+        .map((r) => `<tr><td>${suiteIcon(r)}</td><td>${escapeHtml(r.name)}</td><td>${cell(r.passed)}</td><td>${cell(r.failed)}</td><td>${cell(r.skipped)}</td><td>${formatDuration(r.duration)}</td></tr>`)
+        .join('\n');
+    summary_summary.addRaw('### 📋 Suite Breakdown\n\n' +
+        '<table>\n' +
+        '<tr><th></th><th>Suite</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Duration</th></tr>\n' +
+        tableRows +
+        '\n</table>\n\n');
+}
+const TEST_STATUS_EMOJI = {
+    passed: '✅',
+    failed: '❌',
+    errored: '💥',
+    skipped: '⏭️',
+};
+const TEST_STATUS_SORT_ORDER = {
+    failed: 0,
+    errored: 1,
+    skipped: 2,
+    passed: 3,
+};
+function compareTestsForDisplay(a, b) {
+    const aOrder = TEST_STATUS_SORT_ORDER[a.status] ?? 99;
+    const bOrder = TEST_STATUS_SORT_ORDER[b.status] ?? 99;
+    if (aOrder !== bOrder)
+        return aOrder - bOrder;
+    return b.duration - a.duration;
+}
+function renderAllTests(suites) {
+    if (suites.length === 0)
+        return;
+    const ranked = suites
+        .map((s) => {
+        const total = s.tests.length;
+        const failed = s.tests.filter((t) => t.status === 'failed' || t.status === 'errored').length;
+        const skipped = s.tests.filter((t) => t.status === 'skipped').length;
+        const passed = s.tests.filter((t) => t.status === 'passed').length;
+        const passRate = total > 0 ? (passed / total) * 100 : -1;
+        return { suite: s, total, passed, failed, skipped, passRate, duration: s.duration };
+    })
+        .sort(compareSuitesByHealth);
+    let body = '### 🔬 All Tests\n\n';
+    let elided = 0;
+    let budgetExceeded = false;
+    for (const { suite, total, passed, failed, skipped } of ranked) {
+        if (budgetExceeded) {
+            elided++;
+            continue;
+        }
+        const icon = failed > 0 ? '❌' : skipped > 0 ? '⚠️' : total === 0 ? '➖' : '✅';
+        const statsParts = [];
+        if (passed > 0)
+            statsParts.push(`✅ ${passed}`);
+        if (failed > 0)
+            statsParts.push(`❌ ${failed}`);
+        if (skipped > 0)
+            statsParts.push(`⏭️ ${skipped}`);
+        statsParts.push(`⏱️ ${formatDuration(suite.duration)}`);
+        const stats = statsParts.join(' · ');
+        const openAttr = failed > 0 || skipped > 0 || total <= SUITE_OPEN_MAX_TESTS ? ' open' : '';
+        let block = `<details${openAttr}><summary>${icon} <strong>${escapeHtml(suite.name)}</strong> — ${stats}</summary>\n\n`;
+        if (total === 0) {
+            block += '_(no tests)_\n\n</details>\n\n';
+        }
+        else {
+            const sortedTests = [...suite.tests].sort(compareTestsForDisplay);
+            const rows = sortedTests
+                .map((t) => `<tr><td>${TEST_STATUS_EMOJI[t.status] ?? '•'}</td><td>${escapeHtml(t.name)}</td><td>${formatDuration(t.duration)}</td></tr>`)
+                .join('\n');
+            block +=
+                '<table>\n<tr><th></th><th>Test</th><th>Duration</th></tr>\n' +
+                    rows +
+                    '\n</table>\n\n</details>\n\n';
+        }
+        if (body.length + block.length > MAX_ALL_TESTS_BYTES) {
+            budgetExceeded = true;
+            elided++;
+            continue;
+        }
+        body += block;
+    }
+    if (elided > 0) {
+        body += `_…and ${elided} more suite(s) elided to fit GitHub summary size limit._\n\n`;
+    }
+    summary_summary.addRaw(body);
+}
+const MAX_HIGHLIGHTS_SHOWN = 3;
+const MAX_TEST_NAMES_SHOWN = 3;
+const SEVERITY_EMOJI = {
+    critical: '🔴',
+    warning: '🟡',
+    info: '🔵',
+};
+const SEVERITY_ORDER = {
+    critical: 0,
+    warning: 1,
+    info: 2,
+};
+function renderHighlights(highlights, dashboardUrl) {
+    const sorted = [...highlights].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+    const shown = sorted.slice(0, MAX_HIGHLIGHTS_SHOWN);
+    const lines = ['### 💡 Highlights\n\n'];
+    for (const h of shown) {
+        lines.push(`${SEVERITY_EMOJI[h.severity]} ${renderHighlightMessage(h)}\n\n`);
+    }
+    if (sorted.length > MAX_HIGHLIGHTS_SHOWN && dashboardUrl) {
+        lines.push(`**[View all highlights on dashboard →](${dashboardUrl})**\n\n`);
+    }
+    return lines.join('');
+}
+const MAX_DELTA_TESTS_SHOWN = 10;
+const DELTA_STATUS_EMOJI = {
+    added: '🆕 Added',
+    removed: '🗑️ Removed',
+    newlyFailing: '❌ New Failure',
+    newlyPassing: '✅ Now Passing',
+};
+function renderDeltaSection(delta) {
+    const lines = ['### 🔄 Changes Since Last Run\n\n'];
+    const sign = (n) => (n >= 0 ? '+' : '-');
+    if (!delta.hasChanges) {
+        lines.push('✅ No changes since last run\n\n');
+        return lines.join('');
+    }
+    lines.push(`**Pass rate:** ${delta.passRatePrev.toFixed(1)}% → ${delta.passRateCurr.toFixed(1)}% (${sign(delta.passRateDelta)}${Math.abs(delta.passRateDelta).toFixed(1)}%)\n\n`);
+    const durSign = sign(delta.durationDelta);
+    const [prevDur, currDur] = formatDurationPair(delta.durationPrev, delta.durationCurr);
+    lines.push(`**Duration:** ${prevDur} → ${currDur} (${durSign}${formatDuration(Math.abs(delta.durationDelta))}, ${durSign}${Math.abs(delta.durationDeltaPercent).toFixed(1)}%)\n\n`);
+    const categories = [
+        { key: 'added', tests: delta.testsAdded },
+        { key: 'newlyFailing', tests: delta.newlyFailing },
+        { key: 'newlyPassing', tests: delta.newlyPassing },
+        { key: 'removed', tests: delta.testsRemoved },
+    ];
+    const nonEmpty = categories.filter((c) => Array.isArray(c.tests) && c.tests.length > 0);
+    if (nonEmpty.length > 0) {
+        const allRows = [];
+        for (const cat of nonEmpty) {
+            const tests = cat.tests;
+            const shown = tests.slice(0, MAX_DELTA_TESTS_SHOWN);
+            for (const t of shown) {
+                allRows.push(`<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.suite)}</td></tr>`);
+            }
+            if (tests.length > MAX_DELTA_TESTS_SHOWN) {
+                allRows.push(`<tr><td>${DELTA_STATUS_EMOJI[cat.key]}</td><td colspan="2"><em>and ${tests.length - MAX_DELTA_TESTS_SHOWN} more...</em></td></tr>`);
+            }
+        }
+        const totalTests = nonEmpty.reduce((sum, c) => sum + c.tests.length, 0);
+        const needsCollapse = totalTests > MAX_DELTA_TESTS_SHOWN;
+        const table = '<table>\n<tr><th>Status</th><th>Test</th><th>Suite</th></tr>\n' +
+            allRows.join('\n') +
+            '\n</table>\n\n';
+        if (needsCollapse) {
+            lines.push(`<details><summary><strong>Changed tests</strong> (${totalTests} tests)</summary>\n\n${table}</details>\n\n`);
+        }
+        else {
+            lines.push(table);
+        }
+    }
+    return lines.join('');
+}
+const MAX_TESTS_CHANGED_SHOWN = 20;
+const TESTS_CHANGED_STATUS_EMOJI = {
+    passed: '✅',
+    failed: '❌',
+    skipped: '⏭️',
+    errored: '💥',
+};
+function renderTestsChangedSection(report) {
+    if (!report.hasChanges)
+        return '';
+    const lines = ['### 📝 Tests Changed\n\n'];
+    if (report.newTests.length > 0) {
+        lines.push(`#### New Tests (${report.newTests.length})\n\n`);
+        const shown = report.newTests.slice(0, MAX_TESTS_CHANGED_SHOWN);
+        const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} | ${formatDuration(t.duration)} |`);
+        const table = '| Test | Suite | Status | Duration |\n|------|-------|--------|----------|\n' +
+            rows.join('\n') +
+            '\n\n';
+        if (report.newTests.length > MAX_TESTS_CHANGED_SHOWN) {
+            lines.push(`<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.newTests.length} new tests</summary>\n\n${table}and ${report.newTests.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`);
+        }
+        else {
+            lines.push(table);
+        }
+    }
+    if (report.statusChanged.length > 0) {
+        lines.push(`#### Status Changed (${report.statusChanged.length})\n\n`);
+        const shown = report.statusChanged.slice(0, MAX_TESTS_CHANGED_SHOWN);
+        const rows = shown.map((t) => {
+            const prevEmoji = TESTS_CHANGED_STATUS_EMOJI[t.previousStatus ?? ''] ?? '';
+            const currEmoji = TESTS_CHANGED_STATUS_EMOJI[t.status] ?? '';
+            return `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${prevEmoji} → ${currEmoji} |`;
+        });
+        const table = '| Test | Suite | Change |\n|------|-------|--------|\n' + rows.join('\n') + '\n\n';
+        if (report.statusChanged.length > MAX_TESTS_CHANGED_SHOWN) {
+            lines.push(`<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.statusChanged.length} status changes</summary>\n\n${table}and ${report.statusChanged.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`);
+        }
+        else {
+            lines.push(table);
+        }
+    }
+    if (report.removedTests.length > 0) {
+        lines.push(`#### Removed Tests (${report.removedTests.length})\n\n`);
+        const shown = report.removedTests.slice(0, MAX_TESTS_CHANGED_SHOWN);
+        const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${TESTS_CHANGED_STATUS_EMOJI[t.status] ?? ''} ${t.status} |`);
+        const table = '| Test | Suite | Previous Status |\n|------|-------|-----------------|\n' +
+            rows.join('\n') +
+            '\n\n';
+        if (report.removedTests.length > MAX_TESTS_CHANGED_SHOWN) {
+            lines.push(`<details><summary>Showing ${MAX_TESTS_CHANGED_SHOWN} of ${report.removedTests.length} removed tests</summary>\n\n${table}and ${report.removedTests.length - MAX_TESTS_CHANGED_SHOWN} more...\n\n</details>\n\n`);
+        }
+        else {
+            lines.push(table);
+        }
+    }
+    return lines.join('');
+}
+const MAX_FLAKY_TESTS_SHOWN = 15;
+const FLAKY_STATUS_EMOJI = {
+    passed: '✅',
+    failed: '❌',
+    skipped: '⏭️',
+    errored: '💥',
+};
+function renderFlakySection(result) {
+    if (!result.hasFlakyTests)
+        return '';
+    const lines = ['### 🔀 Potentially Flaky Tests\n\n'];
+    const shown = result.flakyTests.slice(0, MAX_FLAKY_TESTS_SHOWN);
+    const rows = shown.map((t) => {
+        const timeline = t.recentStatuses.map((s) => FLAKY_STATUS_EMOJI[s] ?? '').join('');
+        return `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${Math.round(t.flakyRate)}% | ${t.flipCount} | ${timeline} |`;
+    });
+    const table = '| Test | Suite | Flaky Rate | Flips | Recent Runs |\n|------|-------|------------|-------|-------------|\n' +
+        rows.join('\n') +
+        '\n\n';
+    if (result.flakyTests.length > MAX_FLAKY_TESTS_SHOWN) {
+        lines.push(`<details><summary>Showing ${MAX_FLAKY_TESTS_SHOWN} of ${result.flakyTests.length} flaky tests</summary>\n\n${table}and ${result.flakyTests.length - MAX_FLAKY_TESTS_SHOWN} more...\n\n</details>\n\n`);
+    }
+    else {
+        lines.push(table);
+    }
+    return lines.join('');
+}
+const TREND_ARROW = {
+    up: '↑',
+    stable: '→',
+    down: '↓',
+};
+function renderTrendsSection(trends) {
+    const heading = trends.baselineLabel
+        ? `### 📈 Trends (vs \`${trends.baselineLabel}\`)`
+        : '### 📈 Trends';
+    const lines = [`${heading}\n\n`];
+    const passSign = trends.passRate.delta >= 0 ? '+' : '';
+    const passArrow = TREND_ARROW[trends.passRate.direction];
+    let passLine = `**Pass rate:** `;
+    if (trends.passRate.sparkline) {
+        passLine += `${trends.passRate.sparkline} `;
+    }
+    passLine += `${trends.passRate.current.toFixed(1)}% ${passArrow} (${passSign}${trends.passRate.delta.toFixed(1)}%)\n\n`;
+    lines.push(passLine);
+    const durSign = trends.duration.delta >= 0 ? '+' : '';
+    const durArrow = TREND_ARROW[trends.duration.direction];
+    let durLine = `**Duration:** `;
+    if (trends.duration.sparkline) {
+        durLine += `${trends.duration.sparkline} `;
+    }
+    durLine += `${formatDuration(trends.duration.current)} ${durArrow} (${durSign}${formatDuration(Math.abs(trends.duration.delta))})\n\n`;
+    lines.push(durLine);
+    const countSign = trends.testCount.delta >= 0 ? '+' : '';
+    lines.push(`**Tests:** ${trends.testCount.current} (${countSign}${trends.testCount.delta})\n\n`);
+    return lines.join('');
+}
+const MAX_PERF_REGRESSIONS_SHOWN = 15;
+function renderPerfRegressionSection(result) {
+    const lines = ['### ⚡ Performance Regressions\n\n'];
+    lines.push(`**Duration trend:** ${result.sparkline}\n\n`);
+    if (!result.hasRegressions) {
+        return lines.join('');
+    }
+    const shown = result.regressions.slice(0, MAX_PERF_REGRESSIONS_SHOWN);
+    const rows = shown.map((t) => `| ${escapeHtml(t.name)} | ${escapeHtml(t.suite)} | ${formatDuration(t.currentDuration)} | ${formatDuration(t.medianDuration)} | +${Math.round(t.increasePercent)}% |`);
+    const table = '| Test | Suite | Current | Median | Increase |\n|------|-------|---------|--------|----------|\n' +
+        rows.join('\n') +
+        '\n\n';
+    if (result.regressions.length > MAX_PERF_REGRESSIONS_SHOWN) {
+        lines.push(`<details><summary>Showing ${MAX_PERF_REGRESSIONS_SHOWN} of ${result.regressions.length} regressions</summary>\n\n${table}and ${result.regressions.length - MAX_PERF_REGRESSIONS_SHOWN} more...\n\n</details>\n\n`);
+    }
+    else {
+        lines.push(table);
+    }
+    return lines.join('');
+}
+function renderHighlightMessage(h) {
+    const data = h.data;
+    switch (h.type) {
+        case 'new_failures': {
+            const tests = data.tests ?? [];
+            const names = tests.slice(0, MAX_TEST_NAMES_SHOWN).map((t) => t.name);
+            const suffix = tests.length > MAX_TEST_NAMES_SHOWN ? `, +${tests.length - MAX_TEST_NAMES_SHOWN} more` : '';
+            return `**NEW FAILURES:** ${names.join(', ')}${suffix}`;
+        }
+        case 'health_score_delta': {
+            const prev = data.previous;
+            const current = data.current;
+            const direction = data.direction;
+            const arrow = direction === 'down' ? '▼' : direction === 'up' ? '▲' : '';
+            return `**Health Score:** ${prev ?? '?'} → ${current ?? '?'} ${arrow}`;
+        }
+        case 'duration_delta': {
+            const currentDuration = data.currentDuration;
+            const deltaPercent = data.deltaPercent;
+            const sign = deltaPercent >= 0 ? '+' : '';
+            return `**Duration:** ${formatDuration(currentDuration)} (${sign}${deltaPercent}% vs baseline)`;
+        }
+        case 'fixed_tests': {
+            const tests = data.tests ?? [];
+            return `**Fixed:** ${tests.length} test(s) now passing`;
+        }
+        case 'new_tests': {
+            const count = data.count ?? 0;
+            return `**${count} new test(s) added**`;
+        }
+        case 'known_flaky': {
+            const tests = data.tests ?? [];
+            return `**${tests.length} known flaky test(s) in this run**`;
+        }
+        default:
+            return h.message;
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/output/pr-comment.ts
 
 
@@ -137779,6 +137892,7 @@ function getOctokit(token, options, ...additionalPlugins) {
 const SUMMARY_MARKER = '<!-- testglance-pr-summary -->';
 const MAX_RENDERED_COMMENT_BYTES = 60_000;
 const TJ_DATA_PATTERN = /<!--\s*tj-data:(\S+)\s+([A-Za-z0-9+/=]+)\s*-->/g;
+const TJ_DATA_LINE_PATTERN = /^<!--\s*tj-data:.*-->$/;
 const MARKER_STRIP_PATTERN = /<!--\s*\/?\s*tj(?:-data)?:[^>]*-->/g;
 // Pre-blob comments wrapped each job in <!-- tj:KEY -->…<!-- /tj:KEY -->. Used to
 // preserve those jobs (as opaque standalone blocks) when migrating an existing
@@ -137802,8 +137916,20 @@ function sanitizeMarkerName(name) {
     const stripped = name.replace(/-->/g, '').trim().replace(/\s+/g, '-');
     return stripped.length > 0 ? stripped : 'tests';
 }
+// Test names come from the report, so they must never be able to open an HTML comment that
+// the blob/marker regexes would later read back as job state. A zero-width space keeps the
+// rendered text identical.
+function neutralizeMarkers(value) {
+    return value.replace(/<!--/g, '<!-\u200B-');
+}
 function stripMarkers(body) {
-    return body.replace(MARKER_STRIP_PATTERN, '');
+    // Removing one marker can splice its neighbours into a new one (e.g.
+    // `<!-<!-- tj: -->- tj-data:… -->`). Re-stripping until nothing changes is quadratic in the
+    // nesting depth, so when a single pass leaves a marker behind, disarm every comment opener.
+    const stripped = body.replace(MARKER_STRIP_PATTERN, '');
+    return new RegExp(MARKER_STRIP_PATTERN.source).test(stripped)
+        ? neutralizeMarkers(stripped)
+        : stripped;
 }
 function escapeTableCell(value) {
     return escapeHtml(value.replace(/\r?\n/g, ' ')).replace(/\|/g, '\\|');
@@ -137832,7 +137958,7 @@ function renderHighlightRow(h) {
             const tests = data.tests ?? [];
             const names = tests
                 .slice(0, 3)
-                .map((t) => `\`${t.name}\``)
+                .map((t) => toInlineCode(t.name))
                 .join(', ');
             const suffix = tests.length > 3 ? `, +${tests.length - 3} more` : '';
             details = `${tests.length} new failure(s): ${names}${suffix}`;
@@ -137889,7 +138015,7 @@ function renderBaseBranchSection(baseDelta, baseBranch) {
     if (baseDelta.newlyFailing.length > 0) {
         const names = baseDelta.newlyFailing
             .slice(0, 5)
-            .map((t) => `\`${t.name}\``)
+            .map((t) => toInlineCode(t.name))
             .join(', ');
         const suffix = baseDelta.newlyFailing.length > 5 ? `, and ${baseDelta.newlyFailing.length - 5} more` : '';
         lines.push('', `🔴 **Regressions:** ${names}${suffix}`);
@@ -137897,7 +138023,7 @@ function renderBaseBranchSection(baseDelta, baseBranch) {
     if (baseDelta.newlyPassing.length > 0) {
         const names = baseDelta.newlyPassing
             .slice(0, 5)
-            .map((t) => `\`${t.name}\``)
+            .map((t) => toInlineCode(t.name))
             .join(', ');
         const suffix = baseDelta.newlyPassing.length > 5 ? `, and ${baseDelta.newlyPassing.length - 5} more` : '';
         lines.push('', `🟢 **Improvements:** ${names}${suffix}`);
@@ -137941,7 +138067,7 @@ function renderTestsChangedCompact(report) {
 }
 const MAX_FLAKY_COMPACT = 5;
 function toInlineCode(value) {
-    const normalized = value.replace(/\r?\n/g, ' ');
+    const normalized = neutralizeMarkers(value.replace(/\r?\n/g, ' '));
     const runs = normalized.match(/`+/g);
     const longestRun = runs ? Math.max(...runs.map((r) => r.length)) : 0;
     const fence = '`'.repeat(longestRun + 1);
@@ -138054,16 +138180,38 @@ function encodeJobBlobs(jobs) {
         return full;
     return jobs.map((j) => encodeJobBlob(summaryOnlyJob(j))).join('\n');
 }
+// Blobs are always appended as the final lines of the comment, after the visible body. Only
+// that trailing block is trusted: a blob-shaped string anywhere else came from rendered,
+// report-derived text and must not be read back as job state.
+function trailingBlobSection(body) {
+    const lines = body.split(/\r?\n/);
+    let end = lines.length;
+    while (end > 0 && lines[end - 1].trim() === '')
+        end--;
+    let start = end;
+    while (start > 0 && TJ_DATA_LINE_PATTERN.test(lines[start - 1].trim()))
+        start--;
+    return lines.slice(start, end).join('\n');
+}
+function isStoredJobData(data) {
+    if (!data || typeof data !== 'object')
+        return false;
+    const job = data;
+    return (typeof job.key === 'string' &&
+        typeof job.testJobName === 'string' &&
+        (job.customBody === undefined || typeof job.customBody === 'string'));
+}
 function decodeJobBlobs(body) {
     const out = [];
     const re = new RegExp(TJ_DATA_PATTERN.source, 'g');
+    const section = trailingBlobSection(body);
     let match;
-    while ((match = re.exec(body)) !== null) {
+    while ((match = re.exec(section)) !== null) {
         try {
             const json = Buffer.from(match[2], 'base64').toString('utf8');
             const data = JSON.parse(json);
-            if (data && typeof data.key === 'string')
-                out.push(data);
+            if (isStoredJobData(data))
+                out.push({ ...data, key: sanitizeMarkerName(data.key) });
         }
         catch {
             // Malformed or legacy blob — skip; the owning job repopulates on its next run.
@@ -138276,6 +138424,50 @@ function mergeTestJobSection(existingBody, newSection) {
 
 
 const COMMENT_MARKER = '<!-- testglance-pr-summary -->';
+const ACTIONS_BOT_LOGIN = 'github-actions[bot]';
+// Any PR participant can post a comment containing the marker; only a comment written by
+// this token's identity may be adopted, or a stranger could hijack/suppress the summary and
+// feed forged job state into the merge.
+async function resolveTokenIdentity(octokit) {
+    try {
+        const result = await octokit.graphql('query { viewer { login } }');
+        return { login: result?.viewer?.login || null };
+    }
+    catch (err) {
+        core_debug(`Could not resolve the github-token identity (${err.message}); assuming ${ACTIONS_BOT_LOGIN}.`);
+        return { login: null, error: err.message };
+    }
+}
+// Pages lazily and resolves the token identity only once a marker comment turns up, so the
+// common cases (first page has our comment, or no summary yet) cost one or two requests.
+async function findOwnComment(octokit, params) {
+    let identity;
+    let unverified;
+    const pages = octokit.paginate.iterator(octokit.rest.issues.listComments, {
+        ...params,
+        per_page: 100,
+    });
+    for await (const { data } of pages) {
+        for (const comment of data) {
+            if (!comment.body?.includes(COMMENT_MARKER))
+                continue;
+            identity ??= await resolveTokenIdentity(octokit);
+            if (isOwnComment(comment, identity.login))
+                return { own: comment };
+            if (!identity.login)
+                unverified ??= comment;
+        }
+    }
+    return { unverified, identityError: identity?.error };
+}
+function isOwnComment(comment, tokenLogin) {
+    const login = comment.user?.login;
+    if (!login)
+        return false;
+    if (tokenLogin)
+        return login.toLowerCase() === tokenLogin.toLowerCase();
+    return comment.user?.type === 'Bot' && login === ACTIONS_BOT_LOGIN;
+}
 async function postPrComment(options) {
     const { githubToken, section } = options;
     if (!githubToken)
@@ -138287,13 +138479,14 @@ async function postPrComment(options) {
     try {
         const octokit = getOctokit(githubToken);
         const { owner, repo } = github_context.repo;
-        const { data: comments } = await octokit.rest.issues.listComments({
+        const { own: existing, unverified, identityError, } = await findOwnComment(octokit, {
             owner,
             repo,
             issue_number: prNumber,
-            per_page: 100,
         });
-        const existing = comments.find((c) => c.body?.includes(COMMENT_MARKER));
+        if (!existing && unverified) {
+            warning(`Could not verify the github-token identity (${identityError ?? 'no login returned'}), so the existing TestGlance comment by ${unverified.user?.login} was not reused; posting a new comment.`);
+        }
         if (existing) {
             const updatedBody = mergeTestJobSection(existing.body, section);
             await octokit.rest.issues.updateComment({
@@ -138323,6 +138516,38 @@ const DEPENDENCY_DIRS = ['node_modules/', 'site-packages/', '.gradle/', 'vendor/
 function isDependencyPath(filePath) {
     return DEPENDENCY_DIRS.some((dir) => filePath.includes(dir));
 }
+// JVM frames carry only a bare file name, so DEPENDENCY_DIRS can't see library code;
+// filter on the frame's package instead.
+const JVM_LIBRARY_PACKAGES = [
+    'java.',
+    'javax.',
+    'jdk.',
+    'sun.',
+    'com.sun.',
+    'kotlin.',
+    'kotlinx.',
+    'scala.',
+    'groovy.',
+    'org.codehaus.groovy.',
+    'org.junit.',
+    'junit.',
+    'org.opentest4j.',
+    'org.testng.',
+    'org.gradle.',
+    'org.apache.maven.',
+    'io.kotest.',
+    'io.mockk.',
+    'org.mockito.',
+    'org.assertj.',
+    'org.hamcrest.',
+    'assertk.',
+    'strikt.',
+    'org.spockframework.',
+    'org.scalatest.',
+];
+function isJvmLibraryFrame(frame) {
+    return JVM_LIBRARY_PACKAGES.some((pkg) => frame.startsWith(pkg));
+}
 function normalizePath(filePath) {
     let p = filePath;
     if (p.startsWith('./'))
@@ -138346,12 +138571,12 @@ const PATTERNS = [
             return null;
         return { path: match[1], line: Number.parseInt(match[2], 10) };
     },
-    // Java: at package.Class(File.java:N)
+    // JVM: at [loader//]pkg.Class.method(File.java:N) — also .kt, .kts, .scala, .groovy
     (line) => {
-        const match = line.match(/at\s+[\w.$]+\(([A-Za-z][\w]*\.java):(\d+)\)/);
-        if (!match)
+        const match = line.match(/^\s*at\s+(?:[^\s/()]*\/)*([^()/]+)\(([\w$][\w$.-]*\.(?:java|kts?|scala|groovy)):(\d+)\)/);
+        if (!match || isJvmLibraryFrame(match[1]))
             return null;
-        return { path: match[1], line: Number.parseInt(match[2], 10) };
+        return { path: match[2], line: Number.parseInt(match[3], 10) };
     },
     // Go: path/file.go:N
     (line) => {
@@ -138391,6 +138616,7 @@ function parseFileLocation(stackTrace) {
 }
 
 ;// CONCATENATED MODULE: ./src/output/check-run.ts
+
 
 
 
@@ -138470,8 +138696,11 @@ async function createCheckRun(options) {
     try {
         const octokit = getOctokit(githubToken);
         const { owner, repo } = github_context.repo;
-        const pr = github_context.payload.pull_request;
-        const headSha = pr?.head?.sha ?? github_context.sha;
+        const headSha = resolveRunIdentity().checkRunSha;
+        if (!headSha) {
+            warning(`Skipping Check Run "${checkName}": the "${github_context.eventName}" event does not identify the commit under test, and attaching results to the default-branch HEAD would mislabel them.`);
+            return;
+        }
         const { summary } = parsed;
         const conclusion = summary.failed > 0 || summary.errored > 0 ? 'failure' : 'success';
         const passRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : '0.0';
@@ -212389,11 +212618,57 @@ function saveCacheV2(paths_1, key_1, options_1) {
 
 
 const HISTORY_FILENAME = 'history.json';
+const PRIVATE_DIR_MODE = 0o700;
+// The history file must live at the same absolute path on every run: @actions/cache derives
+// the cache version from the path, so a randomized (mkdtemp) dir would never restore. On a
+// shared tmpdir that predictable path could be pre-planted by another local user, so every
+// segment we create under tmpdir must be a real directory owned by us and private to us.
+function preparePrivateDir(base, dir) {
+    const uid = process.getuid?.();
+    let current = base;
+    for (const segment of (0,external_node_path_.relative)(base, dir).split(external_node_path_.sep)) {
+        current = (0,external_node_path_.join)(current, segment);
+        try {
+            (0,external_node_fs_.mkdirSync)(current, { mode: PRIVATE_DIR_MODE });
+        }
+        catch (err) {
+            if (err.code !== 'EEXIST') {
+                return `cannot create ${current}: ${err.message}`;
+            }
+        }
+        try {
+            const stat = (0,external_node_fs_.lstatSync)(current);
+            if (!stat.isDirectory())
+                return `${current} is not a directory (symlink or file)`;
+            if (uid !== undefined && stat.uid !== uid)
+                return `${current} is owned by another user`;
+            if ((stat.mode & 0o777) !== PRIVATE_DIR_MODE)
+                (0,external_node_fs_.chmodSync)(current, PRIVATE_DIR_MODE);
+        }
+        catch (err) {
+            return `cannot verify ${current}: ${err.message}`;
+        }
+    }
+    return null;
+}
+// Whatever sits at the file path predates this run: a symlink or hard link planted while the
+// dir was still writable by others, or a stale file a failed restore would leave to be read.
+// The restore always extracts a fresh copy, so remove it (unlinking never follows a symlink).
+function removeLeftoverFile(filePath) {
+    try {
+        (0,external_node_fs_.rmSync)(filePath, { force: true });
+        return null;
+    }
+    catch (err) {
+        return `cannot remove leftover ${filePath}: ${err.message}`;
+    }
+}
 class ActionsCacheStorage {
     cacheKey;
     restoreKeys;
     tempDir;
     filePath;
+    unusableReason;
     constructor(branch, reportPathHash, runId) {
         const suffix = runId ? `-${runId}` : '';
         this.cacheKey = `testglance-history-${branch}-${reportPathHash}${suffix}`;
@@ -212401,11 +212676,18 @@ class ActionsCacheStorage {
             `testglance-history-${branch}-${reportPathHash}-`,
             `testglance-history-${branch}-`,
         ];
-        this.tempDir = (0,external_node_path_.join)((0,external_node_os_.tmpdir)(), `testglance-history-${branch}-${reportPathHash}`);
-        (0,external_node_fs_.mkdirSync)(this.tempDir, { recursive: true });
+        const base = (0,external_node_os_.tmpdir)();
+        this.tempDir = (0,external_node_path_.join)(base, `testglance-history-${branch}-${reportPathHash}`);
         this.filePath = (0,external_node_path_.join)(this.tempDir, HISTORY_FILENAME);
+        this.unusableReason =
+            preparePrivateDir(base, this.tempDir) ?? removeLeftoverFile(this.filePath);
+        if (this.unusableReason) {
+            warning(`History disabled: ${this.unusableReason}. Refusing to use a history dir another user could control.`);
+        }
     }
     async load() {
+        if (this.unusableReason)
+            return null;
         try {
             const restoredKey = await restoreCache([this.filePath], this.cacheKey, this.restoreKeys);
             if (!restoredKey) {
@@ -212427,6 +212709,8 @@ class ActionsCacheStorage {
         }
     }
     async save(history) {
+        if (this.unusableReason)
+            return;
         try {
             (0,external_node_fs_.writeFileSync)(this.filePath, JSON.stringify(history));
             await cache_saveCache([this.filePath], this.cacheKey);
@@ -213014,6 +213298,7 @@ function buildDurationSparkline(entries) {
 
 
 
+
 const DEFAULT_SLOWEST_TESTS = 10;
 const DEFAULT_FLAKY_THRESHOLD = 2;
 const DEFAULT_PERF_THRESHOLD = 200;
@@ -213165,17 +213450,19 @@ async function run() {
         let loadedHistory = null;
         let delta = null;
         let testsChanged = null;
-        const headBranch = (process.env.GITHUB_HEAD_REF ||
-            process.env.GITHUB_REF_NAME ||
-            'unknown').replace(/^refs\/heads\//, '');
-        if (historyEnabled) {
+        const identity = resolveRunIdentity();
+        const headBranch = identity.historyBranch ?? identity.displayBranch;
+        if (historyEnabled && !identity.historyBranch) {
+            info(`History skipped: the "${process.env.GITHUB_EVENT_NAME || 'current'}" event does not identify the branch under test, so results would otherwise be recorded as default-branch history.`);
+        }
+        if (historyEnabled && identity.historyBranch) {
             try {
-                const branch = headBranch;
+                const branch = identity.historyBranch;
                 const reportPathHash = (0,external_node_crypto_.createHash)('sha256')
                     .update(reportPath || 'auto')
                     .digest('hex')
                     .slice(0, 8);
-                const commitSha = process.env.GITHUB_SHA || 'unknown';
+                const commitSha = identity.commitSha;
                 const runId = process.env.GITHUB_RUN_ID;
                 const storage = new ActionsCacheStorage(branch, reportPathHash, runId);
                 const manager = new HistoryManager(storage, historyLimit);
@@ -213304,7 +213591,6 @@ async function run() {
         let artifactUrl;
         if (htmlReport) {
             try {
-                const branch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'unknown';
                 const html = generateHtmlReport({
                     parsed,
                     apiSuccess: result?.success ?? false,
@@ -213317,8 +213603,8 @@ async function run() {
                     flaky,
                     perfRegression,
                     trends,
-                    commitSha: process.env.GITHUB_SHA || 'unknown',
-                    branch,
+                    commitSha: identity.commitSha,
+                    branch: identity.displayBranch,
                     workflowRunUrl: runUrl,
                     timestamp: new Date().toISOString(),
                 });
@@ -213334,8 +213620,8 @@ async function run() {
                 warning(`HTML report generation failed: ${err instanceof Error ? err.message : String(err)}`);
             }
         }
-        const summaryBranch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'unknown';
-        const summaryCommitSha = process.env.GITHUB_SHA || 'unknown';
+        const summaryBranch = identity.displayBranch;
+        const summaryCommitSha = identity.commitSha;
         const summaryTimestamp = new Date().toISOString();
         const summaryJobName = testJobName || process.env.GITHUB_JOB || 'tests';
         const historyEntries = loadedHistory?.entries;

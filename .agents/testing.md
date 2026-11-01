@@ -40,9 +40,9 @@ CI runs the suite with `pnpm exec vitest run --coverage --reporter=default --rep
 
 ## Fixtures
 
-`fixtures/` holds **21 small committed fixtures** in three families:
+`fixtures/` holds **22 small committed fixtures** in three families:
 
-- `junit-*.xml` (11) — basic, multi-suite, nested, encoding (UTF-8 BOM), malformed, empty, no-tests, native-location, with-stacktraces, suite-a/suite-b.
+- `junit-*.xml` (12) — basic, multi-suite, nested, encoding (UTF-8 BOM), malformed, empty, no-tests, native-location, with-stacktraces, kotlin-gradle, suite-a/suite-b.
 - `ctrf-*.json` (8) — basic, multi-suite, optional-fields, native-location, with-stacktraces, malformed, invalid-schema, empty.
 - `e2e-history-*.xml` (2) — `e2e-history-base.xml` / `e2e-history-changed.xml`, used by the e2e history flow (the workflow `cp`s them to `fixtures/e2e-history.xml`).
 
