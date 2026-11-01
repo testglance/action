@@ -11,7 +11,7 @@
   "internalChecksFilter": "strict",
   "lockFileMaintenance": {
     "enabled": true,
-    "automerge": true
+    "automerge": false
   },
   "packageRules": [
     {
@@ -20,15 +20,14 @@
       "automerge": false
     },
     {
-      "matchDepTypes": ["devDependencies"],
-      "matchUpdateTypes": ["patch", "minor"],
-      "automerge": true
+      "description": "Every action in ci.yml also runs in release-v1, which builds dist/ and retags v1 — require human review.",
+      "matchManagers": ["github-actions"],
+      "automerge": false
     },
     {
-      "description": "Actions are SHA-pinned (helpers:pinGitHubActionDigests); auto-merge only immutable digest re-pins + patch/minor tag moves.",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["patch", "minor", "digest"],
-      "automerge": true
+      "description": "Packages that execute during release-v1 (install, build) or shape the bundle — never automerge, even if a preset matches.",
+      "matchPackageNames": ["@vercel/ncc", "typescript", "esbuild", "husky", "pnpm"],
+      "automerge": false
     }
   ]
 }

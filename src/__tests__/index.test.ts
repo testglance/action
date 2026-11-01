@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 vi.hoisted(() => {
   process.env.TESTGLANCE_SKIP_AUTO_RUN = 'true';
@@ -25,7 +25,20 @@ vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
   existsSync: vi.fn(() => false),
+  lstatSync: vi.fn(() => ({
+    isDirectory: () => true,
+    uid: process.getuid?.() ?? 0,
+    mode: 0o40700,
+  })),
+  chmodSync: vi.fn(),
+  rmSync: vi.fn(),
 }));
+
+const mockGithubContext = vi.hoisted(() => ({
+  eventName: 'push',
+  payload: {} as Record<string, unknown>,
+}));
+vi.mock('@actions/github', () => ({ context: mockGithubContext }));
 
 const mockParseJunitXml = vi.fn();
 vi.mock('../parsers/junit', () => ({
@@ -1042,6 +1055,121 @@ describe('run() orchestration (all collaborators mocked)', () => {
       const result = await run();
 
       expect(result.history).toBeNull();
+    });
+  });
+
+  describe('history identity for events that run on the default branch', () => {
+    const SAME_REPO = { full_name: 'test-owner/test-repo' };
+
+    beforeEach(() => {
+      process.env.GITHUB_REF_NAME = 'main';
+      process.env.GITHUB_SHA = 'default-branch-head';
+      delete process.env.GITHUB_HEAD_REF;
+      delete process.env.GITHUB_BASE_REF;
+    });
+
+    afterEach(() => {
+      mockGithubContext.eventName = 'push';
+      mockGithubContext.payload = {};
+      delete process.env.GITHUB_HEAD_REF;
+      delete process.env.GITHUB_BASE_REF;
+    });
+
+    async function savedCacheKeys(): Promise<string[]> {
+      const { saveCache } = await import('@actions/cache');
+      return (saveCache as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1] as string);
+    }
+
+    it("workflow_run: records history under the triggering run's head branch and sha", async () => {
+      setupInputs({ history: 'true' });
+      mockGithubContext.eventName = 'workflow_run';
+      mockGithubContext.payload = {
+        repository: SAME_REPO,
+        workflow_run: {
+          head_sha: 'run-head-sha',
+          head_branch: 'feature-x',
+          head_repository: SAME_REPO,
+        },
+      };
+
+      const result = await run();
+
+      expect(result.history!.entries[0].commitSha).toBe('run-head-sha');
+      expect(result.history!.branch).toBe('feature-x');
+      const keys = await savedCacheKeys();
+      expect(keys).toHaveLength(1);
+      expect(keys[0]).toMatch(/^testglance-history-feature-x-/);
+    });
+
+    it('workflow_run from a fork: namespaces the history branch by head repository', async () => {
+      setupInputs({ history: 'true' });
+      mockGithubContext.eventName = 'workflow_run';
+      mockGithubContext.payload = {
+        repository: SAME_REPO,
+        workflow_run: {
+          head_sha: 'fork-sha',
+          head_branch: 'main',
+          head_repository: { full_name: 'mallory/test-repo' },
+        },
+      };
+
+      await run();
+
+      const keys = await savedCacheKeys();
+      expect(keys).toHaveLength(1);
+      expect(keys[0]).not.toMatch(/^testglance-history-main-/);
+      expect(keys[0]).toMatch(/^testglance-history-mallory\/test-repo~main-/);
+    });
+
+    it('workflow_run without head_branch: skips history instead of writing to the default branch', async () => {
+      setupInputs({ history: 'true' });
+      mockGithubContext.eventName = 'workflow_run';
+      mockGithubContext.payload = { repository: SAME_REPO, workflow_run: { head_sha: 'x' } };
+
+      const result = await run();
+
+      expect(result.history).toBeNull();
+      expect(await savedCacheKeys()).toEqual([]);
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    });
+
+    it('issue_comment on a PR: skips history instead of writing to the default branch', async () => {
+      setupInputs({ history: 'true' });
+      mockGithubContext.eventName = 'issue_comment';
+      mockGithubContext.payload = { issue: { number: 7, pull_request: { url: 'https://x' } } };
+
+      const result = await run();
+
+      expect(result.history).toBeNull();
+      expect(await savedCacheKeys()).toEqual([]);
+      expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('History skipped'));
+    });
+
+    it('pull_request_target from a fork: namespaces the history branch by head repository', async () => {
+      setupInputs({ history: 'true' });
+      process.env.GITHUB_HEAD_REF = 'main';
+      process.env.GITHUB_BASE_REF = 'main';
+      mockGithubContext.eventName = 'pull_request_target';
+      mockGithubContext.payload = {
+        repository: SAME_REPO,
+        pull_request: {
+          head: { ref: 'main', sha: 'fork-sha', repo: { full_name: 'mallory/test-repo' } },
+        },
+      };
+
+      await run();
+
+      const keys = await savedCacheKeys();
+      expect(keys[0]).toMatch(/^testglance-history-mallory\/test-repo~main-/);
+    });
+
+    it('push: keeps keying history on GITHUB_REF_NAME / GITHUB_SHA', async () => {
+      setupInputs({ history: 'true' });
+
+      const result = await run();
+
+      expect(result.history!.entries[0].commitSha).toBe('default-branch-head');
+      expect((await savedCacheKeys())[0]).toMatch(/^testglance-history-main-/);
     });
   });
 
