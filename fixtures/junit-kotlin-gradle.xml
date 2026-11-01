@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="kotlin-gradle" tests="4" failures="2" errors="1" time="0.412">
+  <testsuite name="com.example.CalculatorTest" tests="2" skipped="0" failures="1" errors="0" timestamp="2026-10-30T12:00:00" hostname="runner" time="0.120">
+    <properties/>
+    <testcase name="adding two numbers returns sum()" classname="com.example.CalculatorTest" time="0.031">
+      <failure message="org.opentest4j.AssertionFailedError: expected: &lt;4&gt; but was: &lt;5&gt;" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: expected: &lt;4&gt; but was: &lt;5&gt;
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at app//org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at app//org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:182)
+	at app//org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1156)
+	at app//kotlin.test.junit5.JUnit5Asserter.assertEquals(JUnitSupport.kt:32)
+	at app//kotlin.test.AssertionsKt__AssertionsKt.assertEquals(Assertions.kt:63)
+	at app//kotlin.test.AssertionsKt.assertEquals(Unknown Source)
+	at app//kotlin.test.AssertionsKt__AssertionsKt.assertEquals$default(Assertions.kt:62)
+	at app//kotlin.test.AssertionsKt.assertEquals$default(Unknown Source)
+	at app//com.example.CalculatorTest.adding two numbers returns sum(CalculatorTest.kt:15)
+	at java.base@17.0.9/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base@17.0.9/java.lang.reflect.Method.invoke(Method.java:568)
+	at app//org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:727)
+</failure>
+    </testcase>
+    <testcase name="subtracts()" classname="com.example.CalculatorTest" time="0.002"/>
+  </testsuite>
+  <testsuite name="com.example.AccountTest" tests="2" skipped="0" failures="1" errors="1" timestamp="2026-10-30T12:00:00" hostname="runner" time="0.292">
+    <properties/>
+    <testcase name="rejects negative balance()" classname="com.example.AccountTest" time="0.004">
+      <error message="java.lang.IllegalStateException: balance must be non-negative" type="java.lang.IllegalStateException">java.lang.IllegalStateException: balance must be non-negative
+	at app//com.example.Account.&lt;init&gt;(Account.kt:9)
+	at app//com.example.AccountTest.rejects negative balance(AccountTest.kt:21)
+	at java.base@17.0.9/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base@17.0.9/java.lang.reflect.Method.invoke(Method.java:568)
+	at app//org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:727)
+</error>
+    </testcase>
+    <testcase name="loads account()" classname="com.example.AccountTest" time="0.288">
+      <failure message="java.lang.AssertionError: Expected value to be true." type="java.lang.AssertionError">java.lang.AssertionError: Expected value to be true.
+	at app//kotlin.test.DefaultAsserter.fail(DefaultAsserter.kt:16)
+	at app//kotlin.test.Asserter.assertTrue(Assertions.kt:694)
+	at app//kotlin.test.DefaultAsserter.assertTrue(DefaultAsserter.kt:11)
+	at app//kotlin.test.AssertionsKt__AssertionsKt.assertTrue(Assertions.kt:44)
+	at app//kotlin.test.AssertionsKt.assertTrue(Unknown Source)
+	at app//com.example.AccountTest$loads account$1.invokeSuspend(AccountTest.kt:30)
+	at app//kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
+	at app//kotlinx.coroutines.test.TestBuildersKt__TestBuildersKt$runTest$2$1$1.invokeSuspend(TestBuilders.kt:317)
+	at app//kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:104)
+</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { parseJunitXml } from '../../parsers/junit';
 import { parseFileLocation } from '../parse-stack-trace';
 
 describe('parseFileLocation', () => {
@@ -37,13 +40,87 @@ AssertionError: 1 != 2`;
     });
   });
 
-  describe('Java stack traces', () => {
+  describe('Java/Kotlin stack traces', () => {
     it('parses at package.Class(File.java:N) format', () => {
       const trace = `java.lang.AssertionError: expected:<3> but was:<4>
 	at com.example.FooTest.testAdd(FooTest.java:42)
 	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)`;
 
       expect(parseFileLocation(trace)).toEqual({ path: 'FooTest.java', line: 42 });
+    });
+
+    it('parses at package.Class(File.kt:N) format', () => {
+      const trace = `java.lang.AssertionError: expected:<3> but was:<4>
+	at com.example.FooTest.testAdd(FooTest.kt:42)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)`;
+
+      expect(parseFileLocation(trace)).toEqual({ path: 'FooTest.kt', line: 42 });
+    });
+
+    it('skips JUnit assertion frames before the user frame', () => {
+      const trace = `java.lang.AssertionError: expected:<3> but was:<4>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at com.example.FooTest.testAdd(FooTest.java:42)`;
+
+      expect(parseFileLocation(trace)).toEqual({ path: 'FooTest.java', line: 42 });
+    });
+
+    it('skips Kotest matcher frames', () => {
+      const trace = `io.kotest.assertions.AssertionFailedError: expected:<3> but was:<4>
+	at io.kotest.matchers.ShouldKt.invokeMatcher(should.kt:42)
+	at io.kotest.matchers.ShouldKt.shouldBe(should.kt:10)
+	at com.example.FooSpec$1$1.invokeSuspend(FooSpec.kt:12)`;
+
+      expect(parseFileLocation(trace)).toEqual({ path: 'FooSpec.kt', line: 12 });
+    });
+
+    it('parses Scala, Groovy, and Kotlin script frames', () => {
+      expect(parseFileLocation('\tat com.example.FooSpec.test(FooSpec.scala:12)')).toEqual({
+        path: 'FooSpec.scala',
+        line: 12,
+      });
+      expect(parseFileLocation('\tat com.example.FooSpec.test(FooSpec.groovy:7)')).toEqual({
+        path: 'FooSpec.groovy',
+        line: 7,
+      });
+      expect(parseFileLocation('\tat Build_gradle.<init>(build.gradle.kts:10)')).toEqual({
+        path: 'build.gradle.kts',
+        line: 10,
+      });
+    });
+
+    it('returns null when only JVM library frames exist', () => {
+      const trace = `java.lang.NullPointerException
+	at java.base/java.util.Objects.requireNonNull(Objects.java:233)
+	at app//org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:727)`;
+
+      expect(parseFileLocation(trace)).toBeNull();
+    });
+  });
+
+  describe('Kotlin Gradle report (junit-kotlin-gradle.xml)', () => {
+    const suites = parseJunitXml(
+      readFileSync(join(__dirname, '../../../fixtures/junit-kotlin-gradle.xml'), 'utf-8'),
+    ).suites;
+    const locate = (name: string) =>
+      parseFileLocation(
+        suites.flatMap((s) => s.tests).find((t) => t.name === name)!.stackTrace as string,
+      );
+
+    it('skips kotlin.test frames and resolves an app//-prefixed backtick test name', () => {
+      expect(locate('adding two numbers returns sum()')).toEqual({
+        path: 'CalculatorTest.kt',
+        line: 15,
+      });
+    });
+
+    it('resolves a constructor <init> frame', () => {
+      expect(locate('rejects negative balance()')).toEqual({ path: 'Account.kt', line: 9 });
+    });
+
+    it('resolves a coroutine lambda frame past kotlin.test and kotlinx frames', () => {
+      expect(locate('loads account()')).toEqual({ path: 'AccountTest.kt', line: 30 });
     });
   });
 
