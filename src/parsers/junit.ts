@@ -15,7 +15,7 @@ const xmlParser = new XMLParser({
   textNodeName: '#text',
   isArray: (tagName: string) => ['testsuite', 'testcase', 'property'].includes(tagName),
   trimValues: true,
-  // Swift's XML writers encode every non-ASCII character and newline as a numeric reference.
+  // Swift Testing encodes every non-ASCII character and newline as a numeric reference.
   htmlEntities: true,
   processEntities: {
     enabled: true,
@@ -162,9 +162,12 @@ export function parseJunitXml(content: string): ParsedTestRun {
     rootDuration = parseFloat(testsuites['@_time'] as string) || undefined;
     const innerSuites = testsuites['testsuite'] as Record<string, unknown>[] | undefined;
     if (innerSuites) {
-      // Split suites only sum their tests, which overstates a run that executed in parallel.
-      const swiftPmSuite = innerSuites.find((s) => s['@_name'] === SWIFTPM_SUITE_NAME);
-      rootDuration ??= parseFloat(swiftPmSuite?.['@_time'] as string) || undefined;
+      // Split suites only sum their tests, which overstates Swift Testing's wall-clock time. SwiftPM
+      // runs test products one at a time and writes one TestResults suite for each.
+      if (innerSuites.every((s) => s['@_name'] === SWIFTPM_SUITE_NAME)) {
+        const productTimes = innerSuites.map((s) => parseFloat(s['@_time'] as string) || 0);
+        rootDuration ??= productTimes.reduce((sum, time) => sum + time, 0) || undefined;
+      }
       for (const s of innerSuites) {
         suites.push(...flattenSuites(s));
       }

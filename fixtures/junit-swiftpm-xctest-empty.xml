@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Hand-written to match XUnitGenerator in SwiftPM 6.4.2 for a package with no XCTest tests. Not captured from a run. -->
+<!-- Captured from swift test in parallel mode with xunit-output, package with no XCTest tests, unedited below this line. swift version: Swift version 6.4.2 (swift-6.4.2-RELEASE), Target: aarch64-unknown-linux-gnu (swift:6.4.2 Docker image). -->
+
 <testsuites>
 <testsuite name="TestResults" errors="0" tests="0" failures="0" time="0.0">
 </testsuite>

@@ -30,7 +30,7 @@ Entry: `parseJunitXml(content)` (`src/parsers/junit.ts:105`).
 - `textNodeName: '#text'` — element text (e.g. a `<failure>` body) lands under `#text`.
 - `isArray` forces `testsuite`, `testcase`, `property` to always be arrays (`src/parsers/junit.ts:11`) — single-element cases don't collapse to objects.
 - `trimValues: true`.
-- `htmlEntities: true` — decodes numeric references. Swift's XML writers encode every non-ASCII character and newline this way (`&#8594;`, `&#10;`).
+- `htmlEntities: true` — decodes numeric references. Swift Testing encodes every non-ASCII character and newline this way (`&#8594;`, `&#10;`).
 - `processEntities` is bounded (billion-laughs guard): `maxTotalExpansions: 1_000_000`, `maxExpandedLength: 10_000_000`, `maxEntityCount: 100` (`src/parsers/junit.ts:13`). See [security](./security.md).
 
 ### Flow
@@ -59,11 +59,24 @@ Checked in order; first match wins:
 
 ### SwiftPM reports (`swift test --xunit-output`)
 
-Format taken from the writers in Swift 6.4.2 (`Event.JUnitXMLRecorder` in swift-testing, `XUnitGenerator` in SwiftPM):
+Checked against captured reports in `fixtures/junit-swift*.xml`. Each fixture records its `swift --version`: Swift Testing from Apple Swift 6.4 (Command Line Tools), XCTest from Swift 6.4.2 on Linux. **No report has been captured from Xcode**, so what XCTest writes on Apple platforms is inferred from the shared SwiftPM source.
 
-- **One suite named `TestResults`.** The real suite is only in `classname`, and test identity is suite + name, so a suite with exactly this name is split by `classname`. Each split suite's `duration` is the sum of its tests; the run's `duration` stays the declared `@_time`, because Swift Testing runs tests in parallel.
-- **Two files.** With `--xunit-output test-results/junit.xml`, XCTest results go to that path (only with `--parallel`, and with zero test cases if the package has no XCTest tests) and Swift Testing results go to `test-results/junit-swift-testing.xml`. A `report-path` naming only `junit.xml` reports no Swift Testing results. Use a glob or auto-detect.
-- **The directory must exist.** Swift Testing opens the file with `fopen`, and a failure ends the test run, so create it first (`mkdir -p test-results`).
+- **`TestResults` suites.** The real suite is only in `classname`, and test identity is suite + name, so a suite with exactly this name is split by `classname`. Each split suite's `duration` is the sum of its tests.
+- **Several test products.** Swift Testing writes one `TestResults` suite per product under one `<testsuites>` root. The merger writes non-ASCII text literally instead of as numeric references. Products run one at a time, so when every suite is `TestResults` the run's `duration` is the sum of their `@_time` values.
+- **`@_time` differs by writer.** Swift Testing's is wall-clock time. XCTest's is the sum of its test times, so a parallel XCTest run is overstated and nothing in the report can correct it.
+- **Suite counts are not test counts.** Swift Testing's `tests` leaves out skipped tests and `failures` counts issues, for example `tests="8" failures="5"` for 10 test cases with 4 failed. The recount rule above already handles this.
+- **Which files are written.** The table is for `--xunit-output test-results/junit.xml`:
+
+  | Run                                     | `junit.xml`                                       | `junit-swift-testing.xml` |
+  | --------------------------------------- | ------------------------------------------------- | ------------------------- |
+  | `--parallel`, XCTest enabled            | XCTest results, or zero test cases if it has none | Swift Testing results     |
+  | No `--parallel`, XCTest enabled         | Not written                                       | Swift Testing results     |
+  | XCTest not enabled (Command Line Tools) | Swift Testing results                             | Not written               |
+
+  A `report-path` naming only `junit.xml` can miss the Swift Testing results, so use a glob or auto-detect.
+
+- **Create the directory first** (`mkdir -p test-results`). A single Swift Testing product opens the file directly, and if the directory is missing it runs no tests, prints `No such file or directory` and `swift test` exits 1, even when every test would pass. Two cases survive only because another writer creates the directory first: `--parallel` with XCTest enabled, and several test products.
+- **`XCTSkip` is reported as passed.** SwiftPM's `XUnitGenerator` only knows success or failure and writes no `<skipped>`, so the parser can't tell. Swift Testing skips are reported correctly.
 - **No source locations.** Swift Testing failures carry only a message and XCTest failures only say `failure`, so annotations fall back to the report file. XCTest's hidden `--experimental-xunit-message-failure` puts the test output in the message, where `resolveLocation` (`src/output/check-run.ts`) can find a `File.swift:line`.
 
 ### Per-testcase extraction (`src/parsers/junit.ts:58`)
@@ -191,7 +204,7 @@ Note: `ParsedTestCase` does not carry its origin file across the merge — a doc
 
 `parseFileLocation(stackTrace, workspace?)` (`src/utils/parse-stack-trace.ts`) extracts the first usable `{ path, line }` from a stack trace, used to place failure annotations on the right source line. See [output](./output.md).
 
-- Splits on newlines; for each line, tries each `PatternExtractor` in `PATTERNS` order.
+- Splits on newlines; for each line, tries each `PatternExtractor` in `PATTERNS` order. The JS/TS pattern only matches at the start of a line, so a timestamp in a failure message (`started at 20:12:40`) isn't read as a location.
 - Skips any match whose path is inside a dependency dir — `DEPENDENCY_DIRS` (`node_modules/`, `site-packages/`, `.gradle/`, `vendor/`, `_vendor/`, `.build/` and `SourcePackages/checkouts/` for Swift packages, `usr/lib/swift/` and `Contents/Developer/` for the Swift toolchain) — and keeps scanning.
 - JVM frames carry only a bare file name, so the JVM pattern filters on the frame's package instead — `JVM_LIBRARY_PACKAGES` (`src/utils/parse-stack-trace.ts`) covers the JDK, Kotlin/Scala/Groovy runtimes, and common test frameworks. Extend this list when a library frame gets annotated instead of user code.
 - `normalizePath(path, workspace?)` strips the `GITHUB_WORKSPACE` prefix when given, then a leading `./`, then a leading `/`. Annotations pass `GITHUB_WORKSPACE` (`src/output/check-run.ts`) because Swift's `#filePath` yields absolute runner paths (`/Users/runner/work/<repo>/<repo>/Tests/...`) that would otherwise never match a diff line.

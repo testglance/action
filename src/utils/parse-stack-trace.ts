@@ -66,7 +66,7 @@ type PatternExtractor = (line: string) => FileLocation | null;
 const PATTERNS: PatternExtractor[] = [
   // JS/TS: at Something (path:line:col) or at path:line:col
   (line) => {
-    const match = line.match(/at\s+(?:.+?\s+\()?([^()]+?):(\d+):\d+\)?/);
+    const match = line.match(/^\s*at\s+(?:.+?\s+\()?([^()]+?):(\d+):\d+\)?/);
     if (!match) return null;
     return { path: match[1], line: Number.parseInt(match[2], 10) };
   },

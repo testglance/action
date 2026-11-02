@@ -20,9 +20,9 @@ describe('parseJunitXml', () => {
 
     it('recounts statuses from test cases', () => {
       expect(result.summary).toMatchObject({
-        total: 6,
-        passed: 2,
-        failed: 2,
+        total: 10,
+        passed: 4,
+        failed: 4,
         skipped: 2,
         errored: 0,
       });
@@ -30,39 +30,57 @@ describe('parseJunitXml', () => {
 
     it('uses classname as the suite instead of the generic TestResults', () => {
       expect(result.suites.map((s) => s.name)).toEqual([
-        'HatsCoreTests.ProfileNameTests',
-        'HatsCoreTests.ProfileColorTests',
-        'HatsE2ETests.GuardTests',
-        'HatsCoreTests',
+        'ProbeTests.SecondSuite.Nested',
+        'ProbeTests.SecondSuite',
+        'ProbeTests',
+        'ProbeTests.FirstSuite',
       ]);
     });
 
     it('keeps same-named tests in different Swift suites distinct', () => {
-      expect(findTest('HatsCoreTests.ProfileNameTests', 'accepts(_:)')?.status).toBe('passed');
-      expect(findTest('HatsCoreTests.ProfileColorTests', 'accepts(_:)')?.status).toBe('failed');
+      expect(findTest('ProbeTests.FirstSuite', 'sameName()')?.status).toBe('passed');
+      expect(findTest('ProbeTests.SecondSuite', 'sameName()')?.status).toBe('failed');
     });
 
     it('keeps every issue of a test with several failures', () => {
-      expect(findTest('HatsCoreTests.ProfileNameTests', 'rejects(_:)')?.errorMessage).toBe(
-        'Expectation failed: (name → "Work") == nil (error)\n' +
-          'Expectation failed: (name → "-work") == nil (error): must start with a letter\n' +
-          'see design.md',
+      expect(findTest('ProbeTests.FirstSuite', 'twoIssues()')?.errorMessage).toBe(
+        'Expectation failed: name == "work" (error)\n' +
+          'Expectation failed: answer() == 1 (error): must be one\n' +
+          'second line → with arrow',
       );
     });
 
     it('reads the skip comment from the element body', () => {
-      expect(findTest('HatsE2ETests.GuardTests', 'blocksWrites()')?.errorMessage).toBe(
-        'Seatbelt is unavailable — requires macOS',
+      expect(findTest('ProbeTests.FirstSuite', 'skippedWithComment()')?.errorMessage).toBe(
+        'not on this platform — sorry',
       );
-      expect(findTest('HatsE2ETests.GuardTests', 'allowsReads()')?.errorMessage).toBeUndefined();
+      expect(findTest('ProbeTests.FirstSuite', 'skippedPlain()')?.errorMessage).toBeUndefined();
     });
 
     it('reports wall-clock run time, not the sum of tests that ran in parallel', () => {
-      expect(result.summary.duration).toBe(0.37);
+      expect(result.summary.duration).toBe(0.001562667);
     });
 
     it('gives each suite the sum of its test durations', () => {
-      expect(result.suites[0].duration).toBe(0.75);
+      const freeFunctions = result.suites.find((s) => s.name === 'ProbeTests');
+      expect(freeFunctions?.duration).toBeCloseTo(0.000907584 + 0.000933417, 9);
+    });
+  });
+
+  describe('Swift Testing report merged from several test products', () => {
+    const result = parseJunitXml(fixture('junit-swift-testing-merged.xml'));
+
+    it('reads the tests of every product', () => {
+      expect(result.suites.map((s) => s.name)).toEqual(['BetaTests.Shared', 'AlphaTests.Shared']);
+      expect(result.summary).toMatchObject({ total: 4, passed: 2, failed: 1, skipped: 1 });
+    });
+
+    it('adds up the run time of every product', () => {
+      expect(result.summary.duration).toBeCloseTo(0.001342959 + 0.001481541, 9);
+    });
+
+    it('reads the literal non-ASCII text the merger writes', () => {
+      expect(result.suites[0].tests[0].errorMessage).toBe('off → beta');
     });
   });
 
@@ -70,12 +88,25 @@ describe('parseJunitXml', () => {
     it('uses classname as the suite (junit-swiftpm-xctest.xml)', () => {
       const result = parseJunitXml(fixture('junit-swiftpm-xctest.xml'));
 
-      expect(result.suites.map((s) => s.name)).toEqual([
-        'AppTests.LoginTests',
-        'AppTests.SessionTests',
-      ]);
-      expect(result.summary).toMatchObject({ total: 3, passed: 2, failed: 1 });
-      expect(result.summary.duration).toBe(0.75);
+      expect(result.suites.map((s) => s.name)).toEqual(['ProbeTests.XCFirstTests']);
+      expect(result.summary).toMatchObject({ total: 3, failed: 1 });
+      expect(result.summary.duration).toBe(0.01691592);
+    });
+
+    it('reports XCTSkip as passed because SwiftPM writes no skipped element', () => {
+      const result = parseJunitXml(fixture('junit-swiftpm-xctest.xml'));
+
+      const skipped = result.suites[0].tests.find((t) => t.name === 'testSkipped');
+      expect(skipped?.status).toBe('passed');
+      expect(result.summary).toMatchObject({ passed: 2, skipped: 0 });
+    });
+
+    it('has only a placeholder failure message without the experimental flag', () => {
+      const result = parseJunitXml(fixture('junit-swiftpm-xctest.xml'));
+
+      const failed = result.suites[0].tests.find((t) => t.name === 'testFails');
+      expect(failed).toMatchObject({ status: 'failed', errorMessage: 'failure' });
+      expect(failed?.stackTrace).toBeUndefined();
     });
 
     it('parses the empty report SwiftPM writes without XCTest tests', () => {
@@ -107,6 +138,17 @@ describe('parseJunitXml', () => {
         stackTrace: 'boom at a.swift:3',
       });
     });
+  });
+
+  it('counts every suite when only one of several is named TestResults', () => {
+    const result = parseJunitXml(
+      `<testsuites>
+        <testsuite name="TestResults" time="1"><testcase classname="a" name="x" time="1" /></testsuite>
+        <testsuite name="other" time="2"><testcase name="y" time="2" /></testsuite>
+      </testsuites>`,
+    );
+
+    expect(result.summary.duration).toBe(3);
   });
 
   it('keeps the suite name of non-SwiftPM reports that also have classname', () => {

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Captured from swift test in parallel mode with xunit-output, two test targets, unedited below this line. swift version: swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1), Target: arm64-apple-macosx27.0.0 (Command Line Tools, no XCTest). -->
+<testsuites>
+    <testsuite name="TestResults" errors="0" tests="1" failures="0" skipped="1" time="0.001342959">
+        <testcase classname="BetaTests.Shared" name="skipped()">
+            <skipped>off → beta</skipped>
+        </testcase>
+        <testcase classname="BetaTests.Shared" name="same()" time="0.000358583"/>
+    </testsuite>
+    <testsuite name="TestResults" errors="0" tests="2" failures="1" skipped="0" time="0.001481541">
+        <testcase classname="AlphaTests.Shared" name="same()" time="0.000287292"/>
+        <testcase classname="AlphaTests.Shared" name="broken()" time="0.00071025">
+            <failure message="Expectation failed: answer() == 0 (error)"/>
+        </testcase>
+    </testsuite>
+</testsuites>

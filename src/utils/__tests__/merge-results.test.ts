@@ -74,8 +74,8 @@ describe('mergeTestRuns', () => {
       { filePath: '/junit.xml', parsed: emptyXctestRun },
     ]);
 
-    expect(result.summary.total).toBe(6);
-    expect(result.summary.duration).toBe(0.37);
+    expect(result.summary.total).toBe(10);
+    expect(result.summary.duration).toBe(0.001562667);
   });
 
   it('concatenates suites from all runs', () => {

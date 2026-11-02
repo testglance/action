@@ -1,21 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Hand-written to match Event.JUnitXMLRecorder in swift-testing 6.4.2. Not captured from a run. -->
+<!-- Captured from swift test in parallel mode with xunit-output, unedited below this line. swift version: swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1), Target: arm64-apple-macosx27.0.0 (Command Line Tools, no XCTest). -->
 <testsuites>
-  <testsuite name="TestResults" errors="0" tests="6" failures="3" skipped="1" time="0.37">
-    <testcase classname="HatsCoreTests.ProfileNameTests" name="accepts(_:)" time="0.25" />
-    <testcase classname="HatsCoreTests.ProfileNameTests" name="rejects(_:)" time="0.5" >
-      <failure message="Expectation failed: (name &#8594; &quot;Work&quot;) == nil (error)" />
-      <failure message="Expectation failed: (name &#8594; &quot;-work&quot;) == nil (error): must start with a letter&#10;see design.md" />
+  <testsuite name="TestResults" errors="0" tests="8" failures="5" skipped="2" time="0.001562667">
+    <testcase classname="ProbeTests.SecondSuite.Nested" name="inner()" time="0.000497334" />
+    <testcase classname="ProbeTests.SecondSuite" name="sameName()" time="0.000780375" >
+      <failure message="Expectation failed: answer() == 0 (error)" />
     </testcase>
-    <testcase classname="HatsCoreTests.ProfileColorTests" name="accepts(_:)" time="0.125" >
-      <failure message="Issue recorded (error)" />
+    <testcase classname="ProbeTests" name="displayNamed()" time="0.000907584" />
+    <testcase classname="ProbeTests" name="freeFunction()" time="0.000933417" />
+    <testcase classname="ProbeTests.FirstSuite" name="skippedWithComment()" >
+      <skipped>not on this platform &#8212; sorry</skipped>
     </testcase>
-    <testcase classname="HatsE2ETests.GuardTests" name="blocksWrites()" >
-      <skipped>Seatbelt is unavailable &#8212; requires macOS</skipped>
-    </testcase>
-    <testcase classname="HatsE2ETests.GuardTests" name="allowsReads()" >
+    <testcase classname="ProbeTests.FirstSuite" name="skippedPlain()" >
       <skipped />
     </testcase>
-    <testcase classname="HatsCoreTests" name="freeFunction()" time="0.125" />
+    <testcase classname="ProbeTests.FirstSuite" name="thrown()" time="0.0006975" >
+      <failure message="Caught error: .boom (error)" />
+    </testcase>
+    <testcase classname="ProbeTests.FirstSuite" name="sameName()" time="0.000704333" />
+    <testcase classname="ProbeTests.FirstSuite" name="parameterized(value:)" time="0.000743667" >
+      <failure message="Expectation failed: value == &quot;a&quot; (error)" />
+    </testcase>
+    <testcase classname="ProbeTests.FirstSuite" name="twoIssues()" time="0.000834542" >
+      <failure message="Expectation failed: name == &quot;work&quot; (error)" />
+      <failure message="Expectation failed: answer() == 1 (error): must be one&#10;second line &#8594; with arrow" />
+    </testcase>
   </testsuite>
 </testsuites>

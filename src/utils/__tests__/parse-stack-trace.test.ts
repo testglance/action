@@ -191,6 +191,24 @@ AssertionError: 1 != 2`;
       });
     });
 
+    it('does not read a timestamp in a failure message as a location', () => {
+      expect(parseFileLocation('Timed out at 2026-11-02 20:12:40.192')).toBeNull();
+      expect(parseFileLocation('Connection dropped at 20:12:40')).toBeNull();
+    });
+
+    it('finds the location in output captured by --experimental-xunit-message-failure', () => {
+      const message = `Test Suite 'Selected tests' started at 2026-11-02 20:12:40.192
+Test Suite 'XCFirstTests' started at 2026-11-02 20:12:40.194
+Test Case 'XCFirstTests.testFails' started at 2026-11-02 20:12:40.194
+/work/detail/Tests/ProbeTests/XCTestTests.swift:6: error: XCFirstTests.testFails : XCTAssertEqual failed: ("42") is not equal to ("1") - wrong → answer
+Test Case 'XCFirstTests.testFails' failed (0.001 seconds)`;
+
+      expect(parseFileLocation(message, '/work/detail')).toEqual({
+        path: 'Tests/ProbeTests/XCTestTests.swift',
+        line: 6,
+      });
+    });
+
     it('skips SwiftPM checkouts and toolchain frames', () => {
       const trace = `/Users/runner/work/hats/hats/.build/checkouts/swift-argument-parser/Sources/ArgumentParser/Parsing.swift:40: error: boom
 /Applications/Xcode_27.1.app/Contents/Developer/Platforms/MacOSX.platform/usr/lib/swift/Foo.swift:9: error: boom
