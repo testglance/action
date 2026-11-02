@@ -263,6 +263,30 @@ describe('generateSummary', () => {
     expect(failureBlock).not.toContain('Selected tests');
   });
 
+  it('keeps failure text before a line that merely mentions an error', async () => {
+    const parsed = makeParsed({ failed: 1 }, [
+      {
+        name: 'a',
+        duration: 1,
+        tests: [
+          {
+            name: 't',
+            suite: 'a',
+            status: 'failed',
+            duration: 1,
+            errorMessage: 'Expected status 200\nReceived: error: connection refused',
+          },
+        ],
+      },
+    ]);
+
+    await generateSummary({ parsed, apiSuccess: true });
+
+    const rawCalls = mockSummary.addRaw.mock.calls.map((c: string[]) => c[0]);
+    const failureBlock = rawCalls.find((c: string) => c.includes('[!CAUTION]'));
+    expect(failureBlock).toContain('Expected status 200');
+  });
+
   it('truncates error messages longer than 200 characters', async () => {
     const longError = 'A'.repeat(250);
     const parsed = makeParsed({ failed: 1 }, [

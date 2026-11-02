@@ -1,4 +1,6 @@
+import { basename } from 'node:path';
 import { discoverReportFiles } from './discover-files';
+import { findSwiftTestingReport } from './swiftpm-report-pair';
 
 export const AUTO_DETECT_PATTERNS = [
   '**/test-results/**/*.xml',
@@ -8,8 +10,6 @@ export const AUTO_DETECT_PATTERNS = [
   '**/test-results/**/*.json',
   '**/ctrf-report.json',
   '**/test-report.json',
-  // SwiftPM derives this name from --xunit-output, so it sits beside the file the user named.
-  '**/*-swift-testing.xml',
 ] as const;
 
 export async function autoDetectReportFiles(): Promise<{
@@ -23,6 +23,12 @@ export async function autoDetectReportFiles(): Promise<{
     for (const file of found) {
       seen.add(file);
     }
+  }
+
+  for (const file of [...seen]) {
+    if (basename(file) !== 'junit.xml') continue;
+    const swiftTestingReport = await findSwiftTestingReport(file);
+    if (swiftTestingReport) seen.add(swiftTestingReport);
   }
 
   return {

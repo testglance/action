@@ -3,7 +3,7 @@
 **Purpose:** How the two report formats are parsed and normalized into `ParsedTestRun`, plus format/framework detection, file discovery, result merging, and stack-trace location extraction.
 **Read this when:** You are adding a report format, fixing a parsing bug, or touching file discovery / format detection / result merging / stack-trace parsing.
 
-Both parsers emit the same normalized contract: `ParsedTestRun` (`src/types.ts:1`). See [data-model](./data-model.md) for the shape. Parse failures throw `ParseError` and are handled non-blockingly — see [observability](./observability.md) and [known-issues](./known-issues.md).
+Both parsers emit the same normalized contract: `ParsedTestRun` (`src/types.ts`). See [data-model](./data-model.md) for the shape. Parse failures throw `ParseError` and are handled non-blockingly — see [observability](./observability.md) and [known-issues](./known-issues.md).
 
 ## Critical rule
 
@@ -13,8 +13,8 @@ Both parsers emit the same normalized contract: `ParsedTestRun` (`src/types.ts:1
 
 `src/index.ts` orchestrates:
 
-1. Discover files — `discoverReportFiles` (`report-path` given) or `autoDetectReportFiles` (no input), then `withSwiftPmReportPairs` adds the other half of a SwiftPM report.
-2. Parse each file — `parseFile` (`src/index.ts:119`) picks a parser via `detectFormat`, with a dual-parse fallback.
+1. Discover files — `discoverReportFiles` (`report-path` given) or `autoDetectReportFiles` (no input). Auto-detect adds `junit-swift-testing.xml` beside a detected `junit.xml`; an explicit `report-path` that leaves it out gets a warning.
+2. Parse each file — `parseFile` (`src/index.ts`) picks a parser via `detectFormat`, with a dual-parse fallback.
 3. Merge — `mergeTestRuns` combines per-file `ParsedTestRun`s into one.
 4. Framework detection — `detectRunFramework` (`src/utils/detect-run-framework.ts`) labels the run for the meta envelope.
 
@@ -22,25 +22,25 @@ Both parsers emit the same normalized contract: `ParsedTestRun` (`src/types.ts:1
 
 ## JUnit parser — `src/parsers/junit.ts`
 
-Entry: `parseJunitXml(content)` (`src/parsers/junit.ts:105`).
+Entry: `parseJunitXml(content)` (`src/parsers/junit.ts`).
 
-### fast-xml-parser config (`src/parsers/junit.ts:7`)
+### fast-xml-parser config (`src/parsers/junit.ts`)
 
 - `ignoreAttributes: false`, `attributeNamePrefix: '@_'` — attributes become keys like `@_name`, `@_time`.
 - `textNodeName: '#text'` — element text (e.g. a `<failure>` body) lands under `#text`.
-- `isArray` forces `testsuite`, `testcase`, `property` to always be arrays (`src/parsers/junit.ts:11`) — single-element cases don't collapse to objects.
+- `isArray` forces `testsuite`, `testcase`, `property` to always be arrays (`src/parsers/junit.ts`) — single-element cases don't collapse to objects.
 - `trimValues: true`.
 - `htmlEntities: true` — decodes numeric references. Swift Testing encodes every non-ASCII character and newline this way (`&#8594;`, `&#10;`). Test and suite names are then collapsed to one line, because they go into Markdown tables.
-- `processEntities` is bounded (billion-laughs guard): `maxTotalExpansions: 1_000_000`, `maxExpandedLength: 10_000_000`, `maxEntityCount: 100`, with `appliesTo: 'external'` so the limits cover DOCTYPE entities and not numeric references, which can't amplify and which large reports have millions of (`src/parsers/junit.ts:13`). See [security](./security.md).
+- `processEntities` is bounded (billion-laughs guard): `maxTotalExpansions: 1_000_000`, `maxExpandedLength: 10_000_000`, `maxEntityCount: 100`, with `appliesTo: 'external'` so the limits cover DOCTYPE entities and not numeric references, which can't amplify and which large reports have millions of (`src/parsers/junit.ts`). See [security](./security.md).
 
 ### Flow
 
-1. Strip a leading UTF-8 BOM (`﻿`) and `trim()`; empty input throws `ParseError('JUnit XML is empty')` (`src/parsers/junit.ts:113`).
-2. `xmlParser.parse` wrapped in try/catch; any throw becomes `ParseError('Failed to parse JUnit XML: …')` (`src/parsers/junit.ts:120`).
-3. Root handling (`src/parsers/junit.ts:127`): prefer a `<testsuites>` root (reads `@_time` as `rootDuration`, recurses its inner `testsuite[]`); else fall back to a top-level `<testsuite>` root. If neither exists, `suites` stays empty (total 0).
-4. `flattenSuites` (`src/parsers/junit.ts:80`) recurses nested `<testsuite>` elements. A suite emits a `ParsedSuite` only when it has direct `<testcase>` children; nested suites are flattened to siblings. Name falls back `@_name → parentName → 'unknown'`.
+1. Strip a leading UTF-8 BOM (`﻿`) and `trim()`; empty input throws `ParseError('JUnit XML is empty')` (`src/parsers/junit.ts`).
+2. `xmlParser.parse` wrapped in try/catch; any throw becomes `ParseError('Failed to parse JUnit XML: …')` (`src/parsers/junit.ts`).
+3. Root handling (`src/parsers/junit.ts`): prefer a `<testsuites>` root (reads `@_time` as `rootDuration`, recurses its inner `testsuite[]`); else fall back to a top-level `<testsuite>` root. If neither exists, `suites` stays empty (total 0).
+4. `flattenSuites` (`src/parsers/junit.ts`) recurses nested `<testsuite>` elements. A suite emits a `ParsedSuite` only when it has direct `<testcase>` children; nested suites are flattened to siblings. Name falls back `@_name → parentName → 'unknown'`.
 
-### resolveStatus precedence (`src/parsers/junit.ts:21`)
+### resolveStatus precedence (`src/parsers/junit.ts`)
 
 Checked in order; first match wins:
 
@@ -73,19 +73,19 @@ Checked against captured reports in `fixtures/junit-swift*.xml`. Each fixture re
   | No `--parallel`, XCTest enabled         | Not written                                       | Swift Testing results     |
   | XCTest not enabled (Command Line Tools) | Swift Testing results                             | Not written               |
 
-  `withSwiftPmReportPairs` (`src/utils/swiftpm-report-pair.ts`) reads both halves whichever one `report-path` or auto-detect found, so naming only `junit.xml` still includes the Swift Testing results.
+  Auto-detect reads both, using `findSwiftTestingReport` (`src/utils/swiftpm-report-pair.ts`) beside any detected `junit.xml`. A `report-path` naming only one file reads only that file, and if it leaves out a `-swift-testing.xml` beside it, the action warns instead of merging, because a workflow may report each half in its own step and the sibling may be stale.
 
 - **Create the directory first** (`mkdir -p test-results`). A single Swift Testing product opens the file directly, and if the directory is missing it runs no tests, prints `No such file or directory` and `swift test` exits 1, even when every test would pass. Two cases survive only because another writer creates the directory first: `--parallel` with XCTest enabled, and several test products.
 - **`XCTSkip` is reported as passed.** SwiftPM's `XUnitGenerator` only knows success or failure and writes no `<skipped>`, so the parser can't tell. Swift Testing skips are reported correctly.
 - **No source locations.** Swift Testing failures carry only a message and XCTest failures only say `failure`, so annotations fall back to the report file. XCTest's hidden `--experimental-xunit-message-failure` puts the test output in the message, where `resolveLocation` (`src/output/check-run.ts`) can find its `File.swift:line: error:` line.
 
-### Per-testcase extraction (`src/parsers/junit.ts:58`)
+### Per-testcase extraction (`src/parsers/junit.ts`)
 
 - `name` = `@_name`, fallback `'unknown'`.
 - `duration` = `parseFloat(@_time) || 0`.
 - `file` = `@_file` (only if present); `line` = `parseInt(@_line)` (only if `Number.isFinite`).
 
-### Summary (`src/parsers/junit.ts:148`)
+### Summary (`src/parsers/junit.ts`)
 
 Counts recounted from `allTests` (flattened across suites). `duration` = `rootDuration` from `<testsuites @_time>` if present, else `flattenSuites`' `runTime`: each suite's declared `@_time`, falling back to the sum of its tests for a split `TestResults` suite with no declared time.
 
@@ -93,28 +93,28 @@ Counts recounted from `allTests` (flattened across suites). `duration` = `rootDu
 
 ## CTRF parser — `src/parsers/ctrf.ts`
 
-Entry: `parseCtrfJson(content)` (`src/parsers/ctrf.ts:66`). Uses native `JSON.parse` (no schema library).
+Entry: `parseCtrfJson(content)` (`src/parsers/ctrf.ts`). Uses native `JSON.parse` (no schema library).
 
 ### Flow
 
-1. Empty / whitespace-only input throws `ParseError('CTRF file is empty')` (`src/parsers/ctrf.ts:67`).
-2. `JSON.parse` failure → `ParseError('Invalid JSON: …')` (`src/parsers/ctrf.ts:75`).
-3. `validateCtrfStructure` (`src/parsers/ctrf.ts:41`) throws `ParseError` for each missing required field: `results`, `results.tests` (must be array), `results.tool`, `results.tool.name` (string), `results.summary`.
+1. Empty / whitespace-only input throws `ParseError('CTRF file is empty')` (`src/parsers/ctrf.ts`).
+2. `JSON.parse` failure → `ParseError('Invalid JSON: …')` (`src/parsers/ctrf.ts`).
+3. `validateCtrfStructure` (`src/parsers/ctrf.ts`) throws `ParseError` for each missing required field: `results`, `results.tests` (must be array), `results.tool`, `results.tool.name` (string), `results.summary`.
 
-### STATUS_MAP (`src/parsers/ctrf.ts:33`)
+### STATUS_MAP (`src/parsers/ctrf.ts`)
 
-| CTRF status           | normalized                                               |
-| --------------------- | -------------------------------------------------------- |
-| `passed`              | `passed`                                                 |
-| `failed`              | `failed`                                                 |
-| `skipped`             | `skipped`                                                |
-| `pending`             | `skipped`                                                |
-| `other`               | `errored`                                                |
-| _(anything unmapped)_ | `errored` (via `?? 'errored'`, `src/parsers/ctrf.ts:87`) |
+| CTRF status           | normalized                                            |
+| --------------------- | ----------------------------------------------------- |
+| `passed`              | `passed`                                              |
+| `failed`              | `failed`                                              |
+| `skipped`             | `skipped`                                             |
+| `pending`             | `skipped`                                             |
+| `other`               | `errored`                                             |
+| _(anything unmapped)_ | `errored` (via `?? 'errored'`, `src/parsers/ctrf.ts`) |
 
-### Per-test extraction (`src/parsers/ctrf.ts:84`)
+### Per-test extraction (`src/parsers/ctrf.ts`)
 
-- Suite name = `test.suite || test.filePath || toolName` (`src/parsers/ctrf.ts:85`) — this fallback chain is why merge does the "generic name" rename (below).
+- Suite name = `test.suite || test.filePath || toolName` (`src/parsers/ctrf.ts`) — this fallback chain is why merge does the "generic name" rename (below).
 - `duration` = `(test.duration ?? 0) / 1000` — CTRF durations are **milliseconds**, normalized to **seconds**.
 - Error fields only attached when status is `failed`/`errored`: `errorMessage` = `test.message`; `errorType` = first line of `test.trace`; `stackTrace` = full `test.trace`.
 - `file` = `test.filePath`; `line` = `test.line` (only if `typeof === 'number'`).
@@ -123,13 +123,13 @@ Entry: `parseCtrfJson(content)` (`src/parsers/ctrf.ts:66`). Uses native `JSON.pa
 
 - Tests are grouped into a `Map` keyed by suite name, preserving first-seen order.
 - `toolName` (`results.tool.name`) is captured and returned on `ParsedTestRun.toolName` — feeds [framework detection](#framework-detection) and the merge rename.
-- Counts recounted from `allTests`. `duration` = `(summary.stop - summary.start) / 1000` when both timestamps present, else sum of per-suite durations (`src/parsers/ctrf.ts:122`).
+- Counts recounted from `allTests`. `duration` = `(summary.stop - summary.start) / 1000` when `start` is positive and `stop` is later, else sum of per-suite durations (`src/parsers/ctrf.ts`).
 
 ---
 
 ## Format detection — `src/utils/detect-format.ts`
 
-`detectFormat(filePath)` (`src/utils/detect-format.ts:3`) maps by file extension only:
+`detectFormat(filePath)` (`src/utils/detect-format.ts`) maps by file extension only:
 
 | Extension     | format  |
 | ------------- | ------- |
@@ -137,14 +137,14 @@ Entry: `parseCtrfJson(content)` (`src/parsers/ctrf.ts:66`). Uses native `JSON.pa
 | `.json`       | `ctrf`  |
 | anything else | `null`  |
 
-When `report-format: auto` and the extension yields `null`, `parseFile` (`src/index.ts:127`) **dual-parses**: try JUnit, and on any throw fall back to CTRF. An explicit `report-format` input bypasses detection.
+When `report-format: auto` and the extension yields `null`, `parseFile` (`src/index.ts`) **dual-parses**: try JUnit, and on any throw fall back to CTRF. An explicit `report-format` input bypasses detection.
 
 ## Framework detection — `src/utils/detect-framework.ts`
 
-`detectFramework(reportPath, format, ctrfToolName?)` (`src/utils/detect-framework.ts:8`):
+`detectFramework(reportPath, format, ctrfToolName?)` (`src/utils/detect-framework.ts`):
 
 1. If `format === 'ctrf'` and a `ctrfToolName` is present, return it verbatim (CTRF tool name wins).
-2. Else match the report path against ordered `PATH_HEURISTICS` (`src/utils/detect-framework.ts:1`):
+2. Else match the report path against ordered `PATH_HEURISTICS` (`src/utils/detect-framework.ts`):
 
 | Path regex (case-insensitive) | framework        |
 | ----------------------------- | ---------------- |
@@ -155,7 +155,7 @@ When `report-format: auto` and the extension yields `null`, `parseFile` (`src/in
 | `swift-testing`               | `swift-testing`  |
 | `xctest`                      | `xctest`         |
 
-`swift-testing` and `xctest` are matched against the file name only, because absolute paths include the repo name.
+`swift-testing` and `xctest` are checked first, against the file name only, because absolute paths include the repo name.
 
 3. No match → `undefined`. The result populates `MetaEnvelope.framework` (see [data-model](./data-model.md)).
 
@@ -165,7 +165,7 @@ For a whole run, `detectRunFramework` (`src/utils/detect-run-framework.ts`) appl
 
 ## File discovery — `src/utils/discover-files.ts`
 
-`discoverReportFiles(pattern)` (`src/utils/discover-files.ts:5`):
+`discoverReportFiles(pattern)` (`src/utils/discover-files.ts`):
 
 - Glob detection via `GLOB_CHARS = /[*?{[]/`.
 - **No glob chars** → treat as a single literal path: return `[pattern]` if it `existsSync`, else `[]` (no error).
@@ -174,7 +174,7 @@ For a whole run, `detectRunFramework` (`src/utils/detect-run-framework.ts`) appl
 
 ## Auto-detect — `src/utils/auto-detect.ts`
 
-When no `report-path` is given, `autoDetectReportFiles()` (`src/utils/auto-detect.ts:13`) runs each pattern through `discoverReportFiles`, de-dups into a `Set`, and returns `{ files (sorted), scannedPatterns }`. The pattern list `AUTO_DETECT_PATTERNS` (`src/utils/auto-detect.ts:3`):
+When no `report-path` is given, `autoDetectReportFiles()` (`src/utils/auto-detect.ts`) runs each pattern through `discoverReportFiles`, de-dups into a `Set`, and returns `{ files (sorted), scannedPatterns }`. The pattern list `AUTO_DETECT_PATTERNS` (`src/utils/auto-detect.ts`):
 
 ```
 **/test-results/**/*.xml
@@ -184,23 +184,22 @@ When no `report-path` is given, `autoDetectReportFiles()` (`src/utils/auto-detec
 **/test-results/**/*.json
 **/ctrf-report.json
 **/test-report.json
-**/*-swift-testing.xml
 ```
 
-`scannedPatterns` is surfaced in the "No test report files found" warning (`src/index.ts:192`).
+`scannedPatterns` is surfaced in the "No test report files found" warning (`src/index.ts`).
 
 ---
 
 ## Merge — `src/utils/merge-results.ts`
 
-`mergeTestRuns(runs: FileParseResult[])` (`src/utils/merge-results.ts:9`):
+`mergeTestRuns(runs: FileParseResult[])` (`src/utils/merge-results.ts`):
 
-- **Single file** → passthrough, returns `runs[0].parsed` untouched (`src/utils/merge-results.ts:10`).
-- **Multiple files** → concatenate all suites, then recount the summary from scratch by walking every test (`src/utils/merge-results.ts:39`). `duration` is the sum of each run's `summary.duration`, so a parallel run keeps its wall-clock time. A run whose duration isn't positive (bad CTRF timestamps) contributes its suite durations instead.
+- **Single file** → passthrough, returns `runs[0].parsed` untouched (`src/utils/merge-results.ts`).
+- **Multiple files** → concatenate all suites, then recount the summary from scratch by walking every test (`src/utils/merge-results.ts`). `duration` is the sum of each run's `summary.duration`, so a parallel run keeps its wall-clock time.
 - `toolName` = first non-undefined across runs (`??=`).
-- **Generic-name rename** (`src/utils/merge-results.ts:21`): when a run has exactly one suite _and_ that suite's name equals its `toolName` (the CTRF "fell back to toolName" case), the suite is renamed to `basename(filePath)` so merged reports stay distinguishable. Otherwise the suite name is kept as-is.
+- **Generic-name rename** (`src/utils/merge-results.ts`): when a run has exactly one suite _and_ that suite's name equals its `toolName` (the CTRF "fell back to toolName" case), the suite is renamed to `basename(filePath)` so merged reports stay distinguishable. Otherwise the suite name is kept as-is.
 
-Note: `ParsedTestCase` does not carry its origin file across the merge — a documented limitation that affects annotation fallback (`src/index.ts:464`). See [known-issues](./known-issues.md).
+Note: `ParsedTestCase` does not carry its origin file across the merge — a documented limitation that affects annotation fallback (`src/index.ts`). See [known-issues](./known-issues.md).
 
 ---
 
@@ -208,10 +207,10 @@ Note: `ParsedTestCase` does not carry its origin file across the merge — a doc
 
 `parseFileLocation(stackTrace, workspace?)` (`src/utils/parse-stack-trace.ts`) extracts the first usable `{ path, line }` from a stack trace, used to place failure annotations on the right source line. See [output](./output.md).
 
-- Normalizes backslashes, removes the workspace prefix from each line, and scans only the first 1,000 characters of a line, because the regexes backtrack polynomially on long unbroken runs.
-- First looks for a `path:line: error:` line anywhere in the trace, which is the assertion in XCTest output and is the only format that allows spaces in a path. Then tries each `PatternExtractor` in `PATTERNS` order.
+- Normalizes backslashes, removes the workspace prefix from each line, and scans at most 2,000 lines and the first 1,000 characters of each, because the regexes backtrack polynomially on long unbroken runs. It also removes ANSI codes and `file://`, and only strips the workspace where a path starts.
+- First looks for a `path:line: error:` line anywhere in the trace, which is the assertion in XCTest output. Spaces are allowed in its path only after the workspace prefix. Then tries each `PatternExtractor` in `PATTERNS` order.
 - `parseFailureMessageLocation(message, workspace?)` is the narrower version for failure messages, which are free text: it accepts only `path:line: error:` lines, with the same dependency and line-number filtering.
-- The JS/TS pattern requires a file extension, so a time or address in a trace (`started at 20:12:40`, `at 127.0.0.1:8080:1`) isn't read as a location.
+- The JS/TS and diagnostic-line patterns require a path that looks like a source file: one with a directory or a known source extension. So `started at 20:12:40`, `at api.example.com:443:1` and `127.0.0.1:5432: error:` aren't locations.
 - Skips lines numbered 0 or above 1,000,000, and, when a workspace is given, absolute paths outside it.
 - Skips any match whose path is inside a dependency dir, matched as whole path segments after the workspace is removed: `DEPENDENCY_DIRS` (`node_modules/`, `site-packages/`, `.gradle/`, `vendor/`, `_vendor/`), and for `.swift` files only, `SWIFT_DEPENDENCY_DIRS` (`.build/` and `SourcePackages/checkouts/` for packages, `usr/lib/swift/` and `Contents/Developer/` for the toolchain).
 - JVM frames carry only a bare file name, so the JVM pattern filters on the frame's package instead — `JVM_LIBRARY_PACKAGES` (`src/utils/parse-stack-trace.ts`) covers the JDK, Kotlin/Scala/Groovy runtimes, and common test frameworks. Extend this list when a library frame gets annotated instead of user code.
@@ -235,7 +234,7 @@ Supported language patterns (in priority order):
 ## Adding a new format — checklist
 
 1. Write `src/parsers/<format>.ts` exporting a `parse…(content): ParsedTestRun` that **recounts** from leaf test elements and throws `ParseError` on bad input.
-2. Map its extension in `detectFormat` (`src/utils/detect-format.ts`) and wire it into `parseFile` (`src/index.ts:119`), including the dual-parse fallback if it shares an extension.
+2. Map its extension in `detectFormat` (`src/utils/detect-format.ts`) and wire it into `parseFile` (`src/index.ts`), including the dual-parse fallback if it shares an extension.
 3. Add path/tool heuristics to `detect-framework.ts` if relevant.
 4. Add auto-detect globs to `AUTO_DETECT_PATTERNS` if it has conventional output paths.
 5. Add fixtures + tests under `src/parsers/__tests__/`. See [testing](./testing.md).

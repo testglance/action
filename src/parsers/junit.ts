@@ -38,7 +38,7 @@ function toElements(value: unknown): Record<string, unknown>[] {
   });
 }
 
-function bodyOf(element: Record<string, unknown>): string | undefined {
+function readBody(element: Record<string, unknown>): string | undefined {
   const body = element['#text'];
   return body === undefined ? undefined : String(body);
 }
@@ -47,8 +47,8 @@ function describeIssues(
   value: unknown,
 ): Pick<ParsedTestCase, 'errorMessage' | 'errorType' | 'stackTrace'> {
   const elements = toElements(value);
-  const messages = elements.flatMap((el) => (el['@_message'] as string) || bodyOf(el) || []);
-  const stackTraces = elements.flatMap((el) => bodyOf(el) ?? []);
+  const messages = elements.flatMap((el) => (el['@_message'] as string) || readBody(el) || []);
+  const stackTraces = elements.flatMap((el) => readBody(el) ?? []);
   return {
     errorMessage: messages.length > 0 ? messages.join('\n') : undefined,
     errorType: elements[0]['@_type'] as string | undefined,
@@ -69,7 +69,7 @@ function resolveStatus(
     const [skip] = toElements(testcase['skipped']);
     return {
       status: 'skipped',
-      errorMessage: (skip['@_message'] as string | undefined) || bodyOf(skip),
+      errorMessage: (skip['@_message'] as string | undefined) || readBody(skip),
     };
   }
   return { status: 'passed' };
@@ -77,7 +77,7 @@ function resolveStatus(
 
 // A decoded &#10; in a name would split the Markdown tables that show it.
 function toSingleLine(text: string): string {
-  return text.replace(/\s*\n\s*/g, ' ');
+  return text.replace(/\s*[\r\n]+\s*/g, ' ').trim();
 }
 
 function extractTestCases(

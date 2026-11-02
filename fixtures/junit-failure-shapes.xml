@@ -7,5 +7,7 @@
     <testcase name="emptyMessage"><failure message="">from body</failure></testcase>
     <testcase name="emptySkipMessage"><skipped message="">skip body</skipped></testcase>
     <testcase name="two&#10;lines &#39;quoted&#39;" />
+    <testcase name="carriage&#13;return" />
+    <testcase name="trailing&#10;" />
   </testsuite>
 </testsuites>

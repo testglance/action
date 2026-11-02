@@ -93,6 +93,27 @@ describe('buildTemplateContext', () => {
     expect(ctx.results.duration).toBeCloseTo(12.345);
   });
 
+  it('gives templates the assertion on one line, as the other outputs show it', () => {
+    const parsed = makeParsed();
+    const failure = parsed.suites[0].tests.find((t) => t.name === 'logs out');
+    if (!failure) throw new Error('fixture test missing');
+    failure.errorMessage =
+      "Test Suite 'Selected tests' started at x\nTests/A.swift:6: error: wrong\nsecond line";
+
+    const ctx = buildTemplateContext({
+      parsed,
+      meta: {
+        commitSha: 'abc1234',
+        branch: 'feat/x',
+        workflowRunUrl: 'https://github.com/o/r/actions/runs/1',
+        timestamp: '2026-04-27T10:00:00Z',
+        jobName: 'tests',
+      },
+    });
+
+    expect(ctx.failures[0].errorMessage).toBe('Tests/A.swift:6: error: wrong second line');
+  });
+
   it('extracts failures (failed + errored) with error metadata', () => {
     const ctx = makeContext();
     expect(ctx.failures.map((f) => f.name)).toEqual(['logs out', 'errors on bad token']);

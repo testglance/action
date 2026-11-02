@@ -3,6 +3,7 @@ import {
   escapeHtml,
   formatDuration,
   truncate,
+  extractFailureExcerpt,
   renderProgressBar,
   statusEmoji,
   renderMetricsStrip,
@@ -59,7 +60,33 @@ describe('formatDuration', () => {
   });
 });
 
+describe('extractFailureExcerpt', () => {
+  it('drops the XCTest progress lines before the assertion', () => {
+    expect(
+      extractFailureExcerpt(
+        "Test Suite 'Selected tests' started at x\nTest Case 'A.b' started at x\nA.swift:6: error: y\nTest Case 'A.b' failed",
+      ),
+    ).toBe("A.swift:6: error: y\nTest Case 'A.b' failed");
+  });
+
+  it('keeps a message that starts with its own text', () => {
+    const message = 'Expected status 200\nfoo: error: bar';
+    expect(extractFailureExcerpt(message)).toBe(message);
+  });
+
+  it('keeps a message that is only progress lines', () => {
+    const message = "Test Suite 'Selected tests' started at x";
+    expect(extractFailureExcerpt(message)).toBe(message);
+  });
+});
+
 describe('truncate', () => {
+  it('does not cut an emoji in half', () => {
+    const result = truncate(`${'a'.repeat(6)}😀${'b'.repeat(10)}`, 10);
+    expect(result.isWellFormed()).toBe(true);
+    expect(result.length).toBeLessThanOrEqual(10);
+  });
+
   it('returns short string unchanged', () => {
     expect(truncate('hello', 10)).toBe('hello');
   });

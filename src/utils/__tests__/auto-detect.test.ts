@@ -5,6 +5,11 @@ vi.mock('../discover-files', () => ({
   discoverReportFiles: (...args: unknown[]) => mockDiscoverReportFiles(...args),
 }));
 
+const mockFindSwiftTestingReport = vi.fn();
+vi.mock('../swiftpm-report-pair', () => ({
+  findSwiftTestingReport: (...args: unknown[]) => mockFindSwiftTestingReport(...args),
+}));
+
 import { autoDetectReportFiles, AUTO_DETECT_PATTERNS } from '../auto-detect';
 
 beforeEach(() => {
@@ -20,8 +25,7 @@ describe('AUTO_DETECT_PATTERNS', () => {
     expect(AUTO_DETECT_PATTERNS).toContain('**/test-results/**/*.json');
     expect(AUTO_DETECT_PATTERNS).toContain('**/ctrf-report.json');
     expect(AUTO_DETECT_PATTERNS).toContain('**/test-report.json');
-    expect(AUTO_DETECT_PATTERNS).toContain('**/*-swift-testing.xml');
-    expect(AUTO_DETECT_PATTERNS).toHaveLength(8);
+    expect(AUTO_DETECT_PATTERNS).toHaveLength(7);
   });
 });
 
@@ -88,5 +92,28 @@ describe('autoDetectReportFiles', () => {
 
     expect(result.scannedPatterns).toEqual(AUTO_DETECT_PATTERNS);
     expect(result.files).toHaveLength(1);
+  });
+});
+
+describe('autoDetectReportFiles with SwiftPM reports', () => {
+  it('adds the Swift Testing report beside a detected junit.xml', async () => {
+    mockDiscoverReportFiles.mockImplementation((pattern: string) =>
+      Promise.resolve(pattern === '**/junit.xml' ? ['/repo/out/junit.xml'] : []),
+    );
+    mockFindSwiftTestingReport.mockResolvedValue('/repo/out/junit-swift-testing.xml');
+
+    const { files } = await autoDetectReportFiles();
+
+    expect(files).toEqual(['/repo/out/junit-swift-testing.xml', '/repo/out/junit.xml']);
+  });
+
+  it('does not look beside other report names', async () => {
+    mockDiscoverReportFiles.mockImplementation((pattern: string) =>
+      Promise.resolve(pattern === '**/test-report.xml' ? ['/repo/test-report.xml'] : []),
+    );
+
+    await autoDetectReportFiles();
+
+    expect(mockFindSwiftTestingReport).not.toHaveBeenCalled();
   });
 });

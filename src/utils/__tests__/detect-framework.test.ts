@@ -87,6 +87,12 @@ describe('detectFramework', () => {
       ).toBeUndefined();
     });
 
+    it('prefers the file name over a repo name that matches another framework', () => {
+      expect(
+        detectFramework('/home/runner/work/majestic/majestic/junit-swift-testing.xml', 'junit'),
+      ).toBe('swift-testing');
+    });
+
     it('leaves a generic SwiftPM junit.xml unlabelled', () => {
       expect(detectFramework('/test-results/junit.xml', 'junit')).toBeUndefined();
     });

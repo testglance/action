@@ -17,11 +17,7 @@ export function mergeTestRuns(runs: FileParseResult[]): ParsedTestRun {
 
   for (const { filePath, parsed } of runs) {
     toolName ??= parsed.toolName;
-    // CTRF's duration is stop - start, which missing or bad timestamps can make zero or negative.
-    duration +=
-      parsed.summary.duration > 0
-        ? parsed.summary.duration
-        : parsed.suites.reduce((sum, s) => sum + s.duration, 0);
+    duration += parsed.summary.duration;
 
     for (const suite of parsed.suites) {
       const isGenericName = parsed.toolName && suite.name === parsed.toolName;

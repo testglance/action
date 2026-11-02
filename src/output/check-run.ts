@@ -1,13 +1,14 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import {
+  isRepoFile,
   isValidSourceLine,
   normalizePath,
   parseFailureMessageLocation,
   parseFileLocation,
 } from '../utils/parse-stack-trace';
 import { resolveRunIdentity } from '../utils/run-context';
-import { failureExcerpt, formatDuration, renderMetricsStrip, truncate } from './format';
+import { extractFailureExcerpt, formatDuration, renderMetricsStrip, truncate } from './format';
 import type { ParsedTestRun, ParsedTestCase } from '../types';
 
 const MAX_ANNOTATIONS = 50;
@@ -90,7 +91,7 @@ async function reportCheckRunFailure(checkName: string, err: unknown): Promise<v
 
 function resolveLocation(test: ParsedTestCase): { path: string; line: number } | null {
   const workspace = process.env.GITHUB_WORKSPACE;
-  if (test.file) {
+  if (test.file && isRepoFile(test.file, workspace)) {
     return {
       path: normalizePath(test.file, workspace),
       line: isValidSourceLine(test.line) ? test.line : 1,
@@ -160,7 +161,7 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
           end_line: location ? location.line : 1,
           annotation_level: annotationLevel,
           message: truncate(
-            failureExcerpt(test.errorMessage ?? 'Test failed'),
+            extractFailureExcerpt(test.errorMessage ?? 'Test failed'),
             MAX_ANNOTATION_MESSAGE_LENGTH,
           ),
           title: truncate(test.name, MAX_ANNOTATION_TITLE_LENGTH),

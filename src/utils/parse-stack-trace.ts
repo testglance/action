@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from 'node:util';
+
 const DEPENDENCY_DIRS = ['node_modules/', 'site-packages/', '.gradle/', 'vendor/', '_vendor/'];
 const SWIFT_DEPENDENCY_DIRS = [
   '.build/',
@@ -6,9 +8,10 @@ const SWIFT_DEPENDENCY_DIRS = [
   'Contents/Developer/',
 ];
 
-// A location is near the start of a line, and these regexes backtrack polynomially on long lines,
-// which failure messages (hex dumps, tokens) can contain.
+// These regexes backtrack polynomially on long lines, which failure output (hex dumps, tokens) can
+// contain, and the cost repeats for every failed test. A location is near the start of a line.
 const MAX_SCANNED_LINE_LENGTH = 1000;
+const MAX_SCANNED_LINES = 2000;
 const MAX_SOURCE_LINE = 1_000_000;
 
 function isDependencyPath(filePath: string): boolean {
@@ -17,6 +20,18 @@ function isDependencyPath(filePath: string): boolean {
     : DEPENDENCY_DIRS;
   const rooted = `/${filePath}`;
   return dirs.some((dir) => rooted.includes(`/${dir}`));
+}
+
+// Without a directory, "payments.internal" and "api.example.com" look just like file names.
+const SOURCE_EXTENSIONS = new Set(
+  'c cc cjs coffee cpp cs cts cxx dart ex exs fs go groovy h hpp java js jsx kt kts lua m mjs mm mts php pl py rb rs scala sh svelte swift ts tsx vb vue zig'.split(
+    ' ',
+  ),
+);
+
+function looksLikeSourcePath(path: string): boolean {
+  if (path.includes('/')) return true;
+  return SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf('.') + 1).toLowerCase());
 }
 
 export function isValidSourceLine(line: number | undefined): line is number {
@@ -61,17 +76,27 @@ function toForwardSlashes(path: string): string {
   return path.replaceAll('\\', '/');
 }
 
-function workspaceRoot(workspace?: string): string | undefined {
+function toWorkspaceRoot(workspace?: string): string | undefined {
   return workspace ? toForwardSlashes(workspace).replace(/\/+$/, '') : undefined;
 }
 
 export function normalizePath(filePath: string, workspace?: string): string {
   let p = toForwardSlashes(filePath);
-  const root = workspaceRoot(workspace);
+  const root = toWorkspaceRoot(workspace);
   if (root && p.startsWith(`${root}/`)) p = p.slice(root.length + 1);
   if (p.startsWith('./')) p = p.slice(2);
   if (p.startsWith('/')) p = p.slice(1);
   return p;
+}
+
+const ABSOLUTE_PATH = /^(?:[A-Za-z]:)?\//;
+
+export function isRepoFile(filePath: string, workspace?: string): boolean {
+  const root = toWorkspaceRoot(workspace);
+  let path = toForwardSlashes(filePath);
+  if (root && path.startsWith(`${root}/`)) path = path.slice(root.length + 1);
+  if (isDependencyPath(path)) return false;
+  return !(workspace && ABSOLUTE_PATH.test(path));
 }
 
 interface FileLocation {
@@ -82,14 +107,16 @@ interface FileLocation {
 type PatternExtractor = (line: string) => FileLocation | null;
 
 const PATTERNS: PatternExtractor[] = [
-  // JS/TS: at Something (path:line:col) or at path:line:col. The path must have a file extension,
-  // so "started at 20:12:40" and "at 127.0.0.1:8080:1" in a failure message aren't locations.
+  // JS/TS: at Something (path:line:col) or at path:line:col. The path must look like a source file,
+  // so "started at 20:12:40" and "at api.example.com:443:1" aren't locations.
   (line) => {
     const match = line.match(
-      /\bat\s+(?:[^()]*\(([^()]+\.[a-z]\w*):(\d+):\d+\)|([^\s()]+\.[a-z]\w*):(\d+):\d+)/i,
+      /\bat\s+(?:[^()]*\(([^()]+\.[a-z]\w*):(\d+):\d+\)|([^()]+?\.[a-z]\w*):(\d+):\d+)/i,
     );
     if (!match) return null;
-    return { path: match[1] ?? match[3], line: Number.parseInt(match[2] ?? match[4], 10) };
+    const path = match[1] ?? match[3];
+    if (!looksLikeSourcePath(path)) return null;
+    return { path, line: Number.parseInt(match[2] ?? match[4], 10) };
   },
 
   // Python: File "path", line N
@@ -110,21 +137,23 @@ const PATTERNS: PatternExtractor[] = [
 
   // Go: path/file.go:N
   (line) => {
-    const match = line.match(/([\w./-]+\.go):(\d+)/);
+    const match = line.includes('.go:') ? line.match(/([\w./-]+\.go):(\d+)/) : null;
     if (!match) return null;
     return { path: match[1], line: Number.parseInt(match[2], 10) };
   },
 
   // Ruby: path/file.rb:N:in
   (line) => {
-    const match = line.match(/([\w./-]+\.rb):(\d+)/);
+    const match = line.includes('.rb:') ? line.match(/([\w./-]+\.rb):(\d+)/) : null;
     if (!match) return null;
     return { path: match[1], line: Number.parseInt(match[2], 10) };
   },
 
   // Swift (XCTest and Swift Testing): path/File.swift:line[:col]
   (line) => {
-    const match = line.match(/((?:[A-Za-z]:\/)?[^\s:'"()<>[\]]+\.swift):(\d+)/);
+    const match = line.includes('.swift:')
+      ? line.match(/((?:[A-Za-z]:\/)?[^\s:'"()<>[\]]+\.swift):(\d+)/)
+      : null;
     if (!match) return null;
     return { path: match[1], line: Number.parseInt(match[2], 10) };
   },
@@ -137,15 +166,24 @@ const PATTERNS: PatternExtractor[] = [
   },
 ];
 
-// XCTest and compilers write "path:line: error: message" at the start of a line. This is the
-// assertion itself, unlike other paths in captured output, and only this format allows spaces.
-const ERROR_LINE_PATTERN: PatternExtractor = (line) => {
-  const match = line.match(/^\s*((?:[A-Za-z]:\/)?[\w./~][^:]*\.\w+):(\d+)(?::\d+)?: error:/);
-  if (!match) return null;
-  return { path: match[1], line: Number.parseInt(match[2], 10) };
-};
+const DIAGNOSTIC_LINE = /^\s*((?:[A-Za-z]:\/)?[^:]+\.\w+):(\d+)(?::\d+)?: error:/;
 
-function firstLocation(
+// XCTest and compilers write "path:line: error: message" at the start of a line. This is the
+// assertion itself, unlike other paths in captured output. Spaces are only part of the path when
+// the workspace prefix shows where it starts; otherwise they are prose ("Build failed in a.swift").
+function createDiagnosticLineExtractor(root?: string): PatternExtractor {
+  return (line) => {
+    const match = line.match(DIAGNOSTIC_LINE);
+    if (!match) return null;
+    const inWorkspace = root !== undefined && match[1].startsWith(`${root}/`);
+    const path = inWorkspace ? match[1].slice(root.length + 1) : match[1];
+    if (!inWorkspace && /\s/.test(path)) return null;
+    if (!looksLikeSourcePath(path)) return null;
+    return { path, line: Number.parseInt(match[2], 10) };
+  };
+}
+
+function findFirstLocation(
   lines: string[],
   patterns: PatternExtractor[],
   workspace?: string,
@@ -153,30 +191,41 @@ function firstLocation(
   for (const line of lines) {
     for (const extract of patterns) {
       const result = extract(line);
-      if (!result || !isValidSourceLine(result.line) || isDependencyPath(result.path)) continue;
-      // The workspace is already stripped, so an absolute path here isn't in the repo.
-      if (workspace && /^(?:[A-Za-z]:)?\//.test(result.path)) continue;
-      return { path: normalizePath(result.path), line: result.line };
+      if (result && isValidSourceLine(result.line) && isRepoFile(result.path, workspace)) {
+        return { path: normalizePath(result.path), line: result.line };
+      }
     }
   }
   return null;
 }
 
-function toScannableLines(text: string, workspace?: string): string[] {
-  const root = workspaceRoot(workspace);
-  return toForwardSlashes(text)
+function toScannableLines(text: string): string[] {
+  return text
     .split('\n')
-    .map((line) => (root ? line.replaceAll(`${root}/`, '') : line))
-    .map((line) => line.slice(0, MAX_SCANNED_LINE_LENGTH));
+    .slice(0, MAX_SCANNED_LINES)
+    .map((line) =>
+      toForwardSlashes(stripVTControlCharacters(line))
+        .replace(/file:\/\/(?:\/(?=[A-Za-z]:\/))?/g, '')
+        .slice(0, MAX_SCANNED_LINE_LENGTH),
+    );
+}
+
+// Only where a path starts, so a longer path containing the workspace isn't spliced together.
+function stripWorkspacePrefix(lines: string[], root?: string): string[] {
+  if (!root) return lines;
+  const escapedRoot = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const prefix = new RegExp(`(?<![^\\s("'=[])${escapedRoot}/`, 'g');
+  return lines.map((line) => line.replace(prefix, ''));
 }
 
 export function parseFileLocation(stackTrace: string, workspace?: string): FileLocation | null {
   if (!stackTrace) return null;
 
-  const lines = toScannableLines(stackTrace, workspace);
+  const root = toWorkspaceRoot(workspace);
+  const lines = toScannableLines(stackTrace);
   return (
-    firstLocation(lines, [ERROR_LINE_PATTERN], workspace) ??
-    firstLocation(lines, PATTERNS, workspace)
+    findFirstLocation(lines, [createDiagnosticLineExtractor(root)], workspace) ??
+    findFirstLocation(stripWorkspacePrefix(lines, root), PATTERNS, workspace)
   );
 }
 
@@ -188,5 +237,6 @@ export function parseFailureMessageLocation(
 ): FileLocation | null {
   if (!message) return null;
 
-  return firstLocation(toScannableLines(message, workspace), [ERROR_LINE_PATTERN], workspace);
+  const extractor = createDiagnosticLineExtractor(toWorkspaceRoot(workspace));
+  return findFirstLocation(toScannableLines(message), [extractor], workspace);
 }

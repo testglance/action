@@ -277,7 +277,7 @@ mkdir -p test-results
 swift test --parallel --xunit-output test-results/junit.xml
 ```
 
-SwiftPM writes XCTest results to that file and Swift Testing results to `junit-swift-testing.xml` beside it. TestGlance reads both, whether you leave `report-path` empty or name either file. These reports have no source locations by default, so inline annotations point at the report file, and SwiftPM reports `XCTSkip` tests as passed.
+SwiftPM writes XCTest results to that file and Swift Testing results to `junit-swift-testing.xml` beside it. Leave `report-path` empty or use a glob such as `test-results/*.xml` to read both. Naming only `junit.xml` reports that file and warns about the other. These reports have no source locations by default, so inline annotations point at the report file, and SwiftPM reports `XCTSkip` tests as passed.
 
 ### CTRF JSON (`.json`)
 

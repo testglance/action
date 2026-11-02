@@ -114,6 +114,13 @@ describe('parseCtrfJson', () => {
       expect(result.suites[0].name).toBe('pytest');
     });
 
+    it.each([['ctrf-zero-start.json'], ['ctrf-reversed-timestamps.json']])(
+      'sums suite durations when the timestamps are unusable (%s)',
+      (name) => {
+        expect(parseCtrfJson(fixture(name)).summary.duration).toBe(10);
+      },
+    );
+
     it('handles missing start/stop with zero duration', () => {
       expect(result.summary.duration).toBeGreaterThanOrEqual(0);
     });

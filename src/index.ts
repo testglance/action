@@ -8,7 +8,7 @@ import { detectFormat } from './utils/detect-format';
 import { detectRunFramework } from './utils/detect-run-framework';
 import { discoverReportFiles } from './utils/discover-files';
 import { autoDetectReportFiles } from './utils/auto-detect';
-import { withSwiftPmReportPairs } from './utils/swiftpm-report-pair';
+import { warnAboutUnreadSwiftTestingReports } from './utils/swiftpm-report-pair';
 import { resolveRunIdentity } from './utils/run-context';
 import { mergeTestRuns } from './utils/merge-results';
 import { handleApiUnreachable, handleApiError, handleUnexpectedError } from './utils/errors';
@@ -180,16 +180,18 @@ export async function run(): Promise<RunResult> {
     let files: string[];
 
     if (reportPath) {
-      files = await withSwiftPmReportPairs(await discoverReportFiles(reportPath));
+      files = await discoverReportFiles(reportPath);
 
       if (files.length === 0) {
         core.warning(`No report files found matching: ${reportPath}`);
         return { history: null };
       }
+
+      await warnAboutUnreadSwiftTestingReports(files);
     } else {
       core.info('No report-path provided, entering auto-detect mode');
       const result = await autoDetectReportFiles();
-      files = await withSwiftPmReportPairs(result.files);
+      files = result.files;
 
       if (files.length === 0) {
         const patterns = result.scannedPatterns.map((p) => `  - ${p}`).join('\n');

@@ -283,7 +283,7 @@ describe('createCheckRun', () => {
         checkName: 'Test Results',
         parsed: failedTest({
           name: 'n'.repeat(300),
-          errorMessage: `Test Suite started\nTests/A.swift:12: error: broke\n${output}`,
+          errorMessage: `Test Suite 'Selected tests' started\nTests/A.swift:12: error: broke\n${output}`,
         }),
       });
 
@@ -291,6 +291,37 @@ describe('createCheckRun', () => {
       expect(Buffer.byteLength(annotation.message)).toBeLessThanOrEqual(64 * 1024);
       expect(annotation.message.startsWith('Tests/A.swift:12: error: broke')).toBe(true);
       expect(annotation.title.length).toBeLessThanOrEqual(255);
+    });
+
+    it('falls through when the reported file is outside the workspace', async () => {
+      vi.stubEnv('GITHUB_WORKSPACE', '/home/runner/work/app/app');
+      try {
+        await createCheckRun({
+          githubToken: 'ghp_test',
+          checkName: 'Test Results',
+          parsed: failedTest({ file: '/usr/src/app/test/a.py' }),
+          reportFile: 'test-results/junit.xml',
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'test-results/junit.xml',
+        start_line: 1,
+      });
+    });
+
+    it('does not leave half an emoji in truncated annotation text', async () => {
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({ name: `${'n'.repeat(251)}😀${'n'.repeat(50)}` }),
+        reportFile: 'test-results/junit.xml',
+      });
+
+      const { title } = mockChecksCreate.mock.calls[0][0].output.annotations[0];
+      expect(title.isWellFormed()).toBe(true);
     });
 
     it('stays within the byte limit for multi-byte messages', async () => {

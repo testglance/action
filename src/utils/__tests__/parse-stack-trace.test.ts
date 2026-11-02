@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseJunitXml } from '../../parsers/junit';
 import {
+  isRepoFile,
   normalizePath,
   parseFailureMessageLocation,
   parseFileLocation,
@@ -462,5 +463,90 @@ describe('normalizePath', () => {
     expect(normalizePath('D:/a/app/app/test-results/junit.xml', 'D:\\a\\app\\app')).toBe(
       'test-results/junit.xml',
     );
+  });
+});
+
+describe('location parsing hardening', () => {
+  it.each([
+    ['payments.internal:8080: error: connection refused'],
+    ['127.0.0.1:5432: error: FATAL'],
+  ])('does not read a host and port as a diagnostic path: %s', (message) => {
+    expect(parseFailureMessageLocation(message)).toBeNull();
+    expect(parseFileLocation(message)).toBeNull();
+  });
+
+  it('does not read prose before a path as part of the path', () => {
+    const message = 'Build failed in Tests/A.swift:3: error: x';
+    expect(parseFailureMessageLocation(message)).toBeNull();
+    expect(parseFileLocation(message)).toEqual({ path: 'Tests/A.swift', line: 3 });
+  });
+
+  it('accepts a bare source file on a diagnostic line', () => {
+    expect(parseFailureMessageLocation('A.swift:3: error: x')).toEqual({
+      path: 'A.swift',
+      line: 3,
+    });
+  });
+
+  it('reads file:// frames as paths', () => {
+    const workspace = '/home/runner/work/app/app';
+    expect(parseFileLocation(`at t (file://${workspace}/test/a.test.mjs:3:5)`, workspace)).toEqual({
+      path: 'test/a.test.mjs',
+      line: 3,
+    });
+  });
+
+  it('skips a file:// frame outside the workspace for a later frame', () => {
+    const workspace = '/w/app';
+    const trace = `at file:///usr/lib/x.mjs:3:5\nat t (${workspace}/test/a.mjs:7:1)`;
+    expect(parseFileLocation(trace, workspace)).toEqual({ path: 'test/a.mjs', line: 7 });
+  });
+
+  it('removes the workspace only where a path starts', () => {
+    expect(parseFileLocation('/mnt/w/app/Tests/A.swift:3: error: x', '/w/app')).toBeNull();
+    const inner = 'bazel-out/sandbox/home/runner/work/app/app/pkg/x.go';
+    expect(parseFileLocation(`${inner}:3`, '/home/runner/work/app/app')?.path).toBe(inner);
+  });
+
+  it('reads a bare JS frame with a space in its path', () => {
+    expect(parseFileLocation('at my dir/a.js:3:5')).toEqual({ path: 'my dir/a.js', line: 3 });
+  });
+
+  it('reads a JS frame directly after an ANSI color code', () => {
+    expect(parseFileLocation('\u001b[90mat foo (src/a.ts:3:5)')).toEqual({
+      path: 'src/a.ts',
+      line: 3,
+    });
+  });
+
+  it('does not read a hostname as a JS frame', () => {
+    expect(parseFileLocation('at api.example.com:443:1')).toBeNull();
+  });
+
+  it('stays fast on a large body of long lines', () => {
+    const body = `${'a'.repeat(1000)}\n`.repeat(10_000);
+    const started = performance.now();
+    expect(parseFileLocation(body)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it('stops scanning after a bounded number of lines', () => {
+    const trace = `${'noise\n'.repeat(5000)}Tests/A.swift:3: error: x`;
+    expect(parseFileLocation(trace)).toBeNull();
+  });
+});
+
+describe('isRepoFile', () => {
+  it('accepts a relative path and a path in the workspace', () => {
+    expect(isRepoFile('test/a.py', '/w/app')).toBe(true);
+    expect(isRepoFile('/w/app/test/a.py', '/w/app')).toBe(true);
+  });
+
+  it('rejects an absolute path outside the workspace', () => {
+    expect(isRepoFile('/usr/src/app/test/a.py', '/w/app')).toBe(false);
+  });
+
+  it('rejects dependency code', () => {
+    expect(isRepoFile('node_modules/x/a.js', '/w/app')).toBe(false);
   });
 });

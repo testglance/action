@@ -63,19 +63,26 @@ describe('run() real integration (unmocked pipeline)', () => {
     expect(summary).toContain('should reject invalid password');
   });
 
-  it('reads the Swift Testing report beside a named SwiftPM report', async () => {
+  it('reports only the named SwiftPM file and warns about the unread half', async () => {
     const reports = mkdtempSync(join(tmpDir, 'swiftpm-'));
     const reportPath = join(reports, 'junit.xml');
-    copyFileSync('fixtures/junit-swiftpm-xctest.xml', reportPath);
+    copyFileSync('fixtures/junit-swiftpm-xctest-empty.xml', reportPath);
     copyFileSync('fixtures/junit-swift-testing.xml', join(reports, 'junit-swift-testing.xml'));
     vi.stubEnv('INPUT_REPORT-PATH', reportPath);
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
-    const { run } = await import('../index');
-    await run();
+    try {
+      const { run } = await import('../index');
+      await run();
 
-    const summary = readFileSync(summaryFile, 'utf-8');
-    expect(summary).toContain('✅ 6 passed');
-    expect(summary).toContain('❌ 5 failed');
+      const output = stdout.mock.calls.map((c) => String(c[0])).join('');
+      expect(output).toContain('::warning::');
+      expect(output).toContain('junit-swift-testing.xml');
+    } finally {
+      stdout.mockRestore();
+    }
+
+    expect(readFileSync(summaryFile, 'utf-8')).not.toContain('4 failed');
   });
 
   it('parses a real CTRF fixture through the same pipeline', async () => {

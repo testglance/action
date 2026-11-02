@@ -144,6 +144,8 @@ describe('parseJunitXml', () => {
 
     it('keeps a decoded test name on one line for Markdown tables', () => {
       expect(findShape("two lines 'quoted'")).toBeDefined();
+      expect(findShape('carriage return')).toBeDefined();
+      expect(findShape('trailing')).toBeDefined();
     });
   });
 

@@ -22,14 +22,14 @@ export function detectFramework(
     return ctrfToolName;
   }
 
-  for (const [pattern, framework] of PATH_HEURISTICS) {
-    if (pattern.test(reportPath)) {
+  for (const [pattern, framework] of FILE_NAME_HEURISTICS) {
+    if (pattern.test(basename(reportPath))) {
       return framework;
     }
   }
 
-  for (const [pattern, framework] of FILE_NAME_HEURISTICS) {
-    if (pattern.test(basename(reportPath))) {
+  for (const [pattern, framework] of PATH_HEURISTICS) {
+    if (pattern.test(reportPath)) {
       return framework;
     }
   }

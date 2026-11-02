@@ -13,7 +13,7 @@ import type {
   TrendIndicators,
 } from '../history/types';
 import {
-  failureExcerpt,
+  extractFailureExcerpt,
   escapeHtml,
   formatDuration,
   formatDurationPair,
@@ -486,7 +486,7 @@ function renderFailedTests(failedTests: ParsedTestCase[]): string {
   const items = shown
     .map((t) => {
       const error = truncate(
-        failureExcerpt(t.errorMessage ?? 'No error message'),
+        extractFailureExcerpt(t.errorMessage ?? 'No error message'),
         MAX_ERROR_MESSAGE_LENGTH,
       );
       let stackHtml = '';

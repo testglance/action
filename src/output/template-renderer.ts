@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import { readFileSync, statSync, realpathSync } from 'node:fs';
 import * as core from '@actions/core';
 import Handlebars from 'handlebars';
-import { escapeHtml, formatDuration, truncate } from './format';
+import { escapeHtml, extractFailureExcerpt, formatDuration, truncate } from './format';
 import type { ParsedTestRun, ParsedSuite, ParsedTestCase } from '../types';
 import type {
   DeltaComparison,
@@ -140,7 +140,7 @@ function collectFailures(parsed: ParsedTestRun): TemplateContextFailure[] {
         failed.push({
           name: test.name,
           suite: test.suite,
-          errorMessage: test.errorMessage ?? '',
+          errorMessage: extractFailureExcerpt(test.errorMessage ?? '').replaceAll('\n', ' '),
           stackTrace: test.stackTrace ?? '',
           duration: test.duration,
         });

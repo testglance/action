@@ -24,15 +24,20 @@ export function formatDurationPair(a: number, b: number): [string, string] {
 
 export function truncate(str: string, maxLen: number): string {
   if (str.length <= maxLen) return str;
-  return str.slice(0, maxLen - 3) + '...';
+  const kept = str.slice(0, maxLen - 3);
+  // Half of a surrogate pair is invalid text, which JSON APIs may reject.
+  const endsInHighSurrogate = /[\uD800-\uDBFF]$/.test(kept);
+  return `${endsInHighSurrogate ? kept.slice(0, -1) : kept}...`;
 }
+
+const XCTEST_PROGRESS_LINE = /^\s*Test (?:Suite|Case) '/;
 
 // XCTest's detailed failure output starts with suite and test progress lines, which would fill a
 // truncated message before reaching the assertion.
-export function failureExcerpt(message: string): string {
+export function extractFailureExcerpt(message: string): string {
   const lines = message.split('\n');
-  const assertionLine = lines.findIndex((line) => line.includes(': error:'));
-  return assertionLine > 0 ? lines.slice(assertionLine).join('\n') : message;
+  const firstContentLine = lines.findIndex((line) => !XCTEST_PROGRESS_LINE.test(line));
+  return firstContentLine > 0 ? lines.slice(firstContentLine).join('\n') : message;
 }
 
 export function renderProgressBar(passRate: number, width = 16): string {
