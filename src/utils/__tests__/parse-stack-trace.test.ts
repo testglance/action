@@ -203,6 +203,25 @@ Tests/HatsE2ETests/RunCommandTests.swift:21: error: exit code was 1`;
     });
   });
 
+  describe('dependency filtering of Swift package checkouts', () => {
+    it('skips Xcode SourcePackages checkouts', () => {
+      const trace = `/Users/me/DerivedData/App/SourcePackages/checkouts/lib/Sources/Lib.swift:4: error: boom
+Tests/AppTests/LoginTests.swift:9: error: failed`;
+
+      expect(parseFileLocation(trace)).toEqual({
+        path: 'Tests/AppTests/LoginTests.swift',
+        line: 9,
+      });
+    });
+
+    it('keeps project code in a directory that happens to be called checkouts', () => {
+      const trace = `Error: fail
+    at Object.<anonymous> (src/checkouts/cart.test.ts:7:1)`;
+
+      expect(parseFileLocation(trace)).toEqual({ path: 'src/checkouts/cart.test.ts', line: 7 });
+    });
+  });
+
   describe('dependency filtering', () => {
     it('skips node_modules frames and returns next valid frame', () => {
       const trace = `Error: fail

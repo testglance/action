@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written to match XUnitGenerator in SwiftPM 6.4.2. Not captured from a run. -->
+<testsuites>
+<testsuite name="TestResults" errors="0" tests="3" failures="1" time="0.75">
+<testcase classname="AppTests.LoginTests" name="testSucceeds" time="0.25">
+</testcase>
+<testcase classname="AppTests.LoginTests" name="testRejects" time="0.25">
+<failure message="failure"></failure>
+</testcase>
+<testcase classname="AppTests.SessionTests" name="testSucceeds" time="0.25">
+</testcase>
+</testsuite>
+</testsuites>

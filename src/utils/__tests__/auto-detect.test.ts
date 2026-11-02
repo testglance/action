@@ -20,7 +20,8 @@ describe('AUTO_DETECT_PATTERNS', () => {
     expect(AUTO_DETECT_PATTERNS).toContain('**/test-results/**/*.json');
     expect(AUTO_DETECT_PATTERNS).toContain('**/ctrf-report.json');
     expect(AUTO_DETECT_PATTERNS).toContain('**/test-report.json');
-    expect(AUTO_DETECT_PATTERNS).toHaveLength(7);
+    expect(AUTO_DETECT_PATTERNS).toContain('**/*-swift-testing.xml');
+    expect(AUTO_DETECT_PATTERNS).toHaveLength(8);
   });
 });
 

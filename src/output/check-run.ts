@@ -84,10 +84,9 @@ function resolveLocation(test: ParsedTestCase): { path: string; line: number } |
   if (test.file) {
     return { path: normalizePath(test.file, workspace), line: test.line ?? 1 };
   }
-  if (test.stackTrace) {
-    return parseFileLocation(test.stackTrace, workspace);
-  }
-  return null;
+  // SwiftPM reports have no stack trace; its detailed XCTest failure output lands in the message.
+  const trace = test.stackTrace ?? test.errorMessage;
+  return trace ? parseFileLocation(trace, workspace) : null;
 }
 
 export interface CheckRunOptions {
@@ -140,7 +139,9 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
         if (!location && !reportFile) continue;
 
         annotations.push({
-          path: location ? location.path : normalizePath(reportFile as string),
+          path: location
+            ? location.path
+            : normalizePath(reportFile as string, process.env.GITHUB_WORKSPACE),
           start_line: location ? location.line : 1,
           end_line: location ? location.line : 1,
           annotation_level: annotationLevel,

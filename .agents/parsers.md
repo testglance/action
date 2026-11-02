@@ -30,6 +30,7 @@ Entry: `parseJunitXml(content)` (`src/parsers/junit.ts:105`).
 - `textNodeName: '#text'` — element text (e.g. a `<failure>` body) lands under `#text`.
 - `isArray` forces `testsuite`, `testcase`, `property` to always be arrays (`src/parsers/junit.ts:11`) — single-element cases don't collapse to objects.
 - `trimValues: true`.
+- `htmlEntities: true` — decodes numeric references. Swift's XML writers encode every non-ASCII character and newline this way (`&#8594;`, `&#10;`).
 - `processEntities` is bounded (billion-laughs guard): `maxTotalExpansions: 1_000_000`, `maxExpandedLength: 10_000_000`, `maxEntityCount: 100` (`src/parsers/junit.ts:13`). See [security](./security.md).
 
 ### Flow
@@ -50,10 +51,20 @@ Checked in order; first match wins:
 | 3     | `<skipped>` (key present, any value incl. empty) | `skipped` |
 | 4     | none                                             | `passed`  |
 
-- `errorMessage` = `@_message` attr, falling back to the element's `#text` body.
-- `errorType` = `@_type` attr.
-- `stackTrace` = the `#text` body, only when non-empty.
-- `<skipped>` may be a self-closing tag (parsed as `''`) or carry `@_message`; presence is tested with `!== undefined`.
+- Presence of all three elements is tested with `!== undefined`, because a bare `<failure />` parses as `''`.
+- `errorMessage` = `@_message` attr, falling back to the element's `#text` body. Several `<failure>` or `<error>` elements on one test (Swift Testing writes one per issue) have their messages joined with newlines.
+- `errorType` = `@_type` attr of the first element.
+- `stackTrace` = the `#text` bodies, only when non-empty.
+- `<skipped>` may be a self-closing tag, carry `@_message`, or hold a comment in its body (Swift Testing).
+
+### SwiftPM reports (`swift test --xunit-output`)
+
+Format taken from the writers in Swift 6.4.2 (`Event.JUnitXMLRecorder` in swift-testing, `XUnitGenerator` in SwiftPM):
+
+- **One suite named `TestResults`.** The real suite is only in `classname`, and test identity is suite + name, so a suite with exactly this name is split by `classname`. Each split suite's `duration` is the sum of its tests; the run's `duration` stays the declared `@_time`, because Swift Testing runs tests in parallel.
+- **Two files.** With `--xunit-output test-results/junit.xml`, XCTest results go to that path (only with `--parallel`, and with zero test cases if the package has no XCTest tests) and Swift Testing results go to `test-results/junit-swift-testing.xml`. A `report-path` naming only `junit.xml` reports no Swift Testing results. Use a glob or auto-detect.
+- **The directory must exist.** Swift Testing opens the file with `fopen`, and a failure ends the test run, so create it first (`mkdir -p test-results`).
+- **No source locations.** Swift Testing failures carry only a message and XCTest failures only say `failure`, so annotations fall back to the report file. XCTest's hidden `--experimental-xunit-message-failure` puts the test output in the message, where `resolveLocation` (`src/output/check-run.ts`) can find a `File.swift:line`.
 
 ### Per-testcase extraction (`src/parsers/junit.ts:58`)
 
@@ -156,6 +167,7 @@ When no `report-path` is given, `autoDetectReportFiles()` (`src/utils/auto-detec
 **/test-results/**/*.json
 **/ctrf-report.json
 **/test-report.json
+**/*-swift-testing.xml
 ```
 
 `scannedPatterns` is surfaced in the "No test report files found" warning (`src/index.ts:192`).
@@ -167,7 +179,7 @@ When no `report-path` is given, `autoDetectReportFiles()` (`src/utils/auto-detec
 `mergeTestRuns(runs: FileParseResult[])` (`src/utils/merge-results.ts:9`):
 
 - **Single file** → passthrough, returns `runs[0].parsed` untouched (`src/utils/merge-results.ts:10`).
-- **Multiple files** → concatenate all suites, then recount the summary from scratch by walking every test (`src/utils/merge-results.ts:39`).
+- **Multiple files** → concatenate all suites, then recount the summary from scratch by walking every test (`src/utils/merge-results.ts:39`). `duration` is the sum of each run's `summary.duration`, so a parallel run keeps its wall-clock time.
 - `toolName` = first non-undefined across runs (`??=`).
 - **Generic-name rename** (`src/utils/merge-results.ts:21`): when a run has exactly one suite _and_ that suite's name equals its `toolName` (the CTRF "fell back to toolName" case), the suite is renamed to `basename(filePath)` so merged reports stay distinguishable. Otherwise the suite name is kept as-is.
 
@@ -180,7 +192,7 @@ Note: `ParsedTestCase` does not carry its origin file across the merge — a doc
 `parseFileLocation(stackTrace, workspace?)` (`src/utils/parse-stack-trace.ts`) extracts the first usable `{ path, line }` from a stack trace, used to place failure annotations on the right source line. See [output](./output.md).
 
 - Splits on newlines; for each line, tries each `PatternExtractor` in `PATTERNS` order.
-- Skips any match whose path is inside a dependency dir — `DEPENDENCY_DIRS` (`node_modules/`, `site-packages/`, `.gradle/`, `vendor/`, `_vendor/`, `.build/` and `checkouts/` for SwiftPM, `usr/lib/swift/` and `Contents/Developer/` for the Swift toolchain) — and keeps scanning.
+- Skips any match whose path is inside a dependency dir — `DEPENDENCY_DIRS` (`node_modules/`, `site-packages/`, `.gradle/`, `vendor/`, `_vendor/`, `.build/` and `SourcePackages/checkouts/` for Swift packages, `usr/lib/swift/` and `Contents/Developer/` for the Swift toolchain) — and keeps scanning.
 - JVM frames carry only a bare file name, so the JVM pattern filters on the frame's package instead — `JVM_LIBRARY_PACKAGES` (`src/utils/parse-stack-trace.ts`) covers the JDK, Kotlin/Scala/Groovy runtimes, and common test frameworks. Extend this list when a library frame gets annotated instead of user code.
 - `normalizePath(path, workspace?)` strips the `GITHUB_WORKSPACE` prefix when given, then a leading `./`, then a leading `/`. Annotations pass `GITHUB_WORKSPACE` (`src/output/check-run.ts`) because Swift's `#filePath` yields absolute runner paths (`/Users/runner/work/<repo>/<repo>/Tests/...`) that would otherwise never match a diff line.
 - Returns `null` if no non-dependency match is found.

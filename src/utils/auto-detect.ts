@@ -8,6 +8,8 @@ export const AUTO_DETECT_PATTERNS = [
   '**/test-results/**/*.json',
   '**/ctrf-report.json',
   '**/test-report.json',
+  // SwiftPM derives this name from --xunit-output, so it sits beside the file the user named.
+  '**/*-swift-testing.xml',
 ] as const;
 
 export async function autoDetectReportFiles(): Promise<{

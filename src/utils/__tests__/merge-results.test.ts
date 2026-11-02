@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { parseJunitXml } from '../../parsers/junit';
 import { mergeTestRuns } from '../merge-results';
 import type { ParsedTestRun } from '../../types';
 import type { FileParseResult } from '../merge-results';
@@ -56,6 +59,23 @@ describe('mergeTestRuns', () => {
     expect(result.summary.passed).toBe(2);
     expect(result.summary.failed).toBe(2);
     expect(result.summary.duration).toBe(3.0);
+  });
+
+  it('sums each run’s wall-clock duration, not per-suite test time', () => {
+    const parallelRun = parseJunitXml(
+      readFileSync(join(__dirname, '../../../fixtures/junit-swift-testing.xml'), 'utf-8'),
+    );
+    const emptyXctestRun = parseJunitXml(
+      readFileSync(join(__dirname, '../../../fixtures/junit-swiftpm-xctest-empty.xml'), 'utf-8'),
+    );
+
+    const result = mergeTestRuns([
+      { filePath: '/junit-swift-testing.xml', parsed: parallelRun },
+      { filePath: '/junit.xml', parsed: emptyXctestRun },
+    ]);
+
+    expect(result.summary.total).toBe(6);
+    expect(result.summary.duration).toBe(0.37);
   });
 
   it('concatenates suites from all runs', () => {

@@ -9,6 +9,114 @@ const fixture = (name: string) => readFileSync(join(__dirname, '../../../fixture
 const fixtureRaw = (name: string) => readFileSync(join(__dirname, '../../../fixtures', name));
 
 describe('parseJunitXml', () => {
+  describe('Swift Testing report (junit-swift-testing.xml)', () => {
+    let result: ParsedTestRun;
+    const findTest = (suite: string, name: string) =>
+      result.suites.find((s) => s.name === suite)?.tests.find((t) => t.name === name);
+
+    beforeAll(() => {
+      result = parseJunitXml(fixture('junit-swift-testing.xml'));
+    });
+
+    it('recounts statuses from test cases', () => {
+      expect(result.summary).toMatchObject({
+        total: 6,
+        passed: 2,
+        failed: 2,
+        skipped: 2,
+        errored: 0,
+      });
+    });
+
+    it('uses classname as the suite instead of the generic TestResults', () => {
+      expect(result.suites.map((s) => s.name)).toEqual([
+        'HatsCoreTests.ProfileNameTests',
+        'HatsCoreTests.ProfileColorTests',
+        'HatsE2ETests.GuardTests',
+        'HatsCoreTests',
+      ]);
+    });
+
+    it('keeps same-named tests in different Swift suites distinct', () => {
+      expect(findTest('HatsCoreTests.ProfileNameTests', 'accepts(_:)')?.status).toBe('passed');
+      expect(findTest('HatsCoreTests.ProfileColorTests', 'accepts(_:)')?.status).toBe('failed');
+    });
+
+    it('keeps every issue of a test with several failures', () => {
+      expect(findTest('HatsCoreTests.ProfileNameTests', 'rejects(_:)')?.errorMessage).toBe(
+        'Expectation failed: (name → "Work") == nil (error)\n' +
+          'Expectation failed: (name → "-work") == nil (error): must start with a letter\n' +
+          'see design.md',
+      );
+    });
+
+    it('reads the skip comment from the element body', () => {
+      expect(findTest('HatsE2ETests.GuardTests', 'blocksWrites()')?.errorMessage).toBe(
+        'Seatbelt is unavailable — requires macOS',
+      );
+      expect(findTest('HatsE2ETests.GuardTests', 'allowsReads()')?.errorMessage).toBeUndefined();
+    });
+
+    it('reports wall-clock run time, not the sum of tests that ran in parallel', () => {
+      expect(result.summary.duration).toBe(0.37);
+    });
+
+    it('gives each suite the sum of its test durations', () => {
+      expect(result.suites[0].duration).toBe(0.75);
+    });
+  });
+
+  describe('SwiftPM XCTest reports', () => {
+    it('uses classname as the suite (junit-swiftpm-xctest.xml)', () => {
+      const result = parseJunitXml(fixture('junit-swiftpm-xctest.xml'));
+
+      expect(result.suites.map((s) => s.name)).toEqual([
+        'AppTests.LoginTests',
+        'AppTests.SessionTests',
+      ]);
+      expect(result.summary).toMatchObject({ total: 3, passed: 2, failed: 1 });
+      expect(result.summary.duration).toBe(0.75);
+    });
+
+    it('parses the empty report SwiftPM writes without XCTest tests', () => {
+      const result = parseJunitXml(fixture('junit-swiftpm-xctest-empty.xml'));
+
+      expect(result.suites).toEqual([]);
+      expect(result.summary).toMatchObject({ total: 0, duration: 0 });
+    });
+  });
+
+  describe('failure element shapes', () => {
+    const parseSingleTest = (children: string) =>
+      parseJunitXml(
+        `<testsuites><testsuite name="s"><testcase name="t">${children}</testcase></testsuite></testsuites>`,
+      ).suites[0].tests[0];
+
+    it('counts a bare <failure /> as failed', () => {
+      expect(parseSingleTest('<failure />').status).toBe('failed');
+    });
+
+    it('counts a bare <error /> as errored', () => {
+      expect(parseSingleTest('<error />').status).toBe('errored');
+    });
+
+    it('keeps the body of a <failure> without attributes', () => {
+      expect(parseSingleTest('<failure>boom at a.swift:3</failure>')).toMatchObject({
+        status: 'failed',
+        errorMessage: 'boom at a.swift:3',
+        stackTrace: 'boom at a.swift:3',
+      });
+    });
+  });
+
+  it('keeps the suite name of non-SwiftPM reports that also have classname', () => {
+    const result = parseJunitXml(
+      '<testsuites><testsuite name="pytest"><testcase classname="tests.a" name="t" /></testsuite></testsuites>',
+    );
+
+    expect(result.suites.map((s) => s.name)).toEqual(['pytest']);
+  });
+
   describe('basic parsing (junit-basic.xml)', () => {
     let result: ParsedTestRun;
 

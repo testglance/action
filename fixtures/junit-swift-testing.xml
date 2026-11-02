@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written to match Event.JUnitXMLRecorder in swift-testing 6.4.2. Not captured from a run. -->
+<testsuites>
+  <testsuite name="TestResults" errors="0" tests="6" failures="3" skipped="1" time="0.37">
+    <testcase classname="HatsCoreTests.ProfileNameTests" name="accepts(_:)" time="0.25" />
+    <testcase classname="HatsCoreTests.ProfileNameTests" name="rejects(_:)" time="0.5" >
+      <failure message="Expectation failed: (name &#8594; &quot;Work&quot;) == nil (error)" />
+      <failure message="Expectation failed: (name &#8594; &quot;-work&quot;) == nil (error): must start with a letter&#10;see design.md" />
+    </testcase>
+    <testcase classname="HatsCoreTests.ProfileColorTests" name="accepts(_:)" time="0.125" >
+      <failure message="Issue recorded (error)" />
+    </testcase>
+    <testcase classname="HatsE2ETests.GuardTests" name="blocksWrites()" >
+      <skipped>Seatbelt is unavailable &#8212; requires macOS</skipped>
+    </testcase>
+    <testcase classname="HatsE2ETests.GuardTests" name="allowsReads()" >
+      <skipped />
+    </testcase>
+    <testcase classname="HatsCoreTests" name="freeFunction()" time="0.125" />
+  </testsuite>
+</testsuites>

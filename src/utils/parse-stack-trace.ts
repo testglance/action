@@ -5,7 +5,7 @@ const DEPENDENCY_DIRS = [
   'vendor/',
   '_vendor/',
   '.build/',
-  'checkouts/',
+  'SourcePackages/checkouts/',
   'usr/lib/swift/',
   'Contents/Developer/',
 ];

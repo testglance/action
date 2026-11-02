@@ -4,12 +4,19 @@ import { ParseError } from '../utils/errors';
 
 const BOM = '\uFEFF';
 
+// SwiftPM and Swift Testing put every test in one <testsuite> with this name and keep the real
+// suite only in classname. Test identity is suite + name, so without splitting, same-named tests
+// in different Swift suites would collide in history.
+const SWIFTPM_SUITE_NAME = 'TestResults';
+
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
   isArray: (tagName: string) => ['testsuite', 'testcase', 'property'].includes(tagName),
   trimValues: true,
+  // Swift's XML writers encode every non-ASCII character and newline as a numeric reference.
+  htmlEntities: true,
   processEntities: {
     enabled: true,
     maxTotalExpansions: 1_000_000,
@@ -18,38 +25,46 @@ const xmlParser = new XMLParser({
   },
 });
 
+function toElements(value: unknown): Record<string, unknown>[] {
+  const values = Array.isArray(value) ? value : [value];
+  return values.map((v) => {
+    if (typeof v === 'object' && v !== null) return v as Record<string, unknown>;
+    return v === '' ? {} : { '#text': String(v) };
+  });
+}
+
+function bodyOf(element: Record<string, unknown>): string | undefined {
+  const body = element['#text'];
+  return body === undefined ? undefined : String(body);
+}
+
+function describeIssues(
+  value: unknown,
+): Pick<ParsedTestCase, 'errorMessage' | 'errorType' | 'stackTrace'> {
+  const elements = toElements(value);
+  const messages = elements.flatMap((el) => (el['@_message'] as string) ?? bodyOf(el) ?? []);
+  const stackTraces = elements.flatMap((el) => bodyOf(el) ?? []);
+  return {
+    errorMessage: messages.length > 0 ? messages.join('\n') : undefined,
+    errorType: elements[0]['@_type'] as string | undefined,
+    ...(stackTraces.length > 0 ? { stackTrace: stackTraces.join('\n') } : {}),
+  };
+}
+
 function resolveStatus(
   testcase: Record<string, unknown>,
 ): Pick<ParsedTestCase, 'status' | 'errorMessage' | 'errorType' | 'stackTrace'> {
-  if (testcase['error']) {
-    const err = testcase['error'] as Record<string, unknown>;
-    const textContent = err['#text'] as string | undefined;
-    return {
-      status: 'errored',
-      errorMessage: (err['@_message'] as string) ?? textContent,
-      errorType: err['@_type'] as string | undefined,
-      ...(textContent ? { stackTrace: textContent } : {}),
-    };
+  if (testcase['error'] !== undefined) {
+    return { status: 'errored', ...describeIssues(testcase['error']) };
   }
-  if (testcase['failure']) {
-    const fail = testcase['failure'] as Record<string, unknown>;
-    const textContent = fail['#text'] as string | undefined;
-    return {
-      status: 'failed',
-      errorMessage: (fail['@_message'] as string) ?? textContent,
-      errorType: fail['@_type'] as string | undefined,
-      ...(textContent ? { stackTrace: textContent } : {}),
-    };
+  if (testcase['failure'] !== undefined) {
+    return { status: 'failed', ...describeIssues(testcase['failure']) };
   }
   if (testcase['skipped'] !== undefined) {
-    const skip = testcase['skipped'];
-    const msg =
-      typeof skip === 'object' && skip !== null
-        ? ((skip as Record<string, unknown>)['@_message'] as string | undefined)
-        : undefined;
+    const [skip] = toElements(testcase['skipped']);
     return {
       status: 'skipped',
-      errorMessage: msg,
+      errorMessage: (skip['@_message'] as string | undefined) ?? bodyOf(skip),
     };
   }
   return { status: 'passed' };
@@ -77,6 +92,18 @@ function extractTestCases(
   });
 }
 
+function splitByClassname(testcases: Record<string, unknown>[], fallback: string): ParsedSuite[] {
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const tc of testcases) {
+    const suiteName = (tc['@_classname'] as string | undefined) ?? fallback;
+    groups.set(suiteName, [...(groups.get(suiteName) ?? []), tc]);
+  }
+  return [...groups].map(([name, cases]) => {
+    const tests = extractTestCases(cases, name);
+    return { name, tests, duration: tests.reduce((sum, t) => sum + t.duration, 0) };
+  });
+}
+
 function flattenSuites(suite: Record<string, unknown>, parentName?: string): ParsedSuite[] {
   const name = (suite['@_name'] as string) ?? parentName ?? 'unknown';
   const results: ParsedSuite[] = [];
@@ -84,7 +111,9 @@ function flattenSuites(suite: Record<string, unknown>, parentName?: string): Par
   const nestedSuites = suite['testsuite'] as Record<string, unknown>[] | undefined;
   const testcases = (suite['testcase'] as Record<string, unknown>[]) ?? [];
 
-  if (testcases.length > 0) {
+  if (name === SWIFTPM_SUITE_NAME) {
+    results.push(...splitByClassname(testcases, name));
+  } else if (testcases.length > 0) {
     const tests = extractTestCases(testcases, name);
     results.push({
       name,
@@ -133,6 +162,9 @@ export function parseJunitXml(content: string): ParsedTestRun {
     rootDuration = parseFloat(testsuites['@_time'] as string) || undefined;
     const innerSuites = testsuites['testsuite'] as Record<string, unknown>[] | undefined;
     if (innerSuites) {
+      // Split suites only sum their tests, which overstates a run that executed in parallel.
+      const swiftPmSuite = innerSuites.find((s) => s['@_name'] === SWIFTPM_SUITE_NAME);
+      rootDuration ??= parseFloat(swiftPmSuite?.['@_time'] as string) || undefined;
       for (const s of innerSuites) {
         suites.push(...flattenSuites(s));
       }

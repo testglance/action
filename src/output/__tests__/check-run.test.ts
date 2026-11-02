@@ -184,6 +184,67 @@ describe('createCheckRun', () => {
     expect(titles).not.toContain('fails without location');
   });
 
+  describe('Swift reports', () => {
+    const failedTest = (extra: Record<string, string>) =>
+      makeParsed({
+        suites: [
+          {
+            name: 'AppTests.LoginTests',
+            duration: 1,
+            tests: [
+              {
+                name: 'testRejects',
+                suite: 'AppTests.LoginTests',
+                status: 'failed',
+                duration: 1,
+                ...extra,
+              },
+            ],
+          },
+        ],
+      });
+
+    it('finds the location in the failure message when there is no stack trace', async () => {
+      vi.stubEnv('GITHUB_WORKSPACE', '/Users/runner/work/app/app');
+      try {
+        await createCheckRun({
+          githubToken: 'ghp_test',
+          checkName: 'Test Results',
+          parsed: failedTest({
+            errorMessage:
+              '/Users/runner/work/app/app/Tests/AppTests/LoginTests.swift:12: error: XCTAssertEqual failed',
+          }),
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'Tests/AppTests/LoginTests.swift',
+        start_line: 12,
+      });
+    });
+
+    it('makes an absolute auto-detected reportFile workspace-relative', async () => {
+      vi.stubEnv('GITHUB_WORKSPACE', '/Users/runner/work/app/app');
+      try {
+        await createCheckRun({
+          githubToken: 'ghp_test',
+          checkName: 'Test Results',
+          parsed: failedTest({ errorMessage: 'Expectation failed: 1 == 2 (error)' }),
+          reportFile: '/Users/runner/work/app/app/test-results/junit-swift-testing.xml',
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'test-results/junit-swift-testing.xml',
+        start_line: 1,
+      });
+    });
+  });
+
   it('falls back to reportFile at line 1 for failed tests without a location', async () => {
     await createCheckRun({
       githubToken: 'ghp_test',
