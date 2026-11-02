@@ -1,4 +1,14 @@
-const DEPENDENCY_DIRS = ['node_modules/', 'site-packages/', '.gradle/', 'vendor/', '_vendor/'];
+const DEPENDENCY_DIRS = [
+  'node_modules/',
+  'site-packages/',
+  '.gradle/',
+  'vendor/',
+  '_vendor/',
+  '.build/',
+  'checkouts/',
+  'usr/lib/swift/',
+  'Contents/Developer/',
+];
 
 function isDependencyPath(filePath: string): boolean {
   return DEPENDENCY_DIRS.some((dir) => filePath.includes(dir));
@@ -38,8 +48,9 @@ function isJvmLibraryFrame(frame: string): boolean {
   return JVM_LIBRARY_PACKAGES.some((pkg) => frame.startsWith(pkg));
 }
 
-export function normalizePath(filePath: string): string {
+export function normalizePath(filePath: string, workspace?: string): string {
   let p = filePath;
+  if (workspace && p.startsWith(`${workspace}/`)) p = p.slice(workspace.length + 1);
   if (p.startsWith('./')) p = p.slice(2);
   if (p.startsWith('/')) p = p.slice(1);
   return p;
@@ -90,6 +101,13 @@ const PATTERNS: PatternExtractor[] = [
     return { path: match[1], line: Number.parseInt(match[2], 10) };
   },
 
+  // Swift (XCTest and Swift Testing): path/File.swift:line[:col]
+  (line) => {
+    const match = line.match(/([\w./-]+\.swift):(\d+)/);
+    if (!match) return null;
+    return { path: match[1], line: Number.parseInt(match[2], 10) };
+  },
+
   // .NET: in /path/File.cs:line N
   (line) => {
     const match = line.match(/in\s+([\w./-]+\.cs):line\s+(\d+)/);
@@ -98,7 +116,7 @@ const PATTERNS: PatternExtractor[] = [
   },
 ];
 
-export function parseFileLocation(stackTrace: string): FileLocation | null {
+export function parseFileLocation(stackTrace: string, workspace?: string): FileLocation | null {
   if (!stackTrace) return null;
 
   const lines = stackTrace.split('\n');
@@ -107,7 +125,7 @@ export function parseFileLocation(stackTrace: string): FileLocation | null {
     for (const extract of PATTERNS) {
       const result = extract(line);
       if (result && !isDependencyPath(result.path)) {
-        return { path: normalizePath(result.path), line: result.line };
+        return { path: normalizePath(result.path, workspace), line: result.line };
       }
     }
   }

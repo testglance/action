@@ -163,6 +163,46 @@ AssertionError: 1 != 2`;
     });
   });
 
+  describe('Swift stack traces', () => {
+    it('parses XCTest "path.swift:line: error:" format', () => {
+      const trace = `/Users/runner/work/hats/hats/Tests/HatsCoreTests/ProfileTests.swift:12: error: -[ProfileNameTests testRejects] : XCTAssertEqual failed`;
+
+      expect(parseFileLocation(trace)).toEqual({
+        path: 'Users/runner/work/hats/hats/Tests/HatsCoreTests/ProfileTests.swift',
+        line: 12,
+      });
+    });
+
+    it('parses Swift Testing "path.swift:line:column" format', () => {
+      const trace = `Tests/HatsCoreTests/ProfileTests.swift:8:6: error: Expectation failed: 1 == 2`;
+
+      expect(parseFileLocation(trace)).toEqual({
+        path: 'Tests/HatsCoreTests/ProfileTests.swift',
+        line: 8,
+      });
+    });
+
+    it('makes absolute runner paths workspace-relative when the workspace is given', () => {
+      const trace = `/Users/runner/work/hats/hats/Tests/HatsCoreTests/ProfileTests.swift:12: error: failed`;
+
+      expect(parseFileLocation(trace, '/Users/runner/work/hats/hats')).toEqual({
+        path: 'Tests/HatsCoreTests/ProfileTests.swift',
+        line: 12,
+      });
+    });
+
+    it('skips SwiftPM checkouts and toolchain frames', () => {
+      const trace = `/Users/runner/work/hats/hats/.build/checkouts/swift-argument-parser/Sources/ArgumentParser/Parsing.swift:40: error: boom
+/Applications/Xcode_27.1.app/Contents/Developer/Platforms/MacOSX.platform/usr/lib/swift/Foo.swift:9: error: boom
+Tests/HatsE2ETests/RunCommandTests.swift:21: error: exit code was 1`;
+
+      expect(parseFileLocation(trace, '/Users/runner/work/hats/hats')).toEqual({
+        path: 'Tests/HatsE2ETests/RunCommandTests.swift',
+        line: 21,
+      });
+    });
+  });
+
   describe('dependency filtering', () => {
     it('skips node_modules frames and returns next valid frame', () => {
       const trace = `Error: fail

@@ -80,11 +80,12 @@ async function reportCheckRunFailure(checkName: string, err: unknown): Promise<v
 }
 
 function resolveLocation(test: ParsedTestCase): { path: string; line: number } | null {
+  const workspace = process.env.GITHUB_WORKSPACE;
   if (test.file) {
-    return { path: normalizePath(test.file), line: test.line ?? 1 };
+    return { path: normalizePath(test.file, workspace), line: test.line ?? 1 };
   }
   if (test.stackTrace) {
-    return parseFileLocation(test.stackTrace);
+    return parseFileLocation(test.stackTrace, workspace);
   }
   return null;
 }

@@ -128,6 +128,8 @@ When `report-format: auto` and the extension yields `null`, `parseFile` (`src/in
 | `jest`                        | `jest`           |
 | `pytest`                      | `pytest`         |
 | `surefire`                    | `maven-surefire` |
+| `swift-testing`               | `swift-testing`  |
+| `xctest`                      | `xctest`         |
 
 3. No match → `undefined`. The result populates `MetaEnvelope.framework` (see [data-model](./data-model.md)).
 
@@ -175,12 +177,12 @@ Note: `ParsedTestCase` does not carry its origin file across the merge — a doc
 
 ## Stack-trace location — `src/utils/parse-stack-trace.ts`
 
-`parseFileLocation(stackTrace)` (`src/utils/parse-stack-trace.ts:101`) extracts the first usable `{ path, line }` from a stack trace, used to place failure annotations on the right source line. See [output](./output.md).
+`parseFileLocation(stackTrace, workspace?)` (`src/utils/parse-stack-trace.ts`) extracts the first usable `{ path, line }` from a stack trace, used to place failure annotations on the right source line. See [output](./output.md).
 
-- Splits on newlines; for each line, tries each `PatternExtractor` in `PATTERNS` order (`src/utils/parse-stack-trace.ts:55`).
-- Skips any match whose path is inside a dependency dir — `DEPENDENCY_DIRS = ['node_modules/', 'site-packages/', '.gradle/', 'vendor/', '_vendor/']` (`src/utils/parse-stack-trace.ts:1`) — and keeps scanning.
-- JVM frames carry only a bare file name, so the JVM pattern filters on the frame's package instead — `JVM_LIBRARY_PACKAGES` (`src/utils/parse-stack-trace.ts:9`) covers the JDK, Kotlin/Scala/Groovy runtimes, and common test frameworks. Extend this list when a library frame gets annotated instead of user code.
-- `normalizePath` (`src/utils/parse-stack-trace.ts:41`) strips a leading `./` then a leading `/`.
+- Splits on newlines; for each line, tries each `PatternExtractor` in `PATTERNS` order.
+- Skips any match whose path is inside a dependency dir — `DEPENDENCY_DIRS` (`node_modules/`, `site-packages/`, `.gradle/`, `vendor/`, `_vendor/`, `.build/` and `checkouts/` for SwiftPM, `usr/lib/swift/` and `Contents/Developer/` for the Swift toolchain) — and keeps scanning.
+- JVM frames carry only a bare file name, so the JVM pattern filters on the frame's package instead — `JVM_LIBRARY_PACKAGES` (`src/utils/parse-stack-trace.ts`) covers the JDK, Kotlin/Scala/Groovy runtimes, and common test frameworks. Extend this list when a library frame gets annotated instead of user code.
+- `normalizePath(path, workspace?)` strips the `GITHUB_WORKSPACE` prefix when given, then a leading `./`, then a leading `/`. Annotations pass `GITHUB_WORKSPACE` (`src/output/check-run.ts`) because Swift's `#filePath` yields absolute runner paths (`/Users/runner/work/<repo>/<repo>/Tests/...`) that would otherwise never match a diff line.
 - Returns `null` if no non-dependency match is found.
 
 Supported language patterns (in priority order):
@@ -190,6 +192,7 @@ Supported language patterns (in priority order):
 | JS/TS  | `at Fn (path:line:col)` or `at path:line:col`                                        |
 | Python | `File "path", line N`                                                                |
 | JVM    | `at [loader//]pkg.Class.method(File.ext:N)` — `java`, `kt`, `kts`, `scala`, `groovy` |
+| Swift  | `path/File.swift:line` (XCTest and Swift Testing)                                    |
 | Go     | `path/file.go:N`                                                                     |
 | Ruby   | `path/file.rb:N`                                                                     |
 | .NET   | `in /path/File.cs:line N`                                                            |

@@ -3,6 +3,8 @@ const PATH_HEURISTICS: [RegExp, string][] = [
   [/jest/i, 'jest'],
   [/pytest/i, 'pytest'],
   [/surefire/i, 'maven-surefire'],
+  [/swift-testing/i, 'swift-testing'],
+  [/xctest/i, 'xctest'],
 ];
 
 export function detectFramework(
