@@ -131447,51 +131447,70 @@ function handleUnexpectedError(error) {
 
 
 const BOM = '\uFEFF';
+// SwiftPM and Swift Testing put every test in one <testsuite> with this name and keep the real
+// suite only in classname. Test identity is suite + name, so without splitting, same-named tests
+// in different Swift suites would collide in history.
+const SWIFTPM_SUITE_NAME = 'TestResults';
+// DOCTYPE entities can amplify, so they are limited. Numeric references can't, and a large report
+// has millions of them, so appliesTo leaves them out. fast-xml-parser's types omit this option.
+const ENTITY_LIMITS = {
+    enabled: true,
+    maxTotalExpansions: 1_000_000,
+    maxExpandedLength: 10_000_000,
+    maxEntityCount: 100,
+    appliesTo: 'external',
+};
 const xmlParser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
     textNodeName: '#text',
     isArray: (tagName) => ['testsuite', 'testcase', 'property'].includes(tagName),
     trimValues: true,
-    processEntities: {
-        enabled: true,
-        maxTotalExpansions: 1_000_000,
-        maxExpandedLength: 10_000_000,
-        maxEntityCount: 100,
-    },
+    // Swift Testing encodes every non-ASCII character and newline as a numeric reference.
+    htmlEntities: true,
+    processEntities: ENTITY_LIMITS,
 });
+function toElements(value) {
+    const values = Array.isArray(value) ? value : [value];
+    return values.map((v) => {
+        if (typeof v === 'object' && v !== null)
+            return v;
+        return v === '' ? {} : { '#text': String(v) };
+    });
+}
+function readBody(element) {
+    const body = element['#text'];
+    return body === undefined ? undefined : String(body);
+}
+function describeIssues(value) {
+    const elements = toElements(value);
+    const messages = elements.flatMap((el) => el['@_message'] || readBody(el) || []);
+    const stackTraces = elements.flatMap((el) => readBody(el) ?? []);
+    return {
+        errorMessage: messages.length > 0 ? messages.join('\n') : undefined,
+        errorType: elements[0]['@_type'],
+        ...(stackTraces.length > 0 ? { stackTrace: stackTraces.join('\n') } : {}),
+    };
+}
 function resolveStatus(testcase) {
-    if (testcase['error']) {
-        const err = testcase['error'];
-        const textContent = err['#text'];
-        return {
-            status: 'errored',
-            errorMessage: err['@_message'] ?? textContent,
-            errorType: err['@_type'],
-            ...(textContent ? { stackTrace: textContent } : {}),
-        };
+    if (testcase['error'] !== undefined) {
+        return { status: 'errored', ...describeIssues(testcase['error']) };
     }
-    if (testcase['failure']) {
-        const fail = testcase['failure'];
-        const textContent = fail['#text'];
-        return {
-            status: 'failed',
-            errorMessage: fail['@_message'] ?? textContent,
-            errorType: fail['@_type'],
-            ...(textContent ? { stackTrace: textContent } : {}),
-        };
+    if (testcase['failure'] !== undefined) {
+        return { status: 'failed', ...describeIssues(testcase['failure']) };
     }
     if (testcase['skipped'] !== undefined) {
-        const skip = testcase['skipped'];
-        const msg = typeof skip === 'object' && skip !== null
-            ? skip['@_message']
-            : undefined;
+        const [skip] = toElements(testcase['skipped']);
         return {
             status: 'skipped',
-            errorMessage: msg,
+            errorMessage: skip['@_message'] || readBody(skip),
         };
     }
     return { status: 'passed' };
+}
+// A decoded &#10; in a name would split the Markdown tables that show it.
+function toSingleLine(text) {
+    return text.replace(/\s*[\r\n]+\s*/g, ' ').trim();
 }
 function extractTestCases(testcases, suiteName) {
     return testcases.map((tc) => {
@@ -131499,7 +131518,7 @@ function extractTestCases(testcases, suiteName) {
         const file = tc['@_file'];
         const line = Number.parseInt(tc['@_line'], 10);
         return {
-            name: tc['@_name'] ?? 'unknown',
+            name: toSingleLine(tc['@_name'] ?? 'unknown'),
             suite: suiteName,
             status,
             duration: parseFloat(tc['@_time']) || 0,
@@ -131511,25 +131530,45 @@ function extractTestCases(testcases, suiteName) {
         };
     });
 }
-function flattenSuites(suite, parentName) {
-    const name = suite['@_name'] ?? parentName ?? 'unknown';
-    const results = [];
-    const nestedSuites = suite['testsuite'];
-    const testcases = suite['testcase'] ?? [];
-    if (testcases.length > 0) {
-        const tests = extractTestCases(testcases, name);
-        results.push({
-            name,
-            tests,
-            duration: parseFloat(suite['@_time']) || 0,
-        });
-    }
-    if (nestedSuites) {
-        for (const nested of nestedSuites) {
-            results.push(...flattenSuites(nested, name));
+function splitByClassname(testcases, fallback) {
+    const groups = new Map();
+    for (const tc of testcases) {
+        const suiteName = toSingleLine(tc['@_classname'] || fallback);
+        const group = groups.get(suiteName);
+        if (group) {
+            group.push(tc);
+        }
+        else {
+            groups.set(suiteName, [tc]);
         }
     }
-    return results;
+    return [...groups].map(([name, cases]) => {
+        const tests = extractTestCases(cases, name);
+        return { name, tests, duration: tests.reduce((sum, t) => sum + t.duration, 0) };
+    });
+}
+function flattenSuites(suite, parentName) {
+    const name = toSingleLine(suite['@_name'] ?? parentName ?? 'unknown');
+    const declaredTime = parseFloat(suite['@_time']) || 0;
+    const suites = [];
+    let runTime = 0;
+    const nestedSuites = suite['testsuite'];
+    const testcases = suite['testcase'] ?? [];
+    if (name === SWIFTPM_SUITE_NAME && testcases.some((tc) => tc['@_classname'])) {
+        const split = splitByClassname(testcases, name);
+        suites.push(...split);
+        runTime += declaredTime || split.reduce((sum, s) => sum + s.duration, 0);
+    }
+    else if (testcases.length > 0) {
+        suites.push({ name, tests: extractTestCases(testcases, name), duration: declaredTime });
+        runTime += declaredTime;
+    }
+    for (const nested of nestedSuites ?? []) {
+        const flattened = flattenSuites(nested, name);
+        suites.push(...flattened.suites);
+        runTime += flattened.runTime;
+    }
+    return { suites, runTime };
 }
 function parseJunitXml(content) {
     let xml = content;
@@ -131547,33 +131586,22 @@ function parseJunitXml(content) {
     catch (err) {
         throw new ParseError(`Failed to parse JUnit XML: ${err instanceof Error ? err.message : String(err)}`);
     }
-    const suites = [];
     const testsuites = parsed['testsuites'];
-    const topSuite = parsed['testsuite'];
-    let rootDuration;
-    if (testsuites) {
-        rootDuration = parseFloat(testsuites['@_time']) || undefined;
-        const innerSuites = testsuites['testsuite'];
-        if (innerSuites) {
-            for (const s of innerSuites) {
-                suites.push(...flattenSuites(s));
-            }
-        }
-    }
-    else if (topSuite) {
-        for (const s of topSuite) {
-            suites.push(...flattenSuites(s));
-        }
-    }
+    const topLevelSuites = (testsuites
+        ? testsuites['testsuite']
+        : parsed['testsuite']) ?? [];
+    const rootDuration = parseFloat(testsuites?.['@_time']) || undefined;
+    const flattened = topLevelSuites.map((s) => flattenSuites(s));
+    const suites = flattened.flatMap((f) => f.suites);
+    const runTime = flattened.reduce((sum, f) => sum + f.runTime, 0);
     const allTests = suites.flatMap((s) => s.tests);
-    const suiteDurationSum = suites.reduce((sum, s) => sum + s.duration, 0);
     const summary = {
         total: allTests.length,
         passed: allTests.filter((t) => t.status === 'passed').length,
         failed: allTests.filter((t) => t.status === 'failed').length,
         skipped: allTests.filter((t) => t.status === 'skipped').length,
         errored: allTests.filter((t) => t.status === 'errored').length,
-        duration: rootDuration ?? suiteDurationSum,
+        duration: rootDuration ?? runTime,
     };
     return { summary, suites };
 }
@@ -131661,8 +131689,10 @@ function parseCtrfJson(content) {
     }
     const allTests = suites.flatMap((s) => s.tests);
     let totalDuration = 0;
-    if (results.summary.start != null && results.summary.stop != null) {
-        totalDuration = (results.summary.stop - results.summary.start) / 1000;
+    const { start, stop } = results.summary;
+    // Unset timestamps are often written as 0, and stop - start is then meaningless.
+    if (start != null && stop != null && start > 0 && stop > start) {
+        totalDuration = (stop - start) / 1000;
     }
     else {
         totalDuration = suites.reduce((sum, s) => sum + s.duration, 0);
@@ -131786,16 +131816,29 @@ function detectFormat(filePath) {
     return null;
 }
 
+// EXTERNAL MODULE: external "node:path"
+var external_node_path_ = __nccwpck_require__(76760);
 ;// CONCATENATED MODULE: ./src/utils/detect-framework.ts
+
 const PATH_HEURISTICS = [
     [/vitest/i, 'vitest'],
     [/jest/i, 'jest'],
     [/pytest/i, 'pytest'],
     [/surefire/i, 'maven-surefire'],
 ];
+// Absolute paths include the repo name, so these only look at the report's own file name.
+const FILE_NAME_HEURISTICS = [
+    [/swift-testing/i, 'swift-testing'],
+    [/xctest/i, 'xctest'],
+];
 function detectFramework(reportPath, format, ctrfToolName) {
     if (format === 'ctrf' && ctrfToolName) {
         return ctrfToolName;
+    }
+    for (const [pattern, framework] of FILE_NAME_HEURISTICS) {
+        if (pattern.test((0,external_node_path_.basename)(reportPath))) {
+            return framework;
+        }
     }
     for (const [pattern, framework] of PATH_HEURISTICS) {
         if (pattern.test(reportPath)) {
@@ -131805,8 +131848,20 @@ function detectFramework(reportPath, format, ctrfToolName) {
     return undefined;
 }
 
-// EXTERNAL MODULE: external "node:path"
-var external_node_path_ = __nccwpck_require__(76760);
+;// CONCATENATED MODULE: ./src/utils/detect-run-framework.ts
+
+
+// One label covers the whole merged run, so reports that disagree leave it unlabelled rather than
+// mislabel some of its tests. An empty report, like SwiftPM's XCTest file, says nothing either way.
+function detectRunFramework(runs, reportFormat) {
+    const runsWithTests = runs.filter((run) => run.parsed.summary.total > 0);
+    const labels = (runsWithTests.length > 0 ? runsWithTests : runs).map(({ filePath, parsed }) => {
+        const format = reportFormat === 'auto' ? detectFormat(filePath) : reportFormat;
+        return detectFramework(filePath, format === 'junit' || format === 'ctrf' ? format : null, parsed.toolName);
+    });
+    return new Set(labels).size === 1 ? labels[0] : undefined;
+}
+
 // EXTERNAL MODULE: ./node_modules/.pnpm/fast-glob@3.3.3/node_modules/fast-glob/out/index.js
 var out = __nccwpck_require__(75161);
 var out_default = /*#__PURE__*/__nccwpck_require__.n(out);
@@ -131876,7 +131931,33 @@ async function discoverReportFiles(pattern) {
     return confineToWorkspace(entries.filter(isRegularFile)).sort();
 }
 
+;// CONCATENATED MODULE: ./src/utils/swiftpm-report-pair.ts
+
+
+
+const SWIFT_TESTING_SUFFIX = '-swift-testing.xml';
+async function findSwiftTestingReport(file) {
+    if (!file.endsWith('.xml') || file.endsWith(SWIFT_TESTING_SUFFIX))
+        return null;
+    const sibling = `${file.slice(0, -'.xml'.length)}${SWIFT_TESTING_SUFFIX}`;
+    const [found] = await discoverReportFiles(out_default().escapePath(sibling));
+    return found ?? null;
+}
+// SwiftPM splits one --xunit-output run across two files, so naming only the first can pass with
+// failures unread. It only warns, because a workflow may report each file in its own step, and the
+// file beside it may be left over from an earlier run.
+async function warnAboutUnreadSwiftTestingReports(files) {
+    for (const file of files) {
+        const sibling = await findSwiftTestingReport(file);
+        if (sibling && !files.includes(sibling)) {
+            warning(`${sibling} is beside ${file} but report-path does not include it, so its results are not reported. If SwiftPM wrote both, use a glob such as *.xml or leave report-path empty.`);
+        }
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/utils/auto-detect.ts
+
+
 
 const AUTO_DETECT_PATTERNS = [
     '**/test-results/**/*.xml',
@@ -131894,6 +131975,13 @@ async function autoDetectReportFiles() {
         for (const file of found) {
             seen.add(file);
         }
+    }
+    for (const file of [...seen]) {
+        if ((0,external_node_path_.basename)(file) !== 'junit.xml')
+            continue;
+        const swiftTestingReport = await findSwiftTestingReport(file);
+        if (swiftTestingReport)
+            seen.add(swiftTestingReport);
     }
     return {
         files: [...seen].sort(),
@@ -136969,8 +137057,10 @@ function mergeTestRuns(runs) {
     }
     const allSuites = [];
     let toolName;
+    let duration = 0;
     for (const { filePath, parsed } of runs) {
         toolName ??= parsed.toolName;
+        duration += parsed.summary.duration;
         for (const suite of parsed.suites) {
             const isGenericName = parsed.toolName && suite.name === parsed.toolName;
             const isSingleSuite = parsed.suites.length === 1;
@@ -136987,9 +137077,7 @@ function mergeTestRuns(runs) {
     let failed = 0;
     let skipped = 0;
     let errored = 0;
-    let duration = 0;
     for (const suite of allSuites) {
-        duration += suite.duration;
         for (const test of suite.tests) {
             total++;
             if (test.status === 'passed')
@@ -137038,7 +137126,18 @@ function formatDurationPair(a, b) {
 function truncate(str, maxLen) {
     if (str.length <= maxLen)
         return str;
-    return str.slice(0, maxLen - 3) + '...';
+    const kept = str.slice(0, maxLen - 3);
+    // Half of a surrogate pair is invalid text, which JSON APIs may reject.
+    const endsInHighSurrogate = /[\uD800-\uDBFF]$/.test(kept);
+    return `${endsInHighSurrogate ? kept.slice(0, -1) : kept}...`;
+}
+const XCTEST_PROGRESS_LINE = /^\s*Test (?:Suite|Case) '/;
+// XCTest's detailed failure output starts with suite and test progress lines, which would fill a
+// truncated message before reaching the assertion.
+function extractFailureExcerpt(message) {
+    const lines = message.split('\n');
+    const firstContentLine = lines.findIndex((line) => !XCTEST_PROGRESS_LINE.test(line));
+    return firstContentLine > 0 ? lines.slice(firstContentLine).join('\n') : message;
 }
 function renderProgressBar(passRate, width = 16) {
     const clamped = Math.max(0, Math.min(100, passRate));
@@ -137158,7 +137257,7 @@ function collectFailures(parsed) {
                 failed.push({
                     name: test.name,
                     suite: test.suite,
-                    errorMessage: test.errorMessage ?? '',
+                    errorMessage: extractFailureExcerpt(test.errorMessage ?? '').replaceAll('\n', ' '),
                     stackTrace: test.stackTrace ?? '',
                     duration: test.duration,
                 });
@@ -137473,11 +137572,11 @@ async function generateSummary(options) {
             summary_summary.addRaw('### ❌ Failed Tests\n\n');
             const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
             for (const t of shown) {
-                const error = truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH);
+                const error = truncate(extractFailureExcerpt(t.errorMessage ?? 'No error message'), MAX_ERROR_MESSAGE_LENGTH);
                 summary_summary.addRaw(`> [!CAUTION]\n` +
                     `> **\`${escapeHtml(t.name)}\`** · \`${escapeHtml(t.suite)}\`\n` +
                     `>\n` +
-                    `> ${escapeHtml(error)}\n\n`);
+                    `> ${escapeHtml(error).replaceAll('\n', '\n> ')}\n\n`);
                 if (t.stackTrace) {
                     summary_summary.addRaw(renderStackTrace(t.name, t.stackTrace));
                 }
@@ -138511,10 +138610,38 @@ async function postPrComment(options) {
     }
 }
 
+// EXTERNAL MODULE: external "node:util"
+var external_node_util_ = __nccwpck_require__(57975);
 ;// CONCATENATED MODULE: ./src/utils/parse-stack-trace.ts
+
 const DEPENDENCY_DIRS = ['node_modules/', 'site-packages/', '.gradle/', 'vendor/', '_vendor/'];
+const SWIFT_DEPENDENCY_DIRS = [
+    '.build/',
+    'SourcePackages/checkouts/',
+    'usr/lib/swift/',
+    'Contents/Developer/',
+];
+// These regexes backtrack polynomially on long lines, which failure output (hex dumps, tokens) can
+// contain, and the cost repeats for every failed test. A location is near the start of a line.
+const MAX_SCANNED_LINE_LENGTH = 1000;
+const MAX_SCANNED_LINES = 2000;
+const MAX_SOURCE_LINE = 1_000_000;
 function isDependencyPath(filePath) {
-    return DEPENDENCY_DIRS.some((dir) => filePath.includes(dir));
+    const dirs = filePath.endsWith('.swift')
+        ? [...DEPENDENCY_DIRS, ...SWIFT_DEPENDENCY_DIRS]
+        : DEPENDENCY_DIRS;
+    const rooted = `/${filePath}`;
+    return dirs.some((dir) => rooted.includes(`/${dir}`));
+}
+// Without a directory, "payments.internal" and "api.example.com" look just like file names.
+const SOURCE_EXTENSIONS = new Set('c cc cjs coffee cpp cs cts cxx dart ex exs fs go groovy h hpp java js jsx kt kts lua m mjs mm mts php pl py rb rs scala sh svelte swift ts tsx vb vue zig'.split(' '));
+function looksLikeSourcePath(path) {
+    if (path.includes('/'))
+        return true;
+    return SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf('.') + 1).toLowerCase());
+}
+function isValidSourceLine(line) {
+    return line !== undefined && Number.isInteger(line) && line >= 1 && line <= MAX_SOURCE_LINE;
 }
 // JVM frames carry only a bare file name, so DEPENDENCY_DIRS can't see library code;
 // filter on the frame's package instead.
@@ -138548,21 +138675,44 @@ const JVM_LIBRARY_PACKAGES = [
 function isJvmLibraryFrame(frame) {
     return JVM_LIBRARY_PACKAGES.some((pkg) => frame.startsWith(pkg));
 }
-function normalizePath(filePath) {
-    let p = filePath;
+function toForwardSlashes(path) {
+    return path.replaceAll('\\', '/');
+}
+function toWorkspaceRoot(workspace) {
+    return workspace ? toForwardSlashes(workspace).replace(/\/+$/, '') : undefined;
+}
+function normalizePath(filePath, workspace) {
+    let p = toForwardSlashes(filePath);
+    const root = toWorkspaceRoot(workspace);
+    if (root && p.startsWith(`${root}/`))
+        p = p.slice(root.length + 1);
     if (p.startsWith('./'))
         p = p.slice(2);
     if (p.startsWith('/'))
         p = p.slice(1);
     return p;
 }
+const ABSOLUTE_PATH = /^(?:[A-Za-z]:)?\//;
+function isRepoFile(filePath, workspace) {
+    const root = toWorkspaceRoot(workspace);
+    let path = toForwardSlashes(filePath);
+    if (root && path.startsWith(`${root}/`))
+        path = path.slice(root.length + 1);
+    if (isDependencyPath(path))
+        return false;
+    return !(workspace && ABSOLUTE_PATH.test(path));
+}
 const PATTERNS = [
-    // JS/TS: at Something (path:line:col) or at path:line:col
+    // JS/TS: at Something (path:line:col) or at path:line:col. The path must look like a source file,
+    // so "started at 20:12:40" and "at api.example.com:443:1" aren't locations.
     (line) => {
-        const match = line.match(/at\s+(?:.+?\s+\()?([^()]+?):(\d+):\d+\)?/);
+        const match = line.match(/\bat\s+(?:[^()]*\(([^()]+\.[a-z]\w*):(\d+):\d+\)|([^()]+?\.[a-z]\w*):(\d+):\d+)/i);
         if (!match)
             return null;
-        return { path: match[1], line: Number.parseInt(match[2], 10) };
+        const path = match[1] ?? match[3];
+        if (!looksLikeSourcePath(path))
+            return null;
+        return { path, line: Number.parseInt(match[2] ?? match[4], 10) };
     },
     // Python: File "path", line N
     (line) => {
@@ -138580,14 +138730,23 @@ const PATTERNS = [
     },
     // Go: path/file.go:N
     (line) => {
-        const match = line.match(/([\w./-]+\.go):(\d+)/);
+        const match = line.includes('.go:') ? line.match(/([\w./-]+\.go):(\d+)/) : null;
         if (!match)
             return null;
         return { path: match[1], line: Number.parseInt(match[2], 10) };
     },
     // Ruby: path/file.rb:N:in
     (line) => {
-        const match = line.match(/([\w./-]+\.rb):(\d+)/);
+        const match = line.includes('.rb:') ? line.match(/([\w./-]+\.rb):(\d+)/) : null;
+        if (!match)
+            return null;
+        return { path: match[1], line: Number.parseInt(match[2], 10) };
+    },
+    // Swift (XCTest and Swift Testing): path/File.swift:line[:col]
+    (line) => {
+        const match = line.includes('.swift:')
+            ? line.match(/((?:[A-Za-z]:\/)?[^\s:'"()<>[\]]+\.swift):(\d+)/)
+            : null;
         if (!match)
             return null;
         return { path: match[1], line: Number.parseInt(match[2], 10) };
@@ -138600,19 +138759,66 @@ const PATTERNS = [
         return { path: match[1], line: Number.parseInt(match[2], 10) };
     },
 ];
-function parseFileLocation(stackTrace) {
-    if (!stackTrace)
-        return null;
-    const lines = stackTrace.split('\n');
+const DIAGNOSTIC_LINE = /^\s*((?:[A-Za-z]:\/)?[^:]+\.\w+):(\d+)(?::\d+)?: error:/;
+// XCTest and compilers write "path:line: error: message" at the start of a line. This is the
+// assertion itself, unlike other paths in captured output. Spaces are only part of the path when
+// the workspace prefix shows where it starts; otherwise they are prose ("Build failed in a.swift").
+function createDiagnosticLineExtractor(root) {
+    return (line) => {
+        const match = line.match(DIAGNOSTIC_LINE);
+        if (!match)
+            return null;
+        const inWorkspace = root !== undefined && match[1].startsWith(`${root}/`);
+        const path = inWorkspace ? match[1].slice(root.length + 1) : match[1];
+        if (!inWorkspace && /\s/.test(path))
+            return null;
+        if (!looksLikeSourcePath(path))
+            return null;
+        return { path, line: Number.parseInt(match[2], 10) };
+    };
+}
+function findFirstLocation(lines, patterns, workspace) {
     for (const line of lines) {
-        for (const extract of PATTERNS) {
+        for (const extract of patterns) {
             const result = extract(line);
-            if (result && !isDependencyPath(result.path)) {
+            if (result && isValidSourceLine(result.line) && isRepoFile(result.path, workspace)) {
                 return { path: normalizePath(result.path), line: result.line };
             }
         }
     }
     return null;
+}
+function toScannableLines(text) {
+    return text
+        .split('\n')
+        .slice(0, MAX_SCANNED_LINES)
+        .map((line) => toForwardSlashes((0,external_node_util_.stripVTControlCharacters)(line))
+        .replace(/file:\/\/(?:\/(?=[A-Za-z]:\/))?/g, '')
+        .slice(0, MAX_SCANNED_LINE_LENGTH));
+}
+// Only where a path starts, so a longer path containing the workspace isn't spliced together.
+function stripWorkspacePrefix(lines, root) {
+    if (!root)
+        return lines;
+    const escapedRoot = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const prefix = new RegExp(`(?<![^\\s("'=[])${escapedRoot}/`, 'g');
+    return lines.map((line) => line.replace(prefix, ''));
+}
+function parseFileLocation(stackTrace, workspace) {
+    if (!stackTrace)
+        return null;
+    const root = toWorkspaceRoot(workspace);
+    const lines = toScannableLines(stackTrace);
+    return (findFirstLocation(lines, [createDiagnosticLineExtractor(root)], workspace) ??
+        findFirstLocation(stripWorkspacePrefix(lines, root), PATTERNS, workspace));
+}
+// A message is free text that can name any path (an expected value, a host and port), so unlike a
+// stack trace, only a diagnostic line says where the failure is.
+function parseFailureMessageLocation(message, workspace) {
+    if (!message)
+        return null;
+    const extractor = createDiagnosticLineExtractor(toWorkspaceRoot(workspace));
+    return findFirstLocation(toScannableLines(message), [extractor], workspace);
 }
 
 ;// CONCATENATED MODULE: ./src/output/check-run.ts
@@ -138622,6 +138828,10 @@ function parseFileLocation(stackTrace) {
 
 
 const MAX_ANNOTATIONS = 50;
+// GitHub rejects the whole check run over an annotation message above 64 KB or a title above 255
+// characters. A UTF-16 unit is at most 3 UTF-8 bytes, so this many units always fits.
+const MAX_ANNOTATION_MESSAGE_LENGTH = 20_000;
+const MAX_ANNOTATION_TITLE_LENGTH = 255;
 const MAX_CHECK_RUN_ATTEMPTS = 4;
 const INITIAL_RETRY_DELAY_MS = 1000;
 const MAX_RETRY_DELAY_MS = 15_000;
@@ -138683,13 +138893,16 @@ async function reportCheckRunFailure(checkName, err) {
     }
 }
 function resolveLocation(test) {
-    if (test.file) {
-        return { path: normalizePath(test.file), line: test.line ?? 1 };
+    const workspace = process.env.GITHUB_WORKSPACE;
+    if (test.file && isRepoFile(test.file, workspace)) {
+        return {
+            path: normalizePath(test.file, workspace),
+            line: isValidSourceLine(test.line) ? test.line : 1,
+        };
     }
-    if (test.stackTrace) {
-        return parseFileLocation(test.stackTrace);
-    }
-    return null;
+    // SwiftPM reports have no stack trace; its detailed XCTest failure output lands in the message.
+    return (parseFileLocation(test.stackTrace ?? '', workspace) ??
+        parseFailureMessageLocation(test.errorMessage ?? '', workspace));
 }
 async function createCheckRun(options) {
     const { githubToken, checkName, parsed, reportFile, annotationLevel = 'failure' } = options;
@@ -138718,12 +138931,14 @@ async function createCheckRun(options) {
                 if (!location && !reportFile)
                     continue;
                 annotations.push({
-                    path: location ? location.path : normalizePath(reportFile),
+                    path: location
+                        ? location.path
+                        : normalizePath(reportFile, process.env.GITHUB_WORKSPACE),
                     start_line: location ? location.line : 1,
                     end_line: location ? location.line : 1,
                     annotation_level: annotationLevel,
-                    message: test.errorMessage ?? 'Test failed',
-                    title: test.name,
+                    message: truncate(extractFailureExcerpt(test.errorMessage ?? 'Test failed'), MAX_ANNOTATION_MESSAGE_LENGTH),
+                    title: truncate(test.name, MAX_ANNOTATION_TITLE_LENGTH),
                 });
             }
             if (annotations.length >= MAX_ANNOTATIONS)
@@ -139102,7 +139317,7 @@ function renderFailedTests(failedTests) {
     const shown = failedTests.slice(0, html_report_MAX_FAILED_TESTS_SHOWN);
     const items = shown
         .map((t) => {
-        const error = truncate(t.errorMessage ?? 'No error message', html_report_MAX_ERROR_MESSAGE_LENGTH);
+        const error = truncate(extractFailureExcerpt(t.errorMessage ?? 'No error message'), html_report_MAX_ERROR_MESSAGE_LENGTH);
         let stackHtml = '';
         if (t.stackTrace) {
             const lines = t.stackTrace.split('\n');
@@ -139178,7 +139393,7 @@ details{margin:.5rem 0}
 summary{cursor:pointer;font-weight:600;padding:.25rem 0}
 pre{background:#161b22;color:#e6edf3;padding:1rem;border-radius:6px;overflow-x:auto;font-size:.8125rem;margin:.5rem 0}
 code{font-family:SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;font-size:.85em}
-blockquote{border-left:3px solid #cf222e;padding:.25rem .75rem;color:#57606a;margin:.25rem 0 .5rem;font-size:.875rem}
+blockquote{border-left:3px solid #cf222e;padding:.25rem .75rem;color:#57606a;margin:.25rem 0 .5rem;font-size:.875rem;white-space:pre-wrap}
 .failed-test{margin-bottom:1rem;padding:.75rem;background:#fff5f5;border-radius:6px;border:1px solid #ffcecb}
 .highlights{list-style:none;padding:0}
 .highlights li{padding:.25rem 0}
@@ -141490,8 +141705,6 @@ class AbortError extends Error {
 //# sourceMappingURL=AbortError.js.map
 // EXTERNAL MODULE: external "node:os"
 var external_node_os_ = __nccwpck_require__(48161);
-// EXTERNAL MODULE: external "node:util"
-var external_node_util_ = __nccwpck_require__(57975);
 // EXTERNAL MODULE: external "node:process"
 var external_node_process_ = __nccwpck_require__(1708);
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@typespec+ts-http-runtime@0.3.9/node_modules/@typespec/ts-http-runtime/dist/esm/logger/log.js
@@ -213299,6 +213512,7 @@ function buildDurationSparkline(entries) {
 
 
 
+
 const DEFAULT_SLOWEST_TESTS = 10;
 const DEFAULT_FLAKY_THRESHOLD = 2;
 const DEFAULT_PERF_THRESHOLD = 200;
@@ -213418,6 +213632,7 @@ async function run() {
                 warning(`No report files found matching: ${reportPath}`);
                 return { history: null };
             }
+            await warnAboutUnreadSwiftTestingReports(files);
         }
         else {
             info('No report-path provided, entering auto-detect mode');
@@ -213562,9 +213777,7 @@ async function run() {
                 warning(`Base branch comparison failed: ${err instanceof Error ? err.message : String(err)}; base-branch comparison skipped.`);
             }
         }
-        const firstFile = successful[0].filePath;
-        const format = reportFormat === 'auto' ? detectFormat(firstFile) : reportFormat;
-        const framework = detectFramework(firstFile, format === 'junit' || format === 'ctrf' ? format : null, parsed.toolName);
+        const framework = detectRunFramework(successful, reportFormat);
         let result;
         if (sendResults) {
             result = await sendTestRun(apiUrl, apiKey, parsed, {
