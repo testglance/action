@@ -198,8 +198,9 @@ describe('parseJunitXml', () => {
       `<testsuites><testsuite name="TestResults">${cases}</testsuite></testsuites>`,
     );
     expect(result.summary.total).toBe(100_000);
-    expect(performance.now() - started).toBeLessThan(4000);
-  });
+    // Coverage alone takes this past 5s; copying per test takes minutes.
+    expect(performance.now() - started).toBeLessThan(30_000);
+  }, 60_000);
 
   it('keeps the suite name of non-SwiftPM reports that also have classname', () => {
     const result = parseJunitXml(fixture('junit-classname-with-suite-name.xml'));

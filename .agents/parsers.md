@@ -77,7 +77,7 @@ Checked against captured reports in `fixtures/junit-swift*.xml`. Each fixture re
 
 - **Create the directory first** (`mkdir -p test-results`). A single Swift Testing product opens the file directly, and if the directory is missing it runs no tests, prints `No such file or directory` and `swift test` exits 1, even when every test would pass. Two cases survive only because another writer creates the directory first: `--parallel` with XCTest enabled, and several test products.
 - **`XCTSkip` is reported as passed.** SwiftPM's `XUnitGenerator` only knows success or failure and writes no `<skipped>`, so the parser can't tell. Swift Testing skips are reported correctly.
-- **No source locations.** Swift Testing failures carry only a message and XCTest failures only say `failure`, so annotations fall back to the report file. XCTest's hidden `--experimental-xunit-message-failure` puts the test output in the message, where `resolveLocation` (`src/output/check-run.ts`) can find a `File.swift:line`.
+- **No source locations.** Swift Testing failures carry only a message and XCTest failures only say `failure`, so annotations fall back to the report file. XCTest's hidden `--experimental-xunit-message-failure` puts the test output in the message, where `resolveLocation` (`src/output/check-run.ts`) can find its `File.swift:line: error:` line.
 
 ### Per-testcase extraction (`src/parsers/junit.ts:58`)
 
@@ -210,7 +210,8 @@ Note: `ParsedTestCase` does not carry its origin file across the merge — a doc
 
 - Normalizes backslashes, removes the workspace prefix from each line, and scans only the first 1,000 characters of a line, because the regexes backtrack polynomially on long unbroken runs.
 - First looks for a `path:line: error:` line anywhere in the trace, which is the assertion in XCTest output and is the only format that allows spaces in a path. Then tries each `PatternExtractor` in `PATTERNS` order.
-- The JS/TS pattern requires a file extension, so a time or address in a failure message (`started at 20:12:40`, `at 127.0.0.1:8080:1`) isn't read as a location.
+- `parseFailureMessageLocation(message, workspace?)` is the narrower version for failure messages, which are free text: it accepts only `path:line: error:` lines, with the same dependency and line-number filtering.
+- The JS/TS pattern requires a file extension, so a time or address in a trace (`started at 20:12:40`, `at 127.0.0.1:8080:1`) isn't read as a location.
 - Skips lines numbered 0 or above 1,000,000, and, when a workspace is given, absolute paths outside it.
 - Skips any match whose path is inside a dependency dir, matched as whole path segments after the workspace is removed: `DEPENDENCY_DIRS` (`node_modules/`, `site-packages/`, `.gradle/`, `vendor/`, `_vendor/`), and for `.swift` files only, `SWIFT_DEPENDENCY_DIRS` (`.build/` and `SourcePackages/checkouts/` for packages, `usr/lib/swift/` and `Contents/Developer/` for the toolchain).
 - JVM frames carry only a bare file name, so the JVM pattern filters on the frame's package instead — `JVM_LIBRARY_PACKAGES` (`src/utils/parse-stack-trace.ts`) covers the JDK, Kotlin/Scala/Groovy runtimes, and common test frameworks. Extend this list when a library frame gets annotated instead of user code.

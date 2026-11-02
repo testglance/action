@@ -1,6 +1,11 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import { isValidSourceLine, parseFileLocation, normalizePath } from '../utils/parse-stack-trace';
+import {
+  isValidSourceLine,
+  normalizePath,
+  parseFailureMessageLocation,
+  parseFileLocation,
+} from '../utils/parse-stack-trace';
 import { resolveRunIdentity } from '../utils/run-context';
 import { failureExcerpt, formatDuration, renderMetricsStrip, truncate } from './format';
 import type { ParsedTestRun, ParsedTestCase } from '../types';
@@ -94,7 +99,7 @@ function resolveLocation(test: ParsedTestCase): { path: string; line: number } |
   // SwiftPM reports have no stack trace; its detailed XCTest failure output lands in the message.
   return (
     parseFileLocation(test.stackTrace ?? '', workspace) ??
-    parseFileLocation(test.errorMessage ?? '', workspace)
+    parseFailureMessageLocation(test.errorMessage ?? '', workspace)
   );
 }
 

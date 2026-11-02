@@ -2,7 +2,41 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseJunitXml } from '../../parsers/junit';
-import { normalizePath, parseFileLocation } from '../parse-stack-trace';
+import {
+  normalizePath,
+  parseFailureMessageLocation,
+  parseFileLocation,
+} from '../parse-stack-trace';
+
+describe('parseFailureMessageLocation', () => {
+  it('reads a diagnostic line from captured test output', () => {
+    const message = `Test Case 'A.testB' started at 2026-11-02 20:12:40.194
+/work/app/My Tests/A+B.swift:6: error: A.testB : XCTAssertEqual failed
+Test Case 'A.testB' failed (0.001 seconds)`;
+
+    expect(parseFailureMessageLocation(message, '/work/app')).toEqual({
+      path: 'My Tests/A+B.swift',
+      line: 6,
+    });
+  });
+
+  it('ignores a path that is not a diagnostic at the start of a line', () => {
+    expect(parseFailureMessageLocation('see Tests/A.swift:3 for details')).toBeNull();
+    expect(parseFailureMessageLocation('Tests/A.swift:3 was unreadable')).toBeNull();
+    expect(parseFailureMessageLocation('wrong: Tests/A.swift:3: error: x')).toBeNull();
+  });
+
+  it('skips diagnostics in dependency code', () => {
+    const message = `.build/checkouts/lib/Sources/Lib.swift:4: error: boom
+Tests/A.swift:9: error: failed`;
+
+    expect(parseFailureMessageLocation(message)).toEqual({ path: 'Tests/A.swift', line: 9 });
+  });
+
+  it('returns null for an empty message', () => {
+    expect(parseFailureMessageLocation('')).toBeNull();
+  });
+});
 
 describe('parseFileLocation', () => {
   describe('JS/TS stack traces', () => {

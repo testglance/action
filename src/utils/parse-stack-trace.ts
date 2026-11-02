@@ -162,17 +162,31 @@ function firstLocation(
   return null;
 }
 
-export function parseFileLocation(stackTrace: string, workspace?: string): FileLocation | null {
-  if (!stackTrace) return null;
-
+function toScannableLines(text: string, workspace?: string): string[] {
   const root = workspaceRoot(workspace);
-  const lines = toForwardSlashes(stackTrace)
+  return toForwardSlashes(text)
     .split('\n')
     .map((line) => (root ? line.replaceAll(`${root}/`, '') : line))
     .map((line) => line.slice(0, MAX_SCANNED_LINE_LENGTH));
+}
 
+export function parseFileLocation(stackTrace: string, workspace?: string): FileLocation | null {
+  if (!stackTrace) return null;
+
+  const lines = toScannableLines(stackTrace, workspace);
   return (
     firstLocation(lines, [ERROR_LINE_PATTERN], workspace) ??
     firstLocation(lines, PATTERNS, workspace)
   );
+}
+
+// A message is free text that can name any path (an expected value, a host and port), so unlike a
+// stack trace, only a diagnostic line says where the failure is.
+export function parseFailureMessageLocation(
+  message: string,
+  workspace?: string,
+): FileLocation | null {
+  if (!message) return null;
+
+  return firstLocation(toScannableLines(message, workspace), [ERROR_LINE_PATTERN], workspace);
 }

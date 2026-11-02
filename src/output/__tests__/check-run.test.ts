@@ -225,6 +225,41 @@ describe('createCheckRun', () => {
       });
     });
 
+    it.each([
+      ['a Swift path in an expectation value', 'Expectation failed: (path → "Sources/C.swift:3")'],
+      ['a Go file name', 'golden mismatch in testdata/foo.go:7'],
+      ['a host and port', 'dial failed for payments.go:8080'],
+      ['a Ruby file name', 'could not load config.rb:12 from cache'],
+      ['a Python-style reference', 'File "tests/data.py", line 3 was unreadable'],
+      ['a JS-style reference', 'expected foo at src/a.js:1:2 to be bar'],
+    ])('does not read %s in a message as the failure location', async (_name, errorMessage) => {
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({ errorMessage }),
+        reportFile: 'test-results/junit.xml',
+      });
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'test-results/junit.xml',
+        start_line: 1,
+      });
+    });
+
+    it('still reads every pattern from a stack trace', async () => {
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({ stackTrace: 'panic\n  internal/foo.go:7 +0x1d', errorMessage: 'x' }),
+        reportFile: 'test-results/junit.xml',
+      });
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'internal/foo.go',
+        start_line: 7,
+      });
+    });
+
     it('falls back to the message when the stack trace has no location', async () => {
       await createCheckRun({
         githubToken: 'ghp_test',

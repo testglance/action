@@ -80,7 +80,7 @@ The whole sections 8–11 block is wrapped in `try/catch`; on error it warns `En
 
 1. `test.file` → `normalizePath(test.file)` at `test.line`, or line 1 if it's missing or invalid.
 2. else parse `test.stackTrace` via `parseFileLocation` (`src/utils/parse-stack-trace.ts`).
-3. else parse `test.errorMessage` the same way, because SwiftPM reports have no stack trace.
+3. else look in `test.errorMessage` via `parseFailureMessageLocation`, because SwiftPM reports have no stack trace. A message is free text that can name any path, so only a `path:line: error:` line at the start of a line counts.
 4. else, if a `reportFile` fallback was passed, annotate that file at line 1. `index.ts` passes `successful[0].filePath` as this fallback. A test with no location and no `reportFile` is skipped.
 
 ## 4. HTML report + artifact — `src/output/html-report.ts` + `upload-artifact.ts`
