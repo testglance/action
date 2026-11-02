@@ -166414,7 +166414,7 @@ const tracingClient = tracingClient_createTracingClient({
  */
 async function parseBlobListArrowResponse(response) {
     // Load apache-arrow lazily so it is only pulled in when the Arrow format is requested.
-    const { tableFromIPC } = await __nccwpck_require__.e(/* import() */ 348).then(__nccwpck_require__.bind(__nccwpck_require__, 43348));
+    const { tableFromIPC } = await __nccwpck_require__.e(/* import() */ 217).then(__nccwpck_require__.bind(__nccwpck_require__, 60217));
     // Node streams the body into apache-arrow so record batches are read incrementally;
     // the browser reads the whole Blob.
     const table = response.readableStreamBody

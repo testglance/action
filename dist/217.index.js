@@ -1,5 +1,5 @@
-exports.id = 348;
-exports.ids = [348];
+exports.id = 217;
+exports.ids = [217];
 exports.modules = {
 
 /***/ 82157:
@@ -887,7 +887,7 @@ exports.isLittleEndian = new Uint16Array(new Uint8Array([1, 0]).buffer)[0] === 1
 
 /***/ }),
 
-/***/ 21440:
+/***/ 849:
 /***/ ((module) => {
 
 /******************************************************************************
@@ -1297,8 +1297,17 @@ var __rewriteRelativeImportExtension;
         return next();
     };
 
-    __rewriteRelativeImportExtension = function (path, preserveJsx) {
+    __rewriteRelativeImportExtension = function (path, preserveJsx, extraExtensions, ignoreCase) {
         if (typeof path === "string" && /^\.\.?\//.test(path)) {
+            if (extraExtensions) {
+                for (var extension in extraExtensions) {
+                    var suffix = path.slice(-extension.length);
+                    if (suffix === extension || ignoreCase && suffix.toLowerCase() === extension.toLowerCase()) {
+                        var output = extraExtensions[extension];
+                        return output === extension ? path : path.slice(0, -extension.length) + output;
+                    }
+                }
+            }
             return path.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function (m, tsx, d, ext, cm) {
                 return tsx ? preserveJsx ? ".jsx" : ".js" : d && (!ext || !cm) ? m : (d + ext + "." + cm.toLowerCase() + "js");
             });
@@ -1345,7 +1354,7 @@ var __rewriteRelativeImportExtension;
 
 /***/ }),
 
-/***/ 43348:
+/***/ 60217:
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -1357,9 +1366,9 @@ __webpack_require__.d(__webpack_exports__, {
 
 // UNUSED EXPORTS: AsyncByteQueue, AsyncByteStream, AsyncMessageReader, AsyncRecordBatchFileReader, AsyncRecordBatchStreamReader, Binary, BinaryBuilder, BinaryView, BinaryViewBuilder, Bool, BoolBuilder, BufferType, Builder, ByteStream, CompressionType, Data, DataType, DateBuilder, DateDay, DateDayBuilder, DateMillisecond, DateMillisecondBuilder, DateUnit, Date_, Decimal, DecimalBuilder, DenseUnion, DenseUnionBuilder, Dictionary, DictionaryBuilder, Duration, DurationBuilder, DurationMicrosecond, DurationMicrosecondBuilder, DurationMillisecond, DurationMillisecondBuilder, DurationNanosecond, DurationNanosecondBuilder, DurationSecond, DurationSecondBuilder, Field, FixedSizeBinary, FixedSizeBinaryBuilder, FixedSizeList, FixedSizeListBuilder, Float, Float16, Float16Builder, Float32, Float32Builder, Float64, Float64Builder, FloatBuilder, Int, Int16, Int16Builder, Int32, Int32Builder, Int64, Int64Builder, Int8, Int8Builder, IntBuilder, Interval, IntervalBuilder, IntervalDayTime, IntervalDayTimeBuilder, IntervalMonthDayNano, IntervalMonthDayNanoBuilder, IntervalUnit, IntervalYearMonth, IntervalYearMonthBuilder, JSONMessageReader, LargeBinary, LargeBinaryBuilder, LargeList, LargeListBuilder, LargeUtf8, LargeUtf8Builder, List, ListBuilder, MapBuilder, MapRow, Map_, Message, MessageHeader, MessageReader, MetadataVersion, Null, NullBuilder, Precision, RecordBatch, RecordBatchFileReader, RecordBatchFileWriter, RecordBatchJSONWriter, RecordBatchReader, RecordBatchStreamReader, RecordBatchStreamWriter, RecordBatchWriter, Schema, SparseUnion, SparseUnionBuilder, Struct, StructBuilder, StructRow, Table, Time, TimeBuilder, TimeMicrosecond, TimeMicrosecondBuilder, TimeMillisecond, TimeMillisecondBuilder, TimeNanosecond, TimeNanosecondBuilder, TimeSecond, TimeSecondBuilder, TimeUnit, Timestamp, TimestampBuilder, TimestampMicrosecond, TimestampMicrosecondBuilder, TimestampMillisecond, TimestampMillisecondBuilder, TimestampNanosecond, TimestampNanosecondBuilder, TimestampSecond, TimestampSecondBuilder, Type, Uint16, Uint16Builder, Uint32, Uint32Builder, Uint64, Uint64Builder, Uint8, Uint8Builder, Union, UnionBuilder, UnionMode, Utf8, Utf8Builder, Utf8View, Utf8ViewBuilder, Vector, Visitor, builderThroughAsyncIterable, builderThroughIterable, compressionRegistry, isArrowData, isArrowDataType, isArrowField, isArrowRecordBatch, isArrowSchema, isArrowTable, isArrowVector, makeBuilder, makeData, makeTable, makeVector, tableFromArrays, tableFromJSON, tableToIPC, util, vectorFromArray
 
-// EXTERNAL MODULE: ./node_modules/.pnpm/tslib@2.8.1/node_modules/tslib/tslib.js
-var tslib_tslib = __webpack_require__(21440);
-;// CONCATENATED MODULE: ./node_modules/.pnpm/tslib@2.8.1/node_modules/tslib/modules/index.js
+// EXTERNAL MODULE: ./node_modules/.pnpm/tslib@2.9.1/node_modules/tslib/tslib.js
+var tslib_tslib = __webpack_require__(849);
+;// CONCATENATED MODULE: ./node_modules/.pnpm/tslib@2.9.1/node_modules/tslib/modules/index.js
 
 const {
     __extends,
