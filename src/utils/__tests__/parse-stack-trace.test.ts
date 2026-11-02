@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseJunitXml } from '../../parsers/junit';
-import { parseFileLocation } from '../parse-stack-trace';
+import { normalizePath, parseFileLocation } from '../parse-stack-trace';
 
 describe('parseFileLocation', () => {
   describe('JS/TS stack traces', () => {
@@ -191,6 +191,35 @@ AssertionError: 1 != 2`;
       });
     });
 
+    it('reads JS frames that have a line prefix', () => {
+      const location = { path: 'src/a.test.ts', line: 3 };
+      expect(parseFileLocation('\u001b[90m    at foo (src/a.test.ts:3:5)')).toEqual(location);
+      expect(parseFileLocation('E    at foo (src/a.test.ts:3:5)')).toEqual(location);
+    });
+
+    it('reads JS frames with spaces in a parenthesised path', () => {
+      expect(parseFileLocation('at foo (src/my app/a.test.js:3:5)')).toEqual({
+        path: 'src/my app/a.test.js',
+        line: 3,
+      });
+    });
+
+    it('does not read times or addresses at the start of a line as a location', () => {
+      expect(parseFileLocation('Request failed\nat 20:12:40')).toBeNull();
+      expect(parseFileLocation('  at 2026-11-02 20:12:40.192')).toBeNull();
+      expect(parseFileLocation(' at 127.0.0.1:8080:1')).toBeNull();
+    });
+
+    it.each([
+      ['an unbroken path-like run', 'a'.repeat(200_000)],
+      ['a long run of whitespace after at', `at ${' '.repeat(200_000)}`],
+      ['many at tokens', 'at '.repeat(70_000)],
+    ])('stays fast on %s', (_name, line) => {
+      const started = performance.now();
+      expect(parseFileLocation(line)).toBeNull();
+      expect(performance.now() - started).toBeLessThan(500);
+    });
+
     it('does not read a timestamp in a failure message as a location', () => {
       expect(parseFileLocation('Timed out at 2026-11-02 20:12:40.192')).toBeNull();
       expect(parseFileLocation('Connection dropped at 20:12:40')).toBeNull();
@@ -207,6 +236,92 @@ Test Case 'XCFirstTests.testFails' failed (0.001 seconds)`;
         path: 'Tests/ProbeTests/XCTestTests.swift',
         line: 6,
       });
+    });
+
+    it('keeps the whole file name for Swift naming conventions', () => {
+      const workspace = '/Users/runner/work/app/app';
+      expect(
+        parseFileLocation(
+          `${workspace}/Tests/String+ExtensionsTests.swift:12: error: x`,
+          workspace,
+        ),
+      ).toEqual({ path: 'Tests/String+ExtensionsTests.swift', line: 12 });
+      expect(parseFileLocation(`Tests/Foo@2x.swift:3: failed`)).toEqual({
+        path: 'Tests/Foo@2x.swift',
+        line: 3,
+      });
+    });
+
+    it('handles spaces in the workspace and in the path of an error line', () => {
+      const workspace = '/Users/runner/work/my app/my app';
+      expect(parseFileLocation(`${workspace}/Tests/A.swift:3: error: x`, workspace)).toEqual({
+        path: 'Tests/A.swift',
+        line: 3,
+      });
+      expect(parseFileLocation(`${workspace}/My Tests/A.swift:3: error: x`, workspace)).toEqual({
+        path: 'My Tests/A.swift',
+        line: 3,
+      });
+    });
+
+    it('prefers the assertion line over earlier output and later mentions', () => {
+      const workspace = '/w/app';
+      expect(
+        parseFileLocation(
+          `[info] Sources/App/Logger.swift:42 starting\n/w/app/Tests/A.swift:6: error: x`,
+          workspace,
+        ),
+      ).toEqual({ path: 'Tests/A.swift', line: 6 });
+      expect(parseFileLocation(`Tests/A.swift:6: error: expected main.go:12`)).toEqual({
+        path: 'Tests/A.swift',
+        line: 6,
+      });
+    });
+
+    it('treats an absolute path outside the workspace as no location', () => {
+      expect(parseFileLocation('/work/Tests/A.swift:3: error: x', '/home/runner/app')).toBeNull();
+    });
+
+    it('does not treat the workspace path itself as dependency code', () => {
+      const vendor = '/home/runner/work/vendor/vendor';
+      expect(parseFileLocation(`${vendor}/Tests/A.swift:3: error: x`, vendor)).toEqual({
+        path: 'Tests/A.swift',
+        line: 3,
+      });
+      const build = '/srv/ci.build/_work/app/app';
+      expect(parseFileLocation(`${build}/Tests/A.swift:3: error: x`, build)).toEqual({
+        path: 'Tests/A.swift',
+        line: 3,
+      });
+    });
+
+    it('matches dependency directories as whole path segments', () => {
+      expect(parseFileLocation('acme-vendor/Tests/A.swift:3: error: x')).toEqual({
+        path: 'acme-vendor/Tests/A.swift',
+        line: 3,
+      });
+    });
+
+    it('applies Swift dependency directories only to Swift files', () => {
+      expect(parseFileLocation('at foo (.build/tests/a.test.js:3:5)')).toEqual({
+        path: '.build/tests/a.test.js',
+        line: 3,
+      });
+      expect(parseFileLocation('out.build/pkg/a_test.go:3')).toEqual({
+        path: 'out.build/pkg/a_test.go',
+        line: 3,
+      });
+    });
+
+    it('makes Windows paths workspace-relative', () => {
+      expect(
+        parseFileLocation('D:\\a\\app\\app\\Tests\\A.swift:12: error: x', 'D:\\a\\app\\app'),
+      ).toEqual({ path: 'Tests/A.swift', line: 12 });
+    });
+
+    it('ignores line numbers GitHub would reject', () => {
+      expect(parseFileLocation('Tests/A.swift:0: error: x')).toBeNull();
+      expect(parseFileLocation('Tests/A.swift:99999999999: error: x')).toBeNull();
     });
 
     it('skips SwiftPM checkouts and toolchain frames', () => {
@@ -305,5 +420,13 @@ Tests/AppTests/LoginTests.swift:9: error: failed`;
 
       expect(parseFileLocation(trace)).toBeNull();
     });
+  });
+});
+
+describe('normalizePath', () => {
+  it('strips a Windows workspace from a forward-slash path', () => {
+    expect(normalizePath('D:/a/app/app/test-results/junit.xml', 'D:\\a\\app\\app')).toBe(
+      'test-results/junit.xml',
+    );
   });
 });

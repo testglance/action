@@ -13,6 +13,7 @@ import type {
   TrendIndicators,
 } from '../history/types';
 import {
+  failureExcerpt,
   escapeHtml,
   formatDuration,
   formatDurationPair,
@@ -484,7 +485,10 @@ function renderFailedTests(failedTests: ParsedTestCase[]): string {
   const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
   const items = shown
     .map((t) => {
-      const error = truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH);
+      const error = truncate(
+        failureExcerpt(t.errorMessage ?? 'No error message'),
+        MAX_ERROR_MESSAGE_LENGTH,
+      );
       let stackHtml = '';
       if (t.stackTrace) {
         const lines = t.stackTrace.split('\n');
@@ -572,7 +576,7 @@ details{margin:.5rem 0}
 summary{cursor:pointer;font-weight:600;padding:.25rem 0}
 pre{background:#161b22;color:#e6edf3;padding:1rem;border-radius:6px;overflow-x:auto;font-size:.8125rem;margin:.5rem 0}
 code{font-family:SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;font-size:.85em}
-blockquote{border-left:3px solid #cf222e;padding:.25rem .75rem;color:#57606a;margin:.25rem 0 .5rem;font-size:.875rem}
+blockquote{border-left:3px solid #cf222e;padding:.25rem .75rem;color:#57606a;margin:.25rem 0 .5rem;font-size:.875rem;white-space:pre-wrap}
 .failed-test{margin-bottom:1rem;padding:.75rem;background:#fff5f5;border-radius:6px;border:1px solid #ffcecb}
 .highlights{list-style:none;padding:0}
 .highlights li{padding:.25rem 0}

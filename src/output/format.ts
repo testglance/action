@@ -27,6 +27,14 @@ export function truncate(str: string, maxLen: number): string {
   return str.slice(0, maxLen - 3) + '...';
 }
 
+// XCTest's detailed failure output starts with suite and test progress lines, which would fill a
+// truncated message before reaching the assertion.
+export function failureExcerpt(message: string): string {
+  const lines = message.split('\n');
+  const assertionLine = lines.findIndex((line) => line.includes(': error:'));
+  return assertionLine > 0 ? lines.slice(assertionLine).join('\n') : message;
+}
+
 export function renderProgressBar(passRate: number, width = 16): string {
   const clamped = Math.max(0, Math.min(100, passRate));
   const filled = clamped === 100 ? width : Math.floor((clamped / 100) * width);

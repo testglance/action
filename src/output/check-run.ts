@@ -1,11 +1,15 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import { parseFileLocation, normalizePath } from '../utils/parse-stack-trace';
+import { isValidSourceLine, parseFileLocation, normalizePath } from '../utils/parse-stack-trace';
 import { resolveRunIdentity } from '../utils/run-context';
-import { formatDuration, renderMetricsStrip } from './format';
+import { failureExcerpt, formatDuration, renderMetricsStrip, truncate } from './format';
 import type { ParsedTestRun, ParsedTestCase } from '../types';
 
 const MAX_ANNOTATIONS = 50;
+// GitHub rejects the whole check run over an annotation message above 64 KB or a title above 255
+// characters. A UTF-16 unit is at most 3 UTF-8 bytes, so this many units always fits.
+const MAX_ANNOTATION_MESSAGE_LENGTH = 20_000;
+const MAX_ANNOTATION_TITLE_LENGTH = 255;
 
 const MAX_CHECK_RUN_ATTEMPTS = 4;
 const INITIAL_RETRY_DELAY_MS = 1000;
@@ -82,11 +86,16 @@ async function reportCheckRunFailure(checkName: string, err: unknown): Promise<v
 function resolveLocation(test: ParsedTestCase): { path: string; line: number } | null {
   const workspace = process.env.GITHUB_WORKSPACE;
   if (test.file) {
-    return { path: normalizePath(test.file, workspace), line: test.line ?? 1 };
+    return {
+      path: normalizePath(test.file, workspace),
+      line: isValidSourceLine(test.line) ? test.line : 1,
+    };
   }
   // SwiftPM reports have no stack trace; its detailed XCTest failure output lands in the message.
-  const trace = test.stackTrace ?? test.errorMessage;
-  return trace ? parseFileLocation(trace, workspace) : null;
+  return (
+    parseFileLocation(test.stackTrace ?? '', workspace) ??
+    parseFileLocation(test.errorMessage ?? '', workspace)
+  );
 }
 
 export interface CheckRunOptions {
@@ -145,8 +154,11 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
           start_line: location ? location.line : 1,
           end_line: location ? location.line : 1,
           annotation_level: annotationLevel,
-          message: test.errorMessage ?? 'Test failed',
-          title: test.name,
+          message: truncate(
+            failureExcerpt(test.errorMessage ?? 'Test failed'),
+            MAX_ANNOTATION_MESSAGE_LENGTH,
+          ),
+          title: truncate(test.name, MAX_ANNOTATION_TITLE_LENGTH),
         });
       }
       if (annotations.length >= MAX_ANNOTATIONS) break;

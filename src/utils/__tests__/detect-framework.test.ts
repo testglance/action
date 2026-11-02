@@ -78,6 +78,15 @@ describe('detectFramework', () => {
       expect(detectFramework('/test-results/xctest-junit.xml', 'junit')).toBe('xctest');
     });
 
+    it('does not read Swift labels from directory names', () => {
+      expect(
+        detectFramework('/home/runner/work/xctest-helpers/xctest-helpers/junit.xml', 'junit'),
+      ).toBeUndefined();
+      expect(
+        detectFramework('/swift-testing-demo/test-results/junit.xml', 'junit'),
+      ).toBeUndefined();
+    });
+
     it('leaves a generic SwiftPM junit.xml unlabelled', () => {
       expect(detectFramework('/test-results/junit.xml', 'junit')).toBeUndefined();
     });

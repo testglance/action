@@ -5,9 +5,10 @@ import { parseJunitXml } from './parsers/junit';
 import { parseCtrfJson } from './parsers/ctrf';
 import { sendTestRun } from './api/client';
 import { detectFormat } from './utils/detect-format';
-import { detectFramework } from './utils/detect-framework';
+import { detectRunFramework } from './utils/detect-run-framework';
 import { discoverReportFiles } from './utils/discover-files';
 import { autoDetectReportFiles } from './utils/auto-detect';
+import { withSwiftPmReportPairs } from './utils/swiftpm-report-pair';
 import { resolveRunIdentity } from './utils/run-context';
 import { mergeTestRuns } from './utils/merge-results';
 import { handleApiUnreachable, handleApiError, handleUnexpectedError } from './utils/errors';
@@ -179,7 +180,7 @@ export async function run(): Promise<RunResult> {
     let files: string[];
 
     if (reportPath) {
-      files = await discoverReportFiles(reportPath);
+      files = await withSwiftPmReportPairs(await discoverReportFiles(reportPath));
 
       if (files.length === 0) {
         core.warning(`No report files found matching: ${reportPath}`);
@@ -188,7 +189,7 @@ export async function run(): Promise<RunResult> {
     } else {
       core.info('No report-path provided, entering auto-detect mode');
       const result = await autoDetectReportFiles();
-      files = result.files;
+      files = await withSwiftPmReportPairs(result.files);
 
       if (files.length === 0) {
         const patterns = result.scannedPatterns.map((p) => `  - ${p}`).join('\n');
@@ -374,13 +375,7 @@ export async function run(): Promise<RunResult> {
       }
     }
 
-    const firstFile = successful[0].filePath;
-    const format = reportFormat === 'auto' ? detectFormat(firstFile) : reportFormat;
-    const framework = detectFramework(
-      firstFile,
-      format === 'junit' || format === 'ctrf' ? format : null,
-      parsed.toolName,
-    );
+    const framework = detectRunFramework(successful, reportFormat);
 
     let result: Awaited<ReturnType<typeof sendTestRun>> | undefined;
 

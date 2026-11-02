@@ -117,44 +117,92 @@ describe('parseJunitXml', () => {
     });
   });
 
-  describe('failure element shapes', () => {
-    const parseSingleTest = (children: string) =>
-      parseJunitXml(
-        `<testsuites><testsuite name="s"><testcase name="t">${children}</testcase></testsuite></testsuites>`,
-      ).suites[0].tests[0];
+  describe('failure element shapes (junit-failure-shapes.xml)', () => {
+    const tests = parseJunitXml(fixture('junit-failure-shapes.xml')).suites[0].tests;
+    const findShape = (name: string) => tests.find((t) => t.name === name);
 
     it('counts a bare <failure /> as failed', () => {
-      expect(parseSingleTest('<failure />').status).toBe('failed');
+      expect(findShape('bareFailure')?.status).toBe('failed');
     });
 
     it('counts a bare <error /> as errored', () => {
-      expect(parseSingleTest('<error />').status).toBe('errored');
+      expect(findShape('bareError')?.status).toBe('errored');
     });
 
     it('keeps the body of a <failure> without attributes', () => {
-      expect(parseSingleTest('<failure>boom at a.swift:3</failure>')).toMatchObject({
+      expect(findShape('bodyOnly')).toMatchObject({
         status: 'failed',
         errorMessage: 'boom at a.swift:3',
         stackTrace: 'boom at a.swift:3',
       });
     });
+
+    it('uses the body when the message attribute is empty', () => {
+      expect(findShape('emptyMessage')?.errorMessage).toBe('from body');
+      expect(findShape('emptySkipMessage')?.errorMessage).toBe('skip body');
+    });
+
+    it('keeps a decoded test name on one line for Markdown tables', () => {
+      expect(findShape("two lines 'quoted'")).toBeDefined();
+    });
   });
 
-  it('counts every suite when only one of several is named TestResults', () => {
-    const result = parseJunitXml(
-      `<testsuites>
-        <testsuite name="TestResults" time="1"><testcase classname="a" name="x" time="1" /></testsuite>
-        <testsuite name="other" time="2"><testcase name="y" time="2" /></testsuite>
-      </testsuites>`,
-    );
+  describe('run duration with suites named TestResults', () => {
+    it('keeps the declared time of a TestResults suite beside other suites', () => {
+      const { summary } = parseJunitXml(fixture('junit-testresults-mixed.xml'));
+      expect(summary.duration).toBe(102);
+    });
 
-    expect(result.summary.duration).toBe(3);
+    it('keeps the declared time of a top-level TestResults suite', () => {
+      const { summary, suites } = parseJunitXml(fixture('junit-testresults-top-level.xml'));
+      expect(summary.duration).toBe(12.5);
+      expect(suites.map((s) => s.name)).toEqual(['a']);
+    });
+
+    it('keeps the declared time of a nested TestResults suite', () => {
+      expect(parseJunitXml(fixture('junit-testresults-nested.xml')).summary.duration).toBe(9);
+    });
+
+    it('does not split a TestResults suite whose tests have no classname', () => {
+      const { summary, suites } = parseJunitXml(fixture('junit-testresults-no-classname.xml'));
+      expect(summary.duration).toBe(12.5);
+      expect(suites).toMatchObject([{ name: 'TestResults', duration: 12.5 }]);
+    });
+
+    it('falls back to the suite name for an empty classname', () => {
+      const { suites } = parseJunitXml(fixture('junit-testresults-empty-classname.xml'));
+      expect(suites.map((s) => s.name)).toEqual(['TestResults']);
+    });
+  });
+
+  describe('entity limits', () => {
+    const reportWithOutput = (output: string, doctype = '') =>
+      `<?xml version="1.0"?>${doctype}<testsuites><testsuite name="s"><testcase name="t"><system-out>${output}</system-out></testcase></testsuite></testsuites>`;
+
+    it('parses more numeric references than the expansion limit', () => {
+      const result = parseJunitXml(reportWithOutput('&#xA;'.repeat(1_000_001)));
+      expect(result.summary.total).toBe(1);
+    });
+
+    it('still rejects DOCTYPE entity expansion past the limit', () => {
+      const doctype = '<!DOCTYPE t [<!ENTITY big "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">]>';
+      const output = '&big;'.repeat(1_000_001);
+      expect(() => parseJunitXml(reportWithOutput(output, doctype))).toThrow(/limit exceeded/);
+    });
+  });
+
+  it('groups a very large suite without copying its tests for every test', () => {
+    const cases = '<testcase classname="c" name="t" />'.repeat(100_000);
+    const started = performance.now();
+    const result = parseJunitXml(
+      `<testsuites><testsuite name="TestResults">${cases}</testsuite></testsuites>`,
+    );
+    expect(result.summary.total).toBe(100_000);
+    expect(performance.now() - started).toBeLessThan(4000);
   });
 
   it('keeps the suite name of non-SwiftPM reports that also have classname', () => {
-    const result = parseJunitXml(
-      '<testsuites><testsuite name="pytest"><testcase classname="tests.a" name="t" /></testsuite></testsuites>',
-    );
+    const result = parseJunitXml(fixture('junit-classname-with-suite-name.xml'));
 
     expect(result.suites.map((s) => s.name)).toEqual(['pytest']);
   });

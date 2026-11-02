@@ -9,6 +9,16 @@ const BOM = '\uFEFF';
 // in different Swift suites would collide in history.
 const SWIFTPM_SUITE_NAME = 'TestResults';
 
+// DOCTYPE entities can amplify, so they are limited. Numeric references can't, and a large report
+// has millions of them, so appliesTo leaves them out. fast-xml-parser's types omit this option.
+const ENTITY_LIMITS = {
+  enabled: true,
+  maxTotalExpansions: 1_000_000,
+  maxExpandedLength: 10_000_000,
+  maxEntityCount: 100,
+  appliesTo: 'external',
+};
+
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -17,12 +27,7 @@ const xmlParser = new XMLParser({
   trimValues: true,
   // Swift Testing encodes every non-ASCII character and newline as a numeric reference.
   htmlEntities: true,
-  processEntities: {
-    enabled: true,
-    maxTotalExpansions: 1_000_000,
-    maxExpandedLength: 10_000_000,
-    maxEntityCount: 100,
-  },
+  processEntities: ENTITY_LIMITS,
 });
 
 function toElements(value: unknown): Record<string, unknown>[] {
@@ -42,7 +47,7 @@ function describeIssues(
   value: unknown,
 ): Pick<ParsedTestCase, 'errorMessage' | 'errorType' | 'stackTrace'> {
   const elements = toElements(value);
-  const messages = elements.flatMap((el) => (el['@_message'] as string) ?? bodyOf(el) ?? []);
+  const messages = elements.flatMap((el) => (el['@_message'] as string) || bodyOf(el) || []);
   const stackTraces = elements.flatMap((el) => bodyOf(el) ?? []);
   return {
     errorMessage: messages.length > 0 ? messages.join('\n') : undefined,
@@ -64,10 +69,15 @@ function resolveStatus(
     const [skip] = toElements(testcase['skipped']);
     return {
       status: 'skipped',
-      errorMessage: (skip['@_message'] as string | undefined) ?? bodyOf(skip),
+      errorMessage: (skip['@_message'] as string | undefined) || bodyOf(skip),
     };
   }
   return { status: 'passed' };
+}
+
+// A decoded &#10; in a name would split the Markdown tables that show it.
+function toSingleLine(text: string): string {
+  return text.replace(/\s*\n\s*/g, ' ');
 }
 
 function extractTestCases(
@@ -79,7 +89,7 @@ function extractTestCases(
     const file = tc['@_file'] as string | undefined;
     const line = Number.parseInt(tc['@_line'] as string, 10);
     return {
-      name: (tc['@_name'] as string) ?? 'unknown',
+      name: toSingleLine((tc['@_name'] as string) ?? 'unknown'),
       suite: suiteName,
       status,
       duration: parseFloat(tc['@_time'] as string) || 0,
@@ -95,8 +105,13 @@ function extractTestCases(
 function splitByClassname(testcases: Record<string, unknown>[], fallback: string): ParsedSuite[] {
   const groups = new Map<string, Record<string, unknown>[]>();
   for (const tc of testcases) {
-    const suiteName = (tc['@_classname'] as string | undefined) ?? fallback;
-    groups.set(suiteName, [...(groups.get(suiteName) ?? []), tc]);
+    const suiteName = toSingleLine((tc['@_classname'] as string | undefined) || fallback);
+    const group = groups.get(suiteName);
+    if (group) {
+      group.push(tc);
+    } else {
+      groups.set(suiteName, [tc]);
+    }
   }
   return [...groups].map(([name, cases]) => {
     const tests = extractTestCases(cases, name);
@@ -104,31 +119,39 @@ function splitByClassname(testcases: Record<string, unknown>[], fallback: string
   });
 }
 
-function flattenSuites(suite: Record<string, unknown>, parentName?: string): ParsedSuite[] {
-  const name = (suite['@_name'] as string) ?? parentName ?? 'unknown';
-  const results: ParsedSuite[] = [];
+interface FlattenedSuites {
+  suites: ParsedSuite[];
+  // Differs from the sum of suite durations for split suites: each one only sums its tests, which
+  // overstates Swift Testing's wall-clock time and misses time when tests have none of their own.
+  // SwiftPM runs test products one at a time and writes one TestResults suite for each.
+  runTime: number;
+}
+
+function flattenSuites(suite: Record<string, unknown>, parentName?: string): FlattenedSuites {
+  const name = toSingleLine((suite['@_name'] as string) ?? parentName ?? 'unknown');
+  const declaredTime = parseFloat(suite['@_time'] as string) || 0;
+  const suites: ParsedSuite[] = [];
+  let runTime = 0;
 
   const nestedSuites = suite['testsuite'] as Record<string, unknown>[] | undefined;
   const testcases = (suite['testcase'] as Record<string, unknown>[]) ?? [];
 
-  if (name === SWIFTPM_SUITE_NAME) {
-    results.push(...splitByClassname(testcases, name));
+  if (name === SWIFTPM_SUITE_NAME && testcases.some((tc) => tc['@_classname'])) {
+    const split = splitByClassname(testcases, name);
+    suites.push(...split);
+    runTime += declaredTime || split.reduce((sum, s) => sum + s.duration, 0);
   } else if (testcases.length > 0) {
-    const tests = extractTestCases(testcases, name);
-    results.push({
-      name,
-      tests,
-      duration: parseFloat(suite['@_time'] as string) || 0,
-    });
+    suites.push({ name, tests: extractTestCases(testcases, name), duration: declaredTime });
+    runTime += declaredTime;
   }
 
-  if (nestedSuites) {
-    for (const nested of nestedSuites) {
-      results.push(...flattenSuites(nested, name));
-    }
+  for (const nested of nestedSuites ?? []) {
+    const flattened = flattenSuites(nested, name);
+    suites.push(...flattened.suites);
+    runTime += flattened.runTime;
   }
 
-  return results;
+  return { suites, runTime };
 }
 
 export function parseJunitXml(content: string): ParsedTestRun {
@@ -151,42 +174,25 @@ export function parseJunitXml(content: string): ParsedTestRun {
     );
   }
 
-  const suites: ParsedSuite[] = [];
-
   const testsuites = parsed['testsuites'] as Record<string, unknown> | undefined;
-  const topSuite = parsed['testsuite'] as Record<string, unknown>[] | undefined;
+  const topLevelSuites =
+    (testsuites
+      ? (testsuites['testsuite'] as Record<string, unknown>[] | undefined)
+      : (parsed['testsuite'] as Record<string, unknown>[] | undefined)) ?? [];
+  const rootDuration = parseFloat(testsuites?.['@_time'] as string) || undefined;
 
-  let rootDuration: number | undefined;
-
-  if (testsuites) {
-    rootDuration = parseFloat(testsuites['@_time'] as string) || undefined;
-    const innerSuites = testsuites['testsuite'] as Record<string, unknown>[] | undefined;
-    if (innerSuites) {
-      // Split suites only sum their tests, which overstates Swift Testing's wall-clock time. SwiftPM
-      // runs test products one at a time and writes one TestResults suite for each.
-      if (innerSuites.every((s) => s['@_name'] === SWIFTPM_SUITE_NAME)) {
-        const productTimes = innerSuites.map((s) => parseFloat(s['@_time'] as string) || 0);
-        rootDuration ??= productTimes.reduce((sum, time) => sum + time, 0) || undefined;
-      }
-      for (const s of innerSuites) {
-        suites.push(...flattenSuites(s));
-      }
-    }
-  } else if (topSuite) {
-    for (const s of topSuite) {
-      suites.push(...flattenSuites(s));
-    }
-  }
+  const flattened = topLevelSuites.map((s) => flattenSuites(s));
+  const suites = flattened.flatMap((f) => f.suites);
+  const runTime = flattened.reduce((sum, f) => sum + f.runTime, 0);
 
   const allTests = suites.flatMap((s) => s.tests);
-  const suiteDurationSum = suites.reduce((sum, s) => sum + s.duration, 0);
   const summary = {
     total: allTests.length,
     passed: allTests.filter((t) => t.status === 'passed').length,
     failed: allTests.filter((t) => t.status === 'failed').length,
     skipped: allTests.filter((t) => t.status === 'skipped').length,
     errored: allTests.filter((t) => t.status === 'errored').length,
-    duration: rootDuration ?? suiteDurationSum,
+    duration: rootDuration ?? runTime,
   };
 
   return { summary, suites };

@@ -225,6 +225,51 @@ describe('createCheckRun', () => {
       });
     });
 
+    it('falls back to the message when the stack trace has no location', async () => {
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({
+          stackTrace: 'see log',
+          errorMessage: 'Tests/A.swift:12: error: x',
+        }),
+      });
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'Tests/A.swift',
+        start_line: 12,
+      });
+    });
+
+    it('keeps annotation text within GitHub limits and starts at the assertion', async () => {
+      const output = 'x'.repeat(100_000);
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({
+          name: 'n'.repeat(300),
+          errorMessage: `Test Suite started\nTests/A.swift:12: error: broke\n${output}`,
+        }),
+      });
+
+      const annotation = mockChecksCreate.mock.calls[0][0].output.annotations[0];
+      expect(Buffer.byteLength(annotation.message)).toBeLessThanOrEqual(64 * 1024);
+      expect(annotation.message.startsWith('Tests/A.swift:12: error: broke')).toBe(true);
+      expect(annotation.title.length).toBeLessThanOrEqual(255);
+    });
+
+    it('stays within the byte limit for multi-byte messages', async () => {
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({ errorMessage: '→'.repeat(100_000) }),
+        reportFile: 'test-results/junit.xml',
+      });
+
+      const annotation = mockChecksCreate.mock.calls[0][0].output.annotations[0];
+      expect(Buffer.byteLength(annotation.message)).toBeLessThanOrEqual(64 * 1024);
+    });
+
     it('makes an absolute auto-detected reportFile workspace-relative', async () => {
       vi.stubEnv('GITHUB_WORKSPACE', '/Users/runner/work/app/app');
       try {

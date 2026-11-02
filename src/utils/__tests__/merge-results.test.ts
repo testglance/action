@@ -78,6 +78,25 @@ describe('mergeTestRuns', () => {
     expect(result.summary.duration).toBe(0.001562667);
   });
 
+  it.each([
+    ['zero', 0],
+    ['negative', -9],
+  ])('falls back to suite durations when a run reports a %s duration', (_name, duration) => {
+    const run = (name: string) =>
+      makeRun({ suiteName: name, duration, total: 1, passed: 1, failed: 0 });
+    const withSuiteDuration = (parsed: ParsedTestRun): ParsedTestRun => ({
+      ...parsed,
+      suites: parsed.suites.map((s) => ({ ...s, duration: 5 })),
+    });
+
+    const result = mergeTestRuns([
+      { filePath: '/a.json', parsed: withSuiteDuration(run('a')) },
+      { filePath: '/b.json', parsed: withSuiteDuration(run('b')) },
+    ]);
+
+    expect(result.summary.duration).toBe(10);
+  });
+
   it('concatenates suites from all runs', () => {
     const runs: FileParseResult[] = [
       { filePath: '/a.xml', parsed: makeRun({ suiteName: 'suite-a' }) },

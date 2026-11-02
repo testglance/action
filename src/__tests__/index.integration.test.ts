@@ -8,7 +8,7 @@
 // Kept hermetic and offline via inputs only: no api-key (local-only → no API call),
 // history disabled (no @actions/cache), and no github-token (no check-run / PR comment).
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -61,6 +61,21 @@ describe('run() real integration (unmocked pipeline)', () => {
     expect(summary).toContain('⏭️ 1 skipped');
     expect(summary).toContain('50.0%');
     expect(summary).toContain('should reject invalid password');
+  });
+
+  it('reads the Swift Testing report beside a named SwiftPM report', async () => {
+    const reports = mkdtempSync(join(tmpDir, 'swiftpm-'));
+    const reportPath = join(reports, 'junit.xml');
+    copyFileSync('fixtures/junit-swiftpm-xctest.xml', reportPath);
+    copyFileSync('fixtures/junit-swift-testing.xml', join(reports, 'junit-swift-testing.xml'));
+    vi.stubEnv('INPUT_REPORT-PATH', reportPath);
+
+    const { run } = await import('../index');
+    await run();
+
+    const summary = readFileSync(summaryFile, 'utf-8');
+    expect(summary).toContain('✅ 6 passed');
+    expect(summary).toContain('❌ 5 failed');
   });
 
   it('parses a real CTRF fixture through the same pipeline', async () => {

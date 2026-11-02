@@ -78,9 +78,10 @@ The whole sections 8–11 block is wrapped in `try/catch`; on error it warns `En
 
 **Location resolution** — `resolveLocation` (`src/output/check-run.ts:9`), in order:
 
-1. `test.file` → `normalizePath(test.file)` at `test.line ?? 1`.
-2. else parse `test.stackTrace` via `parseFileLocation` (`src/utils/parse-stack-trace.ts:101`).
-3. else, if a `reportFile` fallback was passed, annotate that file at line 1. `index.ts` passes `successful[0].filePath` as this fallback. A test with no location and no `reportFile` is skipped.
+1. `test.file` → `normalizePath(test.file)` at `test.line`, or line 1 if it's missing or invalid.
+2. else parse `test.stackTrace` via `parseFileLocation` (`src/utils/parse-stack-trace.ts`).
+3. else parse `test.errorMessage` the same way, because SwiftPM reports have no stack trace.
+4. else, if a `reportFile` fallback was passed, annotate that file at line 1. `index.ts` passes `successful[0].filePath` as this fallback. A test with no location and no `reportFile` is skipped.
 
 ## 4. HTML report + artifact — `src/output/html-report.ts` + `upload-artifact.ts`
 
