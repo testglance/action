@@ -5,9 +5,10 @@ import { parseJunitXml } from './parsers/junit';
 import { parseCtrfJson } from './parsers/ctrf';
 import { sendTestRun } from './api/client';
 import { detectFormat } from './utils/detect-format';
-import { detectFramework } from './utils/detect-framework';
+import { detectRunFramework } from './utils/detect-run-framework';
 import { discoverReportFiles } from './utils/discover-files';
 import { autoDetectReportFiles } from './utils/auto-detect';
+import { warnAboutUnreadSwiftTestingReports } from './utils/swiftpm-report-pair';
 import { resolveRunIdentity } from './utils/run-context';
 import { mergeTestRuns } from './utils/merge-results';
 import { handleApiUnreachable, handleApiError, handleUnexpectedError } from './utils/errors';
@@ -185,6 +186,8 @@ export async function run(): Promise<RunResult> {
         core.warning(`No report files found matching: ${reportPath}`);
         return { history: null };
       }
+
+      await warnAboutUnreadSwiftTestingReports(files);
     } else {
       core.info('No report-path provided, entering auto-detect mode');
       const result = await autoDetectReportFiles();
@@ -374,13 +377,7 @@ export async function run(): Promise<RunResult> {
       }
     }
 
-    const firstFile = successful[0].filePath;
-    const format = reportFormat === 'auto' ? detectFormat(firstFile) : reportFormat;
-    const framework = detectFramework(
-      firstFile,
-      format === 'junit' || format === 'ctrf' ? format : null,
-      parsed.toolName,
-    );
+    const framework = detectRunFramework(successful, reportFormat);
 
     let result: Awaited<ReturnType<typeof sendTestRun>> | undefined;
 

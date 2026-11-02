@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="shapes">
+    <testcase name="bareFailure"><failure /></testcase>
+    <testcase name="bareError"><error /></testcase>
+    <testcase name="bodyOnly"><failure>boom at a.swift:3</failure></testcase>
+    <testcase name="emptyMessage"><failure message="">from body</failure></testcase>
+    <testcase name="emptySkipMessage"><skipped message="">skip body</skipped></testcase>
+    <testcase name="two&#10;lines &#39;quoted&#39;" />
+    <testcase name="carriage&#13;return" />
+    <testcase name="trailing&#10;" />
+  </testsuite>
+</testsuites>

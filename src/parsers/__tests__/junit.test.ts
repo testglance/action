@@ -9,6 +9,207 @@ const fixture = (name: string) => readFileSync(join(__dirname, '../../../fixture
 const fixtureRaw = (name: string) => readFileSync(join(__dirname, '../../../fixtures', name));
 
 describe('parseJunitXml', () => {
+  describe('Swift Testing report (junit-swift-testing.xml)', () => {
+    let result: ParsedTestRun;
+    const findTest = (suite: string, name: string) =>
+      result.suites.find((s) => s.name === suite)?.tests.find((t) => t.name === name);
+
+    beforeAll(() => {
+      result = parseJunitXml(fixture('junit-swift-testing.xml'));
+    });
+
+    it('recounts statuses from test cases', () => {
+      expect(result.summary).toMatchObject({
+        total: 10,
+        passed: 4,
+        failed: 4,
+        skipped: 2,
+        errored: 0,
+      });
+    });
+
+    it('uses classname as the suite instead of the generic TestResults', () => {
+      expect(result.suites.map((s) => s.name)).toEqual([
+        'ProbeTests.SecondSuite.Nested',
+        'ProbeTests.SecondSuite',
+        'ProbeTests',
+        'ProbeTests.FirstSuite',
+      ]);
+    });
+
+    it('keeps same-named tests in different Swift suites distinct', () => {
+      expect(findTest('ProbeTests.FirstSuite', 'sameName()')?.status).toBe('passed');
+      expect(findTest('ProbeTests.SecondSuite', 'sameName()')?.status).toBe('failed');
+    });
+
+    it('keeps every issue of a test with several failures', () => {
+      expect(findTest('ProbeTests.FirstSuite', 'twoIssues()')?.errorMessage).toBe(
+        'Expectation failed: name == "work" (error)\n' +
+          'Expectation failed: answer() == 1 (error): must be one\n' +
+          'second line → with arrow',
+      );
+    });
+
+    it('reads the skip comment from the element body', () => {
+      expect(findTest('ProbeTests.FirstSuite', 'skippedWithComment()')?.errorMessage).toBe(
+        'not on this platform — sorry',
+      );
+      expect(findTest('ProbeTests.FirstSuite', 'skippedPlain()')?.errorMessage).toBeUndefined();
+    });
+
+    it('reports wall-clock run time, not the sum of tests that ran in parallel', () => {
+      expect(result.summary.duration).toBe(0.001562667);
+    });
+
+    it('gives each suite the sum of its test durations', () => {
+      const freeFunctions = result.suites.find((s) => s.name === 'ProbeTests');
+      expect(freeFunctions?.duration).toBeCloseTo(0.000907584 + 0.000933417, 9);
+    });
+  });
+
+  describe('Swift Testing report merged from several test products', () => {
+    const result = parseJunitXml(fixture('junit-swift-testing-merged.xml'));
+
+    it('reads the tests of every product', () => {
+      expect(result.suites.map((s) => s.name)).toEqual(['BetaTests.Shared', 'AlphaTests.Shared']);
+      expect(result.summary).toMatchObject({ total: 4, passed: 2, failed: 1, skipped: 1 });
+    });
+
+    it('adds up the run time of every product', () => {
+      expect(result.summary.duration).toBeCloseTo(0.001342959 + 0.001481541, 9);
+    });
+
+    it('reads the literal non-ASCII text the merger writes', () => {
+      expect(result.suites[0].tests[0].errorMessage).toBe('off → beta');
+    });
+  });
+
+  describe('SwiftPM XCTest reports', () => {
+    it('uses classname as the suite (junit-swiftpm-xctest.xml)', () => {
+      const result = parseJunitXml(fixture('junit-swiftpm-xctest.xml'));
+
+      expect(result.suites.map((s) => s.name)).toEqual(['ProbeTests.XCFirstTests']);
+      expect(result.summary).toMatchObject({ total: 3, failed: 1 });
+      expect(result.summary.duration).toBe(0.01691592);
+    });
+
+    it('reports XCTSkip as passed because SwiftPM writes no skipped element', () => {
+      const result = parseJunitXml(fixture('junit-swiftpm-xctest.xml'));
+
+      const skipped = result.suites[0].tests.find((t) => t.name === 'testSkipped');
+      expect(skipped?.status).toBe('passed');
+      expect(result.summary).toMatchObject({ passed: 2, skipped: 0 });
+    });
+
+    it('has only a placeholder failure message without the experimental flag', () => {
+      const result = parseJunitXml(fixture('junit-swiftpm-xctest.xml'));
+
+      const failed = result.suites[0].tests.find((t) => t.name === 'testFails');
+      expect(failed).toMatchObject({ status: 'failed', errorMessage: 'failure' });
+      expect(failed?.stackTrace).toBeUndefined();
+    });
+
+    it('parses the empty report SwiftPM writes without XCTest tests', () => {
+      const result = parseJunitXml(fixture('junit-swiftpm-xctest-empty.xml'));
+
+      expect(result.suites).toEqual([]);
+      expect(result.summary).toMatchObject({ total: 0, duration: 0 });
+    });
+  });
+
+  describe('failure element shapes (junit-failure-shapes.xml)', () => {
+    const tests = parseJunitXml(fixture('junit-failure-shapes.xml')).suites[0].tests;
+    const findShape = (name: string) => tests.find((t) => t.name === name);
+
+    it('counts a bare <failure /> as failed', () => {
+      expect(findShape('bareFailure')?.status).toBe('failed');
+    });
+
+    it('counts a bare <error /> as errored', () => {
+      expect(findShape('bareError')?.status).toBe('errored');
+    });
+
+    it('keeps the body of a <failure> without attributes', () => {
+      expect(findShape('bodyOnly')).toMatchObject({
+        status: 'failed',
+        errorMessage: 'boom at a.swift:3',
+        stackTrace: 'boom at a.swift:3',
+      });
+    });
+
+    it('uses the body when the message attribute is empty', () => {
+      expect(findShape('emptyMessage')?.errorMessage).toBe('from body');
+      expect(findShape('emptySkipMessage')?.errorMessage).toBe('skip body');
+    });
+
+    it('keeps a decoded test name on one line for Markdown tables', () => {
+      expect(findShape("two lines 'quoted'")).toBeDefined();
+      expect(findShape('carriage return')).toBeDefined();
+      expect(findShape('trailing')).toBeDefined();
+    });
+  });
+
+  describe('run duration with suites named TestResults', () => {
+    it('keeps the declared time of a TestResults suite beside other suites', () => {
+      const { summary } = parseJunitXml(fixture('junit-testresults-mixed.xml'));
+      expect(summary.duration).toBe(102);
+    });
+
+    it('keeps the declared time of a top-level TestResults suite', () => {
+      const { summary, suites } = parseJunitXml(fixture('junit-testresults-top-level.xml'));
+      expect(summary.duration).toBe(12.5);
+      expect(suites.map((s) => s.name)).toEqual(['a']);
+    });
+
+    it('keeps the declared time of a nested TestResults suite', () => {
+      expect(parseJunitXml(fixture('junit-testresults-nested.xml')).summary.duration).toBe(9);
+    });
+
+    it('does not split a TestResults suite whose tests have no classname', () => {
+      const { summary, suites } = parseJunitXml(fixture('junit-testresults-no-classname.xml'));
+      expect(summary.duration).toBe(12.5);
+      expect(suites).toMatchObject([{ name: 'TestResults', duration: 12.5 }]);
+    });
+
+    it('falls back to the suite name for an empty classname', () => {
+      const { suites } = parseJunitXml(fixture('junit-testresults-empty-classname.xml'));
+      expect(suites.map((s) => s.name)).toEqual(['TestResults']);
+    });
+  });
+
+  describe('entity limits', () => {
+    const reportWithOutput = (output: string, doctype = '') =>
+      `<?xml version="1.0"?>${doctype}<testsuites><testsuite name="s"><testcase name="t"><system-out>${output}</system-out></testcase></testsuite></testsuites>`;
+
+    it('parses more numeric references than the expansion limit', () => {
+      const result = parseJunitXml(reportWithOutput('&#xA;'.repeat(1_000_001)));
+      expect(result.summary.total).toBe(1);
+    });
+
+    it('still rejects DOCTYPE entity expansion past the limit', () => {
+      const doctype = '<!DOCTYPE t [<!ENTITY big "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">]>';
+      const output = '&big;'.repeat(1_000_001);
+      expect(() => parseJunitXml(reportWithOutput(output, doctype))).toThrow(/limit exceeded/);
+    });
+  });
+
+  it('groups a very large suite without copying its tests for every test', () => {
+    const cases = '<testcase classname="c" name="t" />'.repeat(100_000);
+    const started = performance.now();
+    const result = parseJunitXml(
+      `<testsuites><testsuite name="TestResults">${cases}</testsuite></testsuites>`,
+    );
+    expect(result.summary.total).toBe(100_000);
+    // Coverage alone takes this past 5s; copying per test takes minutes.
+    expect(performance.now() - started).toBeLessThan(30_000);
+  }, 60_000);
+
+  it('keeps the suite name of non-SwiftPM reports that also have classname', () => {
+    const result = parseJunitXml(fixture('junit-classname-with-suite-name.xml'));
+
+    expect(result.suites.map((s) => s.name)).toEqual(['pytest']);
+  });
+
   describe('basic parsing (junit-basic.xml)', () => {
     let result: ParsedTestRun;
 

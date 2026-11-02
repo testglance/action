@@ -13,9 +13,11 @@ export function mergeTestRuns(runs: FileParseResult[]): ParsedTestRun {
 
   const allSuites: ParsedSuite[] = [];
   let toolName: string | undefined;
+  let duration = 0;
 
   for (const { filePath, parsed } of runs) {
     toolName ??= parsed.toolName;
+    duration += parsed.summary.duration;
 
     for (const suite of parsed.suites) {
       const isGenericName = parsed.toolName && suite.name === parsed.toolName;
@@ -34,10 +36,8 @@ export function mergeTestRuns(runs: FileParseResult[]): ParsedTestRun {
   let failed = 0;
   let skipped = 0;
   let errored = 0;
-  let duration = 0;
 
   for (const suite of allSuites) {
-    duration += suite.duration;
     for (const test of suite.tests) {
       total++;
       if (test.status === 'passed') passed++;

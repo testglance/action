@@ -70,6 +70,12 @@ vi.mock('../utils/discover-files', () => ({
   discoverReportFiles: (...args: unknown[]) => mockDiscoverReportFiles(...args),
 }));
 
+const mockWarnAboutUnreadSwiftTestingReports = vi.fn();
+vi.mock('../utils/swiftpm-report-pair', () => ({
+  warnAboutUnreadSwiftTestingReports: (files: string[]) =>
+    mockWarnAboutUnreadSwiftTestingReports(files),
+}));
+
 const mockMergeTestRuns = vi.fn();
 vi.mock('../utils/merge-results', () => ({
   mergeTestRuns: (...args: unknown[]) => mockMergeTestRuns(...args),
@@ -847,6 +853,7 @@ describe('run() orchestration (all collaborators mocked)', () => {
       await run();
 
       expect(mockAutoDetectReportFiles).toHaveBeenCalled();
+      expect(mockWarnAboutUnreadSwiftTestingReports).not.toHaveBeenCalled();
       expect(mockDiscoverReportFiles).not.toHaveBeenCalled();
       expect(mockMergeTestRuns).toHaveBeenCalled();
     });

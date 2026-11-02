@@ -15,6 +15,7 @@ import type {
   TrendIndicators,
 } from '../history/types';
 import {
+  extractFailureExcerpt,
   escapeHtml,
   formatDuration,
   formatDurationPair,
@@ -193,12 +194,15 @@ export async function generateSummary(options: SummaryOptions): Promise<void> {
       const shown = failedTests.slice(0, MAX_FAILED_TESTS_SHOWN);
 
       for (const t of shown) {
-        const error = truncate(t.errorMessage ?? 'No error message', MAX_ERROR_MESSAGE_LENGTH);
+        const error = truncate(
+          extractFailureExcerpt(t.errorMessage ?? 'No error message'),
+          MAX_ERROR_MESSAGE_LENGTH,
+        );
         core.summary.addRaw(
           `> [!CAUTION]\n` +
             `> **\`${escapeHtml(t.name)}\`** · \`${escapeHtml(t.suite)}\`\n` +
             `>\n` +
-            `> ${escapeHtml(error)}\n\n`,
+            `> ${escapeHtml(error).replaceAll('\n', '\n> ')}\n\n`,
         );
         if (t.stackTrace) {
           core.summary.addRaw(renderStackTrace(t.name, t.stackTrace));

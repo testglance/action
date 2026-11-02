@@ -1,4 +1,6 @@
+import { basename } from 'node:path';
 import { discoverReportFiles } from './discover-files';
+import { findSwiftTestingReport } from './swiftpm-report-pair';
 
 export const AUTO_DETECT_PATTERNS = [
   '**/test-results/**/*.xml',
@@ -21,6 +23,12 @@ export async function autoDetectReportFiles(): Promise<{
     for (const file of found) {
       seen.add(file);
     }
+  }
+
+  for (const file of [...seen]) {
+    if (basename(file) !== 'junit.xml') continue;
+    const swiftTestingReport = await findSwiftTestingReport(file);
+    if (swiftTestingReport) seen.add(swiftTestingReport);
   }
 
   return {

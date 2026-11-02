@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Captured from swift test in parallel mode with xunit-output, unedited below this line. SwiftPM writes XCTSkip tests as passing. swift version: Swift version 6.4.2 (swift-6.4.2-RELEASE), Target: aarch64-unknown-linux-gnu (swift:6.4.2 Docker image). -->
+
+<testsuites>
+<testsuite name="TestResults" errors="0" tests="3" failures="1" time="0.01691592">
+<testcase classname="ProbeTests.XCFirstTests" name="testSkipped" time="0.005627793">
+</testcase>
+<testcase classname="ProbeTests.XCFirstTests" name="testPasses" time="0.005643001">
+</testcase>
+<testcase classname="ProbeTests.XCFirstTests" name="testFails" time="0.005645126">
+<failure message="failure"></failure>
+</testcase>
+</testsuite>
+</testsuites>

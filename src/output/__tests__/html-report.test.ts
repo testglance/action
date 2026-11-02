@@ -221,6 +221,27 @@ describe('generateHtmlReport', () => {
       expect(html).toContain('at test.ts:1:1');
     });
 
+    it('keeps the line breaks of a multi-line failure', () => {
+      const parsed = makeParsed({ failed: 1 }, [
+        {
+          name: 'suite-a',
+          duration: 1,
+          tests: [
+            {
+              name: 'two issues',
+              suite: 'suite-a',
+              status: 'failed',
+              duration: 0.1,
+              errorMessage: 'first issue\nsecond issue',
+            },
+          ],
+        },
+      ]);
+      const html = generateHtmlReport(makeOptions({ parsed }));
+      expect(html).toContain('first issue\nsecond issue');
+      expect(html).toMatch(/blockquote\{[^}]*white-space:pre-wrap/);
+    });
+
     it('truncates stack traces beyond MAX_STACK_TRACE_LINES', () => {
       const longStack = Array.from(
         { length: 50 },

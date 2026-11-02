@@ -1,0 +1,31 @@
+{
+  "results": {
+    "tool": {
+      "name": "vitest"
+    },
+    "summary": {
+      "tests": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "pending": 0,
+      "other": 0,
+      "start": 10000,
+      "stop": 0
+    },
+    "tests": [
+      {
+        "name": "a",
+        "status": "passed",
+        "duration": 5000,
+        "suite": "s"
+      },
+      {
+        "name": "b",
+        "status": "passed",
+        "duration": 5000,
+        "suite": "s"
+      }
+    ]
+  }
+}

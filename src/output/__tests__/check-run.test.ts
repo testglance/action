@@ -184,6 +184,178 @@ describe('createCheckRun', () => {
     expect(titles).not.toContain('fails without location');
   });
 
+  describe('Swift reports', () => {
+    const failedTest = (extra: Record<string, string>) =>
+      makeParsed({
+        suites: [
+          {
+            name: 'AppTests.LoginTests',
+            duration: 1,
+            tests: [
+              {
+                name: 'testRejects',
+                suite: 'AppTests.LoginTests',
+                status: 'failed',
+                duration: 1,
+                ...extra,
+              },
+            ],
+          },
+        ],
+      });
+
+    it('finds the location in the failure message when there is no stack trace', async () => {
+      vi.stubEnv('GITHUB_WORKSPACE', '/Users/runner/work/app/app');
+      try {
+        await createCheckRun({
+          githubToken: 'ghp_test',
+          checkName: 'Test Results',
+          parsed: failedTest({
+            errorMessage:
+              '/Users/runner/work/app/app/Tests/AppTests/LoginTests.swift:12: error: XCTAssertEqual failed',
+          }),
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'Tests/AppTests/LoginTests.swift',
+        start_line: 12,
+      });
+    });
+
+    it.each([
+      ['a Swift path in an expectation value', 'Expectation failed: (path → "Sources/C.swift:3")'],
+      ['a Go file name', 'golden mismatch in testdata/foo.go:7'],
+      ['a host and port', 'dial failed for payments.go:8080'],
+      ['a Ruby file name', 'could not load config.rb:12 from cache'],
+      ['a Python-style reference', 'File "tests/data.py", line 3 was unreadable'],
+      ['a JS-style reference', 'expected foo at src/a.js:1:2 to be bar'],
+    ])('does not read %s in a message as the failure location', async (_name, errorMessage) => {
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({ errorMessage }),
+        reportFile: 'test-results/junit.xml',
+      });
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'test-results/junit.xml',
+        start_line: 1,
+      });
+    });
+
+    it('still reads every pattern from a stack trace', async () => {
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({ stackTrace: 'panic\n  internal/foo.go:7 +0x1d', errorMessage: 'x' }),
+        reportFile: 'test-results/junit.xml',
+      });
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'internal/foo.go',
+        start_line: 7,
+      });
+    });
+
+    it('falls back to the message when the stack trace has no location', async () => {
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({
+          stackTrace: 'see log',
+          errorMessage: 'Tests/A.swift:12: error: x',
+        }),
+      });
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'Tests/A.swift',
+        start_line: 12,
+      });
+    });
+
+    it('keeps annotation text within GitHub limits and starts at the assertion', async () => {
+      const output = 'x'.repeat(100_000);
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({
+          name: 'n'.repeat(300),
+          errorMessage: `Test Suite 'Selected tests' started\nTests/A.swift:12: error: broke\n${output}`,
+        }),
+      });
+
+      const annotation = mockChecksCreate.mock.calls[0][0].output.annotations[0];
+      expect(Buffer.byteLength(annotation.message)).toBeLessThanOrEqual(64 * 1024);
+      expect(annotation.message.startsWith('Tests/A.swift:12: error: broke')).toBe(true);
+      expect(annotation.title.length).toBeLessThanOrEqual(255);
+    });
+
+    it('falls through when the reported file is outside the workspace', async () => {
+      vi.stubEnv('GITHUB_WORKSPACE', '/home/runner/work/app/app');
+      try {
+        await createCheckRun({
+          githubToken: 'ghp_test',
+          checkName: 'Test Results',
+          parsed: failedTest({ file: '/usr/src/app/test/a.py' }),
+          reportFile: 'test-results/junit.xml',
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'test-results/junit.xml',
+        start_line: 1,
+      });
+    });
+
+    it('does not leave half an emoji in truncated annotation text', async () => {
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({ name: `${'n'.repeat(251)}😀${'n'.repeat(50)}` }),
+        reportFile: 'test-results/junit.xml',
+      });
+
+      const { title } = mockChecksCreate.mock.calls[0][0].output.annotations[0];
+      expect(title.isWellFormed()).toBe(true);
+    });
+
+    it('stays within the byte limit for multi-byte messages', async () => {
+      await createCheckRun({
+        githubToken: 'ghp_test',
+        checkName: 'Test Results',
+        parsed: failedTest({ errorMessage: '→'.repeat(100_000) }),
+        reportFile: 'test-results/junit.xml',
+      });
+
+      const annotation = mockChecksCreate.mock.calls[0][0].output.annotations[0];
+      expect(Buffer.byteLength(annotation.message)).toBeLessThanOrEqual(64 * 1024);
+    });
+
+    it('makes an absolute auto-detected reportFile workspace-relative', async () => {
+      vi.stubEnv('GITHUB_WORKSPACE', '/Users/runner/work/app/app');
+      try {
+        await createCheckRun({
+          githubToken: 'ghp_test',
+          checkName: 'Test Results',
+          parsed: failedTest({ errorMessage: 'Expectation failed: 1 == 2 (error)' }),
+          reportFile: '/Users/runner/work/app/app/test-results/junit-swift-testing.xml',
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(mockChecksCreate.mock.calls[0][0].output.annotations[0]).toMatchObject({
+        path: 'test-results/junit-swift-testing.xml',
+        start_line: 1,
+      });
+    });
+  });
+
   it('falls back to reportFile at line 1 for failed tests without a location', async () => {
     await createCheckRun({
       githubToken: 'ghp_test',

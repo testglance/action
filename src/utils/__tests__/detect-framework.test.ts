@@ -67,6 +67,37 @@ describe('detectFramework', () => {
     });
   });
 
+  describe('Swift test reports', () => {
+    it('detects swift-testing from the file SwiftPM writes for Swift Testing', () => {
+      expect(detectFramework('/test-results/junit-swift-testing.xml', 'junit')).toBe(
+        'swift-testing',
+      );
+    });
+
+    it('detects xctest from an XCTest report path', () => {
+      expect(detectFramework('/test-results/xctest-junit.xml', 'junit')).toBe('xctest');
+    });
+
+    it('does not read Swift labels from directory names', () => {
+      expect(
+        detectFramework('/home/runner/work/xctest-helpers/xctest-helpers/junit.xml', 'junit'),
+      ).toBeUndefined();
+      expect(
+        detectFramework('/swift-testing-demo/test-results/junit.xml', 'junit'),
+      ).toBeUndefined();
+    });
+
+    it('prefers the file name over a repo name that matches another framework', () => {
+      expect(
+        detectFramework('/home/runner/work/majestic/majestic/junit-swift-testing.xml', 'junit'),
+      ).toBe('swift-testing');
+    });
+
+    it('leaves a generic SwiftPM junit.xml unlabelled', () => {
+      expect(detectFramework('/test-results/junit.xml', 'junit')).toBeUndefined();
+    });
+  });
+
   describe('null format (auto-detect fallback)', () => {
     it('still applies path heuristics when format is null', () => {
       expect(detectFramework('/output/vitest.xml', null)).toBe('vitest');

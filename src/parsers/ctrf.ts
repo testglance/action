@@ -120,8 +120,10 @@ export function parseCtrfJson(content: string): ParsedTestRun {
   const allTests = suites.flatMap((s) => s.tests);
 
   let totalDuration = 0;
-  if (results.summary.start != null && results.summary.stop != null) {
-    totalDuration = (results.summary.stop - results.summary.start) / 1000;
+  const { start, stop } = results.summary;
+  // Unset timestamps are often written as 0, and stop - start is then meaningless.
+  if (start != null && stop != null && start > 0 && stop > start) {
+    totalDuration = (stop - start) / 1000;
   } else {
     totalDuration = suites.reduce((sum, s) => sum + s.duration, 0);
   }

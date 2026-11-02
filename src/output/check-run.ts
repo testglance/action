@@ -1,11 +1,21 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import { parseFileLocation, normalizePath } from '../utils/parse-stack-trace';
+import {
+  isRepoFile,
+  isValidSourceLine,
+  normalizePath,
+  parseFailureMessageLocation,
+  parseFileLocation,
+} from '../utils/parse-stack-trace';
 import { resolveRunIdentity } from '../utils/run-context';
-import { formatDuration, renderMetricsStrip } from './format';
+import { extractFailureExcerpt, formatDuration, renderMetricsStrip, truncate } from './format';
 import type { ParsedTestRun, ParsedTestCase } from '../types';
 
 const MAX_ANNOTATIONS = 50;
+// GitHub rejects the whole check run over an annotation message above 64 KB or a title above 255
+// characters. A UTF-16 unit is at most 3 UTF-8 bytes, so this many units always fits.
+const MAX_ANNOTATION_MESSAGE_LENGTH = 20_000;
+const MAX_ANNOTATION_TITLE_LENGTH = 255;
 
 const MAX_CHECK_RUN_ATTEMPTS = 4;
 const INITIAL_RETRY_DELAY_MS = 1000;
@@ -80,13 +90,18 @@ async function reportCheckRunFailure(checkName: string, err: unknown): Promise<v
 }
 
 function resolveLocation(test: ParsedTestCase): { path: string; line: number } | null {
-  if (test.file) {
-    return { path: normalizePath(test.file), line: test.line ?? 1 };
+  const workspace = process.env.GITHUB_WORKSPACE;
+  if (test.file && isRepoFile(test.file, workspace)) {
+    return {
+      path: normalizePath(test.file, workspace),
+      line: isValidSourceLine(test.line) ? test.line : 1,
+    };
   }
-  if (test.stackTrace) {
-    return parseFileLocation(test.stackTrace);
-  }
-  return null;
+  // SwiftPM reports have no stack trace; its detailed XCTest failure output lands in the message.
+  return (
+    parseFileLocation(test.stackTrace ?? '', workspace) ??
+    parseFailureMessageLocation(test.errorMessage ?? '', workspace)
+  );
 }
 
 export interface CheckRunOptions {
@@ -139,12 +154,17 @@ export async function createCheckRun(options: CheckRunOptions): Promise<void> {
         if (!location && !reportFile) continue;
 
         annotations.push({
-          path: location ? location.path : normalizePath(reportFile as string),
+          path: location
+            ? location.path
+            : normalizePath(reportFile as string, process.env.GITHUB_WORKSPACE),
           start_line: location ? location.line : 1,
           end_line: location ? location.line : 1,
           annotation_level: annotationLevel,
-          message: test.errorMessage ?? 'Test failed',
-          title: test.name,
+          message: truncate(
+            extractFailureExcerpt(test.errorMessage ?? 'Test failed'),
+            MAX_ANNOTATION_MESSAGE_LENGTH,
+          ),
+          title: truncate(test.name, MAX_ANNOTATION_TITLE_LENGTH),
         });
       }
       if (annotations.length >= MAX_ANNOTATIONS) break;

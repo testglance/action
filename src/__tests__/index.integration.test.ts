@@ -8,7 +8,7 @@
 // Kept hermetic and offline via inputs only: no api-key (local-only → no API call),
 // history disabled (no @actions/cache), and no github-token (no check-run / PR comment).
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -61,6 +61,28 @@ describe('run() real integration (unmocked pipeline)', () => {
     expect(summary).toContain('⏭️ 1 skipped');
     expect(summary).toContain('50.0%');
     expect(summary).toContain('should reject invalid password');
+  });
+
+  it('reports only the named SwiftPM file and warns about the unread half', async () => {
+    const reports = mkdtempSync(join(tmpDir, 'swiftpm-'));
+    const reportPath = join(reports, 'junit.xml');
+    copyFileSync('fixtures/junit-swiftpm-xctest-empty.xml', reportPath);
+    copyFileSync('fixtures/junit-swift-testing.xml', join(reports, 'junit-swift-testing.xml'));
+    vi.stubEnv('INPUT_REPORT-PATH', reportPath);
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    try {
+      const { run } = await import('../index');
+      await run();
+
+      const output = stdout.mock.calls.map((c) => String(c[0])).join('');
+      expect(output).toContain('::warning::');
+      expect(output).toContain('junit-swift-testing.xml');
+    } finally {
+      stdout.mockRestore();
+    }
+
+    expect(readFileSync(summaryFile, 'utf-8')).not.toContain('4 failed');
   });
 
   it('parses a real CTRF fixture through the same pipeline', async () => {

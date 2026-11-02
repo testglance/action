@@ -72,7 +72,7 @@ If you add a new parser or touch CTRF, convert to seconds at parse time. Downstr
 Two distinct provenance fields — do not conflate them:
 
 - **`toolName`** (on `ParsedTestRun`) — set by the CTRF parser from `results.tool.name` (`src/parsers/ctrf.ts:80`). JUnit does not set it. Used as a fallback suite name and as input to framework detection.
-- **`framework`** (on `MetaEnvelope`, payload only) — derived in `detectFramework` (`src/utils/detect-framework.ts:8`). For CTRF it returns `toolName`; otherwise it path-matches heuristics (vitest/jest/pytest/maven-surefire) against the report path. Returns `undefined` when nothing matches, and is then omitted from `meta`.
+- **`framework`** (on `MetaEnvelope`, payload only) — derived in `detectFramework` (`src/utils/detect-framework.ts:8`). For CTRF it returns `toolName`; otherwise it path-matches heuristics (vitest/jest/pytest/maven-surefire) against the report path, and swift-testing/xctest against the file name. Returns `undefined` when nothing matches, and is then omitted from `meta`.
 
 ## API envelope
 
